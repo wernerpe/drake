@@ -29,6 +29,22 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "fast_iris",
+    srcs = ["fast_iris.cc"],
+    hdrs = ["fast_iris.h"],
+    deps = [
+        ":convex_set",
+        "//common:name_value",
+        "//geometry:meshcat",
+        "//geometry:scene_graph",
+        "//multibody/plant",
+        "//solvers:choose_best_solver",
+        "//solvers:ipopt_solver",
+        "//solvers:snopt_solver",
+    ],
+)
+
+drake_cc_library(
     name = "polynomial_positive_on_path",
     srcs = ["polynomial_positive_on_path.cc"],
     hdrs = ["polynomial_positive_on_path.h"],
