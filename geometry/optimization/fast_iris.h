@@ -1,16 +1,18 @@
 #pragma once
 
-#include "drake/geometry/optimization/convex_set.h"
-#include "drake/geometry/optimization/hpolyhedron.h"
-
-#include "drake/common/parallelism.h"
-#include "drake/planning/collision_checker.h"
-
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
+
+#include <Eigen/Dense>
+
+#include "drake/geometry/optimization/convex_set.h"
+#include "drake/geometry/optimization/hpolyhedron.h"
+#include "drake/geometry/meshcat.h"
+#include "drake/common/parallelism.h"
+#include "drake/planning/collision_checker.h"
 
 namespace drake {
 namespace geometry {
@@ -34,13 +36,19 @@ struct FastIrisOptions {
   int num_particles = 1e4;
   
   /** Number of consecutive failures to find a collision through sampling the polytope*/
-  int num_cosecutive_failures = 100;
+  int num_consecutive_failures = 100;
 
   /** Number of resampling steps for the gradient updates*/
   int num_resampling_steps = 1;
   
   /** Maximum number of rounds of adding faces to the polytope*/
   int max_iterations = 100;
+  
+  /** Maximum number of rounds of adding faces to the polytope*/
+  int bisection_steps = 10;
+
+  /** Number of gradient steps per particle*/
+  int gradient_steps = 1;
 
   /** The initial hyperepllipsoid that IRIS will use for calculating hyperplanes
   in the first iteration. If no hyperellipsoid is provided, a small hypershpere
@@ -93,7 +101,7 @@ struct FastIrisOptions {
 to find a collision free polytope in cspace.*/
 
 HPolyhedron FastIris(
-    const CollisionChecker& checker,
+    const planning::CollisionChecker& checker,
     const Eigen::Ref<const Eigen::VectorXd>& sample,
     const HPolyhedron& domain,
     const FastIrisOptions& options = FastIrisOptions());

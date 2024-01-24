@@ -210,6 +210,22 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "fast_iris",
+    srcs = ["fast_iris.cc"],
+    hdrs = ["fast_iris.h"],
+    deps = [
+        ":convex_set",
+        "//common:name_value",
+        "//geometry:meshcat",
+        "//geometry:scene_graph",
+        "//planning:collision_checker",
+        "//common:parallelism",
+        "@common_robotics_utilities",
+    ],
+)
+
+
+drake_cc_library(
     name = "test_utilities",
     testonly = 1,
     srcs = ["test_utilities.cc"],
