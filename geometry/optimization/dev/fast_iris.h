@@ -6,6 +6,12 @@
 #include "drake/common/parallelism.h"
 #include "drake/planning/collision_checker.h"
 
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
+
 namespace drake {
 namespace geometry {
 namespace optimization {
@@ -33,6 +39,9 @@ struct FastIrisOptions {
   /** Number of resampling steps for the gradient updates*/
   int num_resampling_steps = 1;
   
+  /** Maximum number of rounds of adding faces to the polytope*/
+  int max_iterations = 100;
+
   /** The initial hyperepllipsoid that IRIS will use for calculating hyperplanes
   in the first iteration. If no hyperellipsoid is provided, a small hypershpere
   centered at the given sample will be used. */
