@@ -187,15 +187,16 @@ class HPolyhedron final : public ConvexSet {
   `previous_sample` to the next; in this case the distribution of samples will
   converge to the true uniform distribution in total variation at a geometric
   rate.  If `previous_sample` is not set, then the ChebyshevCenter() will be
-  used to seed the algorithm.
+  used to seed the algorithm. Mixing steps sets the number of hit and run iterations
+  between samples.
   @throws std::exception if previous_sample is not in the set. */
   Eigen::VectorXd UniformSample(
       RandomGenerator* generator,
-      const Eigen::Ref<const Eigen::VectorXd>& previous_sample) const;
+      const Eigen::Ref<const Eigen::VectorXd>& previous_sample, const int mixing_steps = 10) const;
 
   /** Variant of UniformSample that uses the ChebyshevCenter() as the
   previous_sample as a feasible point to start the Markov chain sampling. */
-  Eigen::VectorXd UniformSample(RandomGenerator* generator) const;
+  Eigen::VectorXd UniformSample(RandomGenerator* generator, const int mixing_steps = 10) const;
 
   /** Constructs a polyhedron as an axis-aligned box from the lower and upper
   corners. */

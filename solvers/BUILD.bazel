@@ -806,6 +806,7 @@ drake_cc_variant_library(
     ],
     deps_enabled = [
         "//math:eigen_sparse_triplet",
+        "//common:find_resource",
         "//common:scope_exit",
         "//common:scoped_singleton",
         "@gurobi//:gurobi_c",
@@ -1031,6 +1032,7 @@ drake_cc_library(
     hdrs = ["semidefinite_relaxation.h"],
     interface_deps = [
         ":mathematical_program",
+        "//math:matrix_util",
     ],
     deps = [],
 )
@@ -1717,6 +1719,7 @@ drake_cc_googletest(
         ":quadratic_program_examples",
         ":second_order_cone_program_examples",
         ":snopt_solver",
+        "//common:find_resource",
         "//common:temp_directory",
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_throws_message",
