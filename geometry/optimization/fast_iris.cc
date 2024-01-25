@@ -25,7 +25,7 @@ namespace optimization {
 
 HPolyhedron FastIris(
     const planning::CollisionChecker& checker,
-    const Eigen::Ref<const Eigen::VectorXd>& sample,
+    const Hyperellipsoid& starting_ellipsoid,
     const HPolyhedron& domain,
     const FastIrisOptions& options){
     
@@ -36,19 +36,21 @@ HPolyhedron FastIris(
           ? std::min(parallelism.num_threads(),
                      checker.num_allocated_contexts())
           : 1;
-          
     RandomGenerator generator(options.random_seed);    
-    const int dim = sample.size();
+
+    const Eigen::VectorXd starting_ellipsoid_center = starting_ellipsoid.center();
+
+    const int dim = starting_ellipsoid_center.size();
     int current_num_faces = domain.A().rows();
     HPolyhedron P = domain;
 
     DRAKE_DEMAND(domain.ambient_dimension() == dim);
     DRAKE_DEMAND(domain.IsBounded());
-    DRAKE_DEMAND(domain.PointInSet(sample));
+    DRAKE_DEMAND(domain.PointInSet(starting_ellipsoid_center));
 
-    const Eigen::MatrixXd ATA = options.starting_ellipse.A().transpose()*options.starting_ellipse.A();
-    const Eigen::VectorXd ellipsoid_center = options.starting_ellipse.center();
 
+    const Eigen::MatrixXd ATA = starting_ellipsoid.A().transpose()*starting_ellipsoid.A();
+    
     //pre-allocate memory for the polyhedron 
     Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> A(
       P.A().rows() + 300, dim);
@@ -59,7 +61,7 @@ HPolyhedron FastIris(
     b.head(P.A().rows()) = P.b(); 
     std::vector<Eigen::VectorXd> particles;
     particles.reserve(options.num_particles);
-    particles.emplace_back(P.UniformSample(&generator, sample));
+    particles.emplace_back(P.UniformSample(&generator, starting_ellipsoid_center));
 
     //populate particles by uniform sampling
     for (int i = 1; i<options.num_particles; ++i){
@@ -110,11 +112,11 @@ HPolyhedron FastIris(
                 for(int gradient_steps = 0 ; gradient_steps<options.gradient_steps; ++gradient_steps ){
 
                     // find descent direction
-                    Eigen::VectorXd grad = ATA*(current_point - ellipsoid_center);
+                    Eigen::VectorXd grad = ATA*(current_point - starting_ellipsoid_center);
                     
                     //TODO: This might be ill conditioned, may need fixing
                     //intersection of the descent direction with the ellipsoid half axis
-                    double numerator = grad.transpose()*ATA*(current_point- ellipsoid_center);
+                    double numerator = grad.transpose()*ATA*(current_point- starting_ellipsoid_center);
                     double denominator = grad.transpose()*ATA*grad;
                     double max_distance = numerator/denominator;
 
@@ -149,7 +151,7 @@ HPolyhedron FastIris(
                                         number_particles_in_collision, particle_update_work,
                                         ParallelForBackend::BEST_AVAILABLE);
 
-            //Resample particles
+            //Restarting_ellipsoid_center particles
             //TODO
 
             //Place Hyperplanes
@@ -157,7 +159,7 @@ HPolyhedron FastIris(
             particle_distances.reserve(number_particles_in_collision);
 
             for(auto particle : particles_in_collision_updated){
-                particle_distances.emplace_back((particle-ellipsoid_center).transpose()*ATA*(particle-ellipsoid_center));
+                particle_distances.emplace_back((particle-starting_ellipsoid_center).transpose()*ATA*(particle-starting_ellipsoid_center));
             }
 
             //returned in ascending order
@@ -174,7 +176,7 @@ HPolyhedron FastIris(
                 auto nearest_particle = particles_in_collision_updated[i];
                 
                 if (!particle_is_redundant[i]){
-                    Eigen::VectorXd a_face = ATA*(nearest_particle - ellipsoid_center);
+                    Eigen::VectorXd a_face = ATA*(nearest_particle - starting_ellipsoid_center);
                     a_face.normalize();
                     double b_face = a_face.transpose()*nearest_particle - options.configuration_space_margin; 
                     A.row(current_num_faces) = a_face.transpose();
@@ -201,7 +203,7 @@ HPolyhedron FastIris(
             //update current polyhedron
             P = HPolyhedron(A.topRows(current_num_faces), b.head(current_num_faces));
             
-            //resample particles in new polyhedron for next iteration
+            //restarting_ellipsoid_center particles in new polyhedron for next iteration
             for (int i = 1; i<options.num_particles; ++i){
                 particles.emplace_back(P.UniformSample(&generator, particles[i-1]));
             }
