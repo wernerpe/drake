@@ -27,6 +27,7 @@ drake_cc_package_library(
         ":geodesic_convexity",
         ":graph_of_convex_sets",
         ":iris",
+        ":fast_iris",
         ":iris_internal",
     ],
 )
@@ -236,6 +237,7 @@ drake_cc_library(
         "//geometry:meshcat",
         "//geometry:scene_graph",
         "//planning:collision_checker",
+        "//planning:scene_graph_collision_checker",
         "//common:parallelism",
         "@common_robotics_utilities",
     ],
@@ -553,6 +555,28 @@ drake_cc_googletest(
         "//multibody/inverse_kinematics",
         "//multibody/parsing:parser",
         "//systems/framework:diagram_builder",
+    ],
+)
+
+drake_cc_googletest(
+    name = "fast_iris_test",
+    timeout = "moderate",
+    data = ["//multibody/parsing:test_models"],
+    shard_count = 8,
+    # Most of these tests take an exceptionally long time under
+    # instrumentation, resulting in timeouts, and so are excluded.
+    tags = [
+        "no_asan",
+        "no_memcheck",
+    ],
+    deps = [
+        ":fast_iris",
+        "//common/test_utilities:expect_throws_message",
+        "//common/test_utilities:maybe_pause_for_user",
+        "//geometry:meshcat",
+        "//geometry/test_utilities:meshcat_environment",
+        "//multibody/inverse_kinematics",
+        "//planning:robot_diagram_builder",
     ],
 )
 
