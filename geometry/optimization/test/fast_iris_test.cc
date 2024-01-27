@@ -88,6 +88,194 @@ GTEST_TEST(FastIrisTest, JointLimits) {
   EXPECT_FALSE(region.PointInSet(Vector1d{qmax + kTol}));
 }
 
+// A simple double pendulum with link lengths `l1` and `l2` with a sphere at the
+// tip of radius `r` between two (fixed) walls at `w` from the origin.  The
+// true configuration space is - w + r ≤ l₁s₁ + l₂s₁₊₂ ≤ w - r.  These regions
+// are visualized at https://www.desmos.com/calculator/ff0hbnkqhm.
+GTEST_TEST(FastIrisTest, DoublePendulum) {
+  const double l1 = 2.0;
+  const double l2 = 1.0;
+  const double r = .5;
+  const double w = 1.83;
+  const std::string double_pendulum_urdf = fmt::format(
+      R"(
+<robot name="double_pendulum">
+  <link name="fixed">
+    <collision name="right">
+      <origin rpy="0 0 0" xyz="{w_plus_one_half} 0 0"/>
+      <geometry><box size="1 1 10"/></geometry>
+    </collision>
+    <collision name="left">
+      <origin rpy="0 0 0" xyz="-{w_plus_one_half} 0 0"/>
+      <geometry><box size="1 1 10"/></geometry>
+    </collision>
+  </link>
+  <joint name="fixed_link_weld" type="fixed">
+    <parent link="world"/>
+    <child link="fixed"/>
+  </joint>
+  <link name="link1"/>
+  <joint name="joint1" type="revolute">
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57"/>
+    <parent link="world"/>
+    <child link="link1"/>
+  </joint>
+  <link name="link2">
+    <collision name="ball">
+      <origin rpy="0 0 0" xyz="0 0 -{l2}"/>
+      <geometry><sphere radius="{r}"/></geometry>
+    </collision>
+  </link>
+  <joint name="joint2" type="revolute">
+    <origin rpy="0 0 0" xyz="0 0 -{l1}"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57"/>
+    <parent link="link1"/>
+    <child link="link2"/>
+  </joint>
+</robot>
+)",
+      fmt::arg("w_plus_one_half", w + .5), fmt::arg("l1", l1),
+      fmt::arg("l2", l2), fmt::arg("r", r));
+
+  const Vector2d sample = Vector2d::Zero();
+  std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+  FastIrisOptions options;
+  options.meshcat = meshcat;
+  HPolyhedron region = FastIrisFromUrdf(double_pendulum_urdf, sample, options);
+
+  EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a substantial region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 2.0);
+
+  EXPECT_TRUE(region.PointInSet(Vector2d{.4, 0.0}));
+  EXPECT_FALSE(region.PointInSet(Vector2d{.5, 0.0}));
+  EXPECT_TRUE(region.PointInSet(Vector2d{.3, .3}));
+  EXPECT_FALSE(region.PointInSet(Vector2d{.4, .3}));
+  EXPECT_TRUE(region.PointInSet(Vector2d{-.4, 0.0}));
+  EXPECT_FALSE(region.PointInSet(Vector2d{-.5, 0.0}));
+  EXPECT_TRUE(region.PointInSet(Vector2d{-.3, -.3}));
+  EXPECT_FALSE(region.PointInSet(Vector2d{-.4, -.3}));
+
+  {
+    meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
+                             -3.25, 3.25, -3.25, 3.25);
+    meshcat->SetProperty("/Grid", "visible", true);
+    Eigen::RowVectorXd theta2s =
+        Eigen::RowVectorXd::LinSpaced(100, -1.57, 1.57);
+    Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 2 * theta2s.size() + 1);
+    const double c = -w + r;
+    for (int i = 0; i < theta2s.size(); ++i) {
+      const double a = l1 + l2 * std::cos(theta2s[i]),
+                   b = l2 * std::sin(theta2s[i]);
+      // wolfram solve a*sin(q) + b*cos(q) = c for q
+      points(0, i) =
+          2 * std::atan((std::sqrt(a * a + b * b - c * c) + a) / (b + c)) +
+          M_PI;
+      points(1, i) = theta2s[i];
+      points(0, points.cols() - i - 2) =
+          2 * std::atan((std::sqrt(a * a + b * b - c * c) + a) / (b - c)) -
+          M_PI;
+      points(1, points.cols() - i - 2) = theta2s[i];
+    }
+    points.col(points.cols() - 1) = points.col(0);
+    meshcat->SetLine("True C_free", points, 2.0, Rgba(0, 0, 1));
+    VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
+    points.resize(3, vregion.vertices().cols() + 1);
+    points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
+    points.topRightCorner(2, 1) = vregion.vertices().col(0);
+    points.bottomRows<1>().setZero();
+    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+
+    MaybePauseForUser();
+  }
+}
+
+const char block_urdf[] = R"(
+<robot name="block">
+  <link name="fixed">
+    <collision name="ground">
+      <origin rpy="0 0 0" xyz="0 0 -1"/>
+      <geometry><box size="10 10 2"/></geometry>
+    </collision>
+  </link>
+  <joint name="fixed_link_weld" type="fixed">
+    <parent link="world"/>
+    <child link="fixed"/>
+  </joint>
+  <link name="link1"/>
+  <joint name="joint1" type="prismatic">
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="3.0"/>
+    <parent link="world"/>
+    <child link="link1"/>
+  </joint>
+  <link name="link2">
+    <collision name="block">
+      <geometry><box size="2 1 1"/></geometry>
+    </collision>
+  </link>
+  <joint name="joint2" type="revolute">
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14159" upper="3.14159"/>
+    <parent link="link1"/>
+    <child link="link2"/>
+  </joint>
+</robot>
+)";
+
+// A block on a vertical track, free to rotate (in the plane) with width `w` of
+// 2 and height `h` of 1, plus a ground plane at z=0.  The true configuration
+// space is min(q₀ ± .5w sin(q₁) ± .5h cos(q₁)) ≥ 0, where the min is over the
+// ±. This region is also visualized at
+// https://www.desmos.com/calculator/ok5ckpa1kp.
+GTEST_TEST(FastIrisTest, BlockOnGround) {
+  const Vector2d sample{1.0, 0.0};
+  std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+  FastIrisOptions options;
+  options.meshcat = meshcat;
+  HPolyhedron region = FastIrisFromUrdf(block_urdf, sample, options);
+
+  EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a substantial region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 2.0);
+
+  {
+    meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}), 0,
+                             3.25, -3.25, 3.25);
+    meshcat->SetProperty("/Grid", "visible", true);
+    Eigen::RowVectorXd thetas = Eigen::RowVectorXd::LinSpaced(100, -M_PI, M_PI);
+    const double w = 2, h = 1;
+    Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 2 * thetas.size() + 1);
+    for (int i = 0; i < thetas.size(); ++i) {
+      const double a = 0.5 *
+                       (-w * std::sin(thetas[i]) - h * std::cos(thetas[i])),
+                   b = 0.5 *
+                       (-w * std::sin(thetas[i]) + h * std::cos(thetas[i])),
+                   c = 0.5 *
+                       (+w * std::sin(thetas[i]) - h * std::cos(thetas[i])),
+                   d = 0.5 *
+                       (+w * std::sin(thetas[i]) + h * std::cos(thetas[i]));
+      points(0, i) = std::max({a, b, c, d});
+      points(1, i) = thetas[i];
+      points(0, points.cols() - i - 2) = 3.0;
+      points(1, points.cols() - i - 2) = thetas[i];
+    }
+    points.col(points.cols() - 1) = points.col(0);
+    meshcat->SetLine("True C_free", points, 2.0, Rgba(0, 0, 1));
+    VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
+    points.resize(3, vregion.vertices().cols() + 1);
+    points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
+    points.topRightCorner(2, 1) = vregion.vertices().col(0);
+    points.bottomRows<1>().setZero();
+    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+
+    MaybePauseForUser();
+  }
+}
+
+
 // A (somewhat contrived) example of a concave configuration-space obstacle
 // (resulting in a convex configuration-space, which we approximate with
 // polytopes):  A simple pendulum of length `l` with a sphere at the tip of
@@ -162,7 +350,7 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
   // Confirm that the pendulum is colliding with the wall with true kinematics:
   EXPECT_LE(z_test + l * std::cos(theta_test), r);
 
-  options.num_consecutive_failures = 100;
+  options.num_consecutive_failures = 1;
 
   // Turn on meshcat for addition debugging visualizations.
   // This example is truly adversarial for IRIS. After one iteration, the
@@ -173,10 +361,8 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
   // away from that corner. Open the meshcat visualization to step through the
   // details!
   options.meshcat = meshcat;
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  std::cout<<"PREFASTIRIS####################################"<<std::endl;
+  //std::this_thread::sleep_for(std::chrono::milliseconds(100));
   HPolyhedron region = FastIrisFromUrdf(convex_urdf, sample, options);
-  std::cout<<"POSTFASTIRIS####################################"<<std::endl;
   // TODO(russt): Expecting the test point to be outside the verified region is
   // too strong of a requirement right now. If we can improve the algorithm then
   // we should make this EXPECT_FALSE.

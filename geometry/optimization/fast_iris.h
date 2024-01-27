@@ -37,11 +37,11 @@ struct FastIrisOptions {
   FastIrisOptions() = default;
 
   /** Number of particles used to estimate the closest collision*/
-  int num_particles = 1e2;
+  int num_particles = 1e3;
 
   /** Number of consecutive failures to find a collision through sampling the
    * polytope*/
-  int num_consecutive_failures = 100;
+  int num_consecutive_failures = 1;
 
   /** Number of resampling steps for the gradient updates*/
   // int num_resampling_steps = 1;
@@ -56,7 +56,7 @@ struct FastIrisOptions {
   int gradient_steps = 1;
   
   /* Enables print statements indicating the progress of fast iris**/
-  bool verbose = false;
+  bool verbose = true;
 
   /** The initial polytope is guaranteed to contain the point if that point is
   collision-free. However, the IRIS alternation objectives do not include (and
