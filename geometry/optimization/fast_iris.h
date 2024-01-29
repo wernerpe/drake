@@ -27,10 +27,14 @@ struct FastIrisOptions {
     a->Visit(DRAKE_NVP(num_particles));
     a->Visit(DRAKE_NVP(num_consecutive_failures));
     a->Visit(DRAKE_NVP(max_iterations));
+    a->Visit(DRAKE_NVP(max_iterations_separating_planes));
     a->Visit(DRAKE_NVP(gradient_steps));
     a->Visit(DRAKE_NVP(bisection_steps));
+    a->Visit(DRAKE_NVP(verbose));
     // a->Visit(DRAKE_NVP(num_resampling_steps));
     a->Visit(DRAKE_NVP(configuration_space_margin));
+    a->Visit(DRAKE_NVP(termination_threshold));
+    a->Visit(DRAKE_NVP(relative_termination_threshold));
     a->Visit(DRAKE_NVP(random_seed));
   }
 
@@ -45,9 +49,12 @@ struct FastIrisOptions {
 
   /** Number of resampling steps for the gradient updates*/
   // int num_resampling_steps = 1;
+  
+  /** Number Iris Iterations*/
+  int max_iterations = 2;
 
   /** Maximum number of rounds of adding faces to the polytope*/
-  int max_iterations = 100;
+  int max_iterations_separating_planes = 100;
 
   /** Maximum number of bisection steps per gradient step*/
   int bisection_steps = 10;
@@ -71,6 +78,16 @@ struct FastIrisOptions {
   number of faces to approximate a curved boundary.
   */
   double configuration_space_margin{1e-2};
+
+  /** IRIS will terminate if the change in the *volume* of the hyperellipsoid
+  between iterations is less that this threshold. This termination condition can
+  be disabled by setting to a negative value. */
+  double termination_threshold{2e-2}; 
+  
+  /** IRIS will terminate if the change in the *volume* of the hyperellipsoid
+  between iterations is less that this percent of the previous best volume.
+  This termination condition can be disabled by setting to a negative value. */
+  double relative_termination_threshold{1e-3};  // from rdeits/iris-distro.
 
   /** For IRIS in configuration space, it can be beneficial to not only specify
   task-space obstacles (passed in through the plant) but also obstacles that are
