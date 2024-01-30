@@ -41,7 +41,7 @@ struct FastIrisOptions {
   FastIrisOptions() = default;
 
   /** Number of particles used to estimate the closest collision*/
-  int num_particles = 1e3;
+  int num_particles = 1e2;
 
   /** Number of consecutive failures to find a collision through sampling the
    * polytope*/
