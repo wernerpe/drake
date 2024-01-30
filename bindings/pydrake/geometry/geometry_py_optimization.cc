@@ -30,6 +30,7 @@
 #include "drake/geometry/optimization/hyperrectangle.h"
 #include "drake/geometry/optimization/intersection.h"
 #include "drake/geometry/optimization/iris.h"
+#include "drake/geometry/optimization/fast_iris.h"
 #include "drake/geometry/optimization/minkowski_sum.h"
 #include "drake/geometry/optimization/point.h"
 #include "drake/geometry/optimization/spectrahedron.h"
@@ -522,7 +523,70 @@ void DefineGeometryOptimization(py::module m) {
         &IrisOptions::prog_with_additional_constraints,
         cls_doc.prog_with_additional_constraints.doc);
   }
-
+  // FastIrisOptions
+  {
+    const auto& cls_doc = doc.FastIrisOptions;
+    py::class_<FastIrisOptions> fast_iris_options(m, "FastIrisOptions", cls_doc.doc);
+    fast_iris_options.def(py::init<>(), cls_doc.ctor.doc)
+        .def_readwrite("num_particles",
+            &FastIrisOptions::num_particles,
+            cls_doc.num_particles.doc)
+        .def_readwrite("num_consecutive_failures", &FastIrisOptions::num_consecutive_failures,
+            cls_doc.num_consecutive_failures.doc)
+        .def_readwrite("max_iterations",
+            &FastIrisOptions::max_iterations,
+            cls_doc.max_iterations.doc)
+        .def_readwrite("max_iterations_separating_planes",
+            &FastIrisOptions::max_iterations_separating_planes,
+            cls_doc.max_iterations_separating_planes.doc)
+        .def_readwrite("gradient_steps",
+            &FastIrisOptions::gradient_steps,
+            cls_doc.gradient_steps.doc)
+        .def_readwrite("bisection_steps",
+            &FastIrisOptions::bisection_steps,
+            cls_doc.bisection_steps.doc)
+        .def_readwrite("verbose",
+            &FastIrisOptions::verbose,
+            cls_doc.verbose.doc)
+        .def_readwrite("configuration_space_margin",
+            &FastIrisOptions::configuration_space_margin,
+            cls_doc.configuration_space_margin.doc)
+        .def_readwrite("termination_threshold",
+            &FastIrisOptions::termination_threshold,
+            cls_doc.termination_threshold.doc)
+        .def_readwrite("relative_termination_threshold",
+            &FastIrisOptions::relative_termination_threshold,
+            cls_doc.relative_termination_threshold.doc)
+        .def_readwrite("random_seed",
+            &FastIrisOptions::random_seed,
+            cls_doc.random_seed.doc)
+        .def("__repr__", [](const FastIrisOptions& self) {
+          return py::str(
+              "FastIrisOptions("
+              "num_particles={}, "
+              "num_consecutive_failures={}, "
+              "max_iterations={}, "
+              "max_iterations_separating_planes={}, "
+              "gradient_steps={}, "
+              "bisection_steps={}, "
+              "verbose={}, "
+              "configuration_space_margin={}, "
+              "termination_threshold={}, "
+              "relative_termination_threshold={}, "
+              "random_seed={} "
+              ")")
+              .format(self.num_particles,
+                  self.num_consecutive_failures, self.max_iterations,
+                  self.max_iterations_separating_planes,
+                  self.gradient_steps,
+                  self.bisection_steps,
+                  self.verbose,
+                  self.configuration_space_margin,
+                  self.termination_threshold,
+                  self.relative_termination_threshold,
+                  self.random_seed);
+        });
+  }
   m.def(
       "Iris",
       [](const std::vector<ConvexSet*>& obstacles,
@@ -553,6 +617,12 @@ void DefineGeometryOptimization(py::module m) {
           &IrisInConfigurationSpace),
       py::arg("plant"), py::arg("context"), py::arg("options") = IrisOptions(),
       doc.IrisInConfigurationSpace.doc);
+  
+  m.def("FastIris", &FastIris,
+      py::arg("checker"), py::arg("starting_ellipsoid"), 
+      py::arg("domain"),
+      py::arg("options") = FastIrisOptions(),
+      doc.FastIris.doc);
 
   // TODO(#19597) Deprecate and remove these functions once Python
   // can natively handle the file I/O.
