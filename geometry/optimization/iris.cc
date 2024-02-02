@@ -607,6 +607,71 @@ struct GeometryPairWithDistance {
 
 }  // namespace
 
+namespace {
+Eigen::VectorXd SampleFromEllipsoid(const Eigen::MatrixXd& A, RandomGenerator* generator) {
+  // Get eigenvalue decomposition
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(A);
+  Eigen::VectorXd eigenvalues =  eigensolver.eigenvalues();
+  Eigen::MatrixXd P = eigensolver.eigenvectors();
+  Eigen::MatrixXd D = eigenvalues.asDiagonal();
+
+  DRAKE_DEMAND(A.isApprox(P * D * P.transpose())); // TODO(rhjiang) for debugging only
+
+  std::normal_distribution<double> gaussian;
+
+  VectorXd rotated_sample(A.rows());
+  for (int i = 0; i < A.rows(); ++i) {
+    rotated_sample[i] = eigenvalues[i] * gaussian(*generator);
+  }
+  rotated_sample /= rotated_sample.norm();
+  return P * rotated_sample;
+}
+
+}  // namespace
+
+namespace {
+std::pair<Eigen::VectorXd, int> CollisionLineSearch(MultibodyPlant<double>& plant,
+      const Context<double>& context, const std::vector<GeometryPairWithDistance>& sorted_pairs, const HPolyhedron& P, const Eigen::VectorXd& center, const Eigen::VectorXd& direction, const int num_steps = 100) {
+  // Find where line hits polytope.
+  MathematicalProgram prog;
+  d = prog.NewContinuousVariables(1);
+  prog.AddLinearCost(-d); // Maximize distance along direction.
+  x = prog.NewContinuousVariables(direction.size());
+  prog.AddLinearConstraint(center + d * direction - x); // x is distance d from center, along direction.
+  P.AddPointInSetConstraints(prog, x);
+  result = prog.Solve();
+  double d_max = - result.get_optimal_cost();
+
+  // Do a line search for closest collision to center, along direction vector.
+  int i = 0;
+  int pair_in_collision = -1;
+  // VectorXd collision_configuration(P.ambient_dimension());
+  VectorXd collision_configuration = Eigen::VectorXd::Zero(P.ambient_dimension());
+  while (i < num_steps && pair_in_collision < 0) {
+    const VectorXd configuration = center + ((i + 1) * closest_collision_distance / num_steps) * direction;
+    int i_pair = 0;
+    for (const auto& pair : sorted_pairs) {
+      Context<double>& mutable_context =
+          plant.GetMyMutableContextFromRoot(context);
+      plant.SetPositions(&mutable_context, configuration);
+      auto query_object =
+          plant.get_geometry_query_input_port().Eval<QueryObject<double>>(mutable_context);
+      const double distance =
+      query_object.ComputeSignedDistancePairClosestPoints(pair.geomA, pair.geomB)
+          .distance;
+      if (distance < 0.0) {
+        pair_in_collision = i_pair;
+        collision_configuration = configuration;
+        break;
+      }
+      ++i_pair;
+    }
+    ++i;
+  }
+  return std::make_pair(collision_configuration, pair_in_collision)
+}
+}  // namespace
+
 HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
                                      const Context<double>& context,
                                      const IrisOptions& options) {
@@ -809,36 +874,69 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
 
     if (!sample_point_requirement) break;
 
-    // Use the fast nonlinear optimizer until it fails
-    // num_collision_infeasible_samples consecutive times.
-    for (const auto& pair : sorted_pairs) {
-      int consecutive_failures = 0;
-      ClosestCollisionProgram prog(
-          same_point_constraint, *frames.at(pair.geomA), *frames.at(pair.geomB),
-          *sets.at(pair.geomA), *sets.at(pair.geomB), E,
+    int consecutive_failures = 0;
+    while (consecutive_failures < options.num_collision_infeasible_samples) {
+      Eigen::VectorXd direction = SampleFromEllipsoid(E.A(), generator);
+      std::pair<Eigen::VectorXd, int> closest_collision_info = CollisionLineSearch(plant, context, sorted_pairs, P_candidate, E.center(), direction);
+      Eigen::VectorXd collision_configuration = closest_collision_info.first;
+      int collision_pair_index = closest_collision_info.second;
+      if (collision_pair_index >= 0) { // pair is actually in collision
+        const auto collision_pair = pairs[collision_pair_index];
+        ClosestCollisionProgram prog(
+          same_point_constraint, *frames.at(collision_pair.geomA), *frames.at(collision_pair.geomB),
+          *sets.at(collision_pair.geomA), *sets.at(collision_pair.geomB), E,
           A.topRows(num_constraints), b.head(num_constraints));
-      while (sample_point_requirement &&
-             consecutive_failures < options.num_collision_infeasible_samples) {
-        if (prog.Solve(*solver, guess, &closest)) {
-          consecutive_failures = 0;
-          AddTangentToPolytope(E, closest, options.configuration_space_margin,
-                               &A, &b, &num_constraints);
-          P_candidate =
-              HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
-          MakeGuessFeasible(P_candidate, options, closest, &guess);
-          if (options.require_sample_point_is_contained) {
-            sample_point_requirement =
-                A.row(num_constraints - 1) * sample <= b(num_constraints - 1);
-            if (!sample_point_requirement) break;
-          }
-          prog.UpdatePolytope(A.topRows(num_constraints),
-                              b.head(num_constraints));
+
+        if (prog.Solve(*solver, collision_configuration, &closest)) {
+            AddTangentToPolytope(E, closest, options.configuration_space_margin,
+                                &A, &b, &num_constraints);
+            P_candidate =
+                HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
+            if (options.require_sample_point_is_contained) {
+              sample_point_requirement =
+                  A.row(num_constraints - 1) * sample <= b(num_constraints - 1);
+              if (!sample_point_requirement) break;
+            }
+            prog.UpdatePolytope(A.topRows(num_constraints),
+                                b.head(num_constraints));
         } else {
-          ++consecutive_failures;
+          log()->info("seeded SNOPT with feasible guess but did not get feasible soln") // TODO(rhjiang) remove after debugging
         }
-        guess = P_candidate.UniformSample(&generator, guess);
+      } else {
+        ++consecutive_failures;
       }
     }
+
+    // // Use the fast nonlinear optimizer until it fails
+    // // num_collision_infeasible_samples consecutive times.
+    // for (const auto& pair : sorted_pairs) {
+    //   int consecutive_failures = 0;
+    //   ClosestCollisionProgram prog(
+    //       same_point_constraint, *frames.at(pair.geomA), *frames.at(pair.geomB),
+    //       *sets.at(pair.geomA), *sets.at(pair.geomB), E,
+    //       A.topRows(num_constraints), b.head(num_constraints));
+    //   while (sample_point_requirement &&
+    //          consecutive_failures < options.num_collision_infeasible_samples) {
+    //     if (prog.Solve(*solver, guess, &closest)) {
+    //       consecutive_failures = 0;
+    //       AddTangentToPolytope(E, closest, options.configuration_space_margin,
+    //                            &A, &b, &num_constraints);
+    //       P_candidate =
+    //           HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
+    //       MakeGuessFeasible(P_candidate, options, closest, &guess);
+    //       if (options.require_sample_point_is_contained) {
+    //         sample_point_requirement =
+    //             A.row(num_constraints - 1) * sample <= b(num_constraints - 1);
+    //         if (!sample_point_requirement) break;
+    //       }
+    //       prog.UpdatePolytope(A.topRows(num_constraints),
+    //                           b.head(num_constraints));
+    //     } else {
+    //       ++consecutive_failures;
+    //     }
+    //     guess = P_candidate.UniformSample(&generator, guess);
+    //   }
+    // }
 
     if (!sample_point_requirement) break;
 
