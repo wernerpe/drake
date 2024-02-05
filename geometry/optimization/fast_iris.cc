@@ -157,20 +157,11 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           Eigen::VectorXd current_point = start_point;
   
           // update particles via gradient descent and bisection
-          for (int gradient_steps = 0; gradient_steps < options.gradient_steps;
-               ++gradient_steps) {
-            // find descent direction
-            Eigen::VectorXd grad =
-                ATA * (current_point - current_ellipsoid_center);
-  
-            // TODO: This might be ill conditioned, may need fixing
-            // intersection of the descent direction with the ellipsoid half axis
+          // find newton descent direction
+            Eigen::VectorXd grad = (current_point - current_ellipsoid_center);
+            double max_distance = grad.norm();
             grad.normalize();
-            double numerator = grad.transpose() * ATA *
-                                (current_point - current_ellipsoid_center);
-            double denominator = grad.transpose() * ATA * grad;
-            double max_distance = numerator / denominator;
-            
+
             Eigen::VectorXd curr_pt_lower = current_point - max_distance * grad;
             // update current point using bisection
             if (!checker.CheckConfigCollisionFree(curr_pt_lower, thread_num)) {
@@ -192,7 +183,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
                 
               }
             }
-          }
+          //}
           particles_in_collision_updated[point_idx] = current_point;
         };
         

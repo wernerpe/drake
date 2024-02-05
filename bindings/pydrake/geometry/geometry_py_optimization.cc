@@ -539,9 +539,6 @@ void DefineGeometryOptimization(py::module m) {
         .def_readwrite("max_iterations_separating_planes",
             &FastIrisOptions::max_iterations_separating_planes,
             cls_doc.max_iterations_separating_planes.doc)
-        .def_readwrite("gradient_steps",
-            &FastIrisOptions::gradient_steps,
-            cls_doc.gradient_steps.doc)
         .def_readwrite("bisection_steps",
             &FastIrisOptions::bisection_steps,
             cls_doc.bisection_steps.doc)

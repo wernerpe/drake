@@ -28,7 +28,7 @@ struct FastIrisOptions {
     a->Visit(DRAKE_NVP(num_consecutive_failures));
     a->Visit(DRAKE_NVP(max_iterations));
     a->Visit(DRAKE_NVP(max_iterations_separating_planes));
-    a->Visit(DRAKE_NVP(gradient_steps));
+    //a->Visit(DRAKE_NVP(gradient_steps));
     a->Visit(DRAKE_NVP(bisection_steps));
     a->Visit(DRAKE_NVP(verbose));
     // a->Visit(DRAKE_NVP(num_resampling_steps));
@@ -59,8 +59,8 @@ struct FastIrisOptions {
   /** Maximum number of bisection steps per gradient step*/
   int bisection_steps = 10;
 
-  /** Number of gradient steps per particle*/
-  int gradient_steps = 1;
+//   /** Number of gradient steps per particle*/
+//   int gradient_steps = 1;
   
   /* Enables print statements indicating the progress of fast iris**/
   bool verbose = true;
