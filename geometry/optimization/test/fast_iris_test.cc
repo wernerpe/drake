@@ -141,6 +141,7 @@ GTEST_TEST(FastIrisTest, DoublePendulum) {
 
   const Vector2d sample = Vector2d::Zero();
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Delete("face_pt");
   FastIrisOptions options;
   options.meshcat = meshcat;
   HPolyhedron region = FastIrisFromUrdf(double_pendulum_urdf, sample, options);
@@ -233,6 +234,7 @@ const char block_urdf[] = R"(
 GTEST_TEST(FastIrisTest, BlockOnGround) {
   const Vector2d sample{1.0, 0.0};
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Delete("face_pt");
   FastIrisOptions options;
   options.meshcat = meshcat;
   HPolyhedron region = FastIrisFromUrdf(block_urdf, sample, options);
@@ -291,6 +293,7 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
   const double r = 0.1;
 
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Delete("face_pt");
   meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
                            -3.25, 3.25, -3.25, 3.25);
   meshcat->SetProperty("/Grid", "visible", true);

@@ -243,10 +243,10 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   
         // returned in ascending order
         auto indices_sorted = argsort(particle_distances);
-        std::vector<bool> particle_is_redundant;
+        std::vector<uint8_t> particle_is_redundant;
   
         for (int i = 0; i < number_particles_in_collision; ++i) {
-          particle_is_redundant.push_back(false);
+          particle_is_redundant.push_back(0);
         }
 
         //add separating planes step
@@ -281,7 +281,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
             current_num_faces, num_iterations_separating_planes);
           }
           // set used particle to redundant
-          particle_is_redundant[i] = true;
+          particle_is_redundant.at(i) = true;
   
           // loop over remaining non-redundant particles and check for
           // redundancy
@@ -289,15 +289,15 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           #pragma omp parallel for num_threads(num_threads_to_use)
           #endif
             for (int particle_index = 0;
-               particle_index < number_particles_in_collision;
-               ++particle_index) {
-              if (!particle_is_redundant[particle_index]) {
+                particle_index < number_particles_in_collision;
+                ++particle_index) {
+                if (!particle_is_redundant[particle_index]) {
                 if (a_face.transpose() *
-                          particles_in_collision_updated[particle_index] -
-                      b_face >= -options.configuration_space_margin) {
-                  particle_is_redundant[particle_index] = true;
+                            particles_in_collision_updated[particle_index] -
+                        b_face >=0 ) {
+                    particle_is_redundant[particle_index] = 1;
                 }
-              }
+                }
             }
           }
         }
