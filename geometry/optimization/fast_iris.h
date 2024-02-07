@@ -31,7 +31,7 @@ struct FastIrisOptions {
     //a->Visit(DRAKE_NVP(gradient_steps));
     a->Visit(DRAKE_NVP(bisection_steps));
     a->Visit(DRAKE_NVP(verbose));
-    // a->Visit(DRAKE_NVP(num_resampling_steps));
+    a->Visit(DRAKE_NVP(require_sample_point_is_contained));
     a->Visit(DRAKE_NVP(configuration_space_margin));
     a->Visit(DRAKE_NVP(termination_threshold));
     a->Visit(DRAKE_NVP(relative_termination_threshold));
@@ -58,12 +58,9 @@ struct FastIrisOptions {
 
   /** Maximum number of bisection steps per gradient step*/
   int bisection_steps = 10;
-
-//   /** Number of gradient steps per particle*/
-//   int gradient_steps = 1;
   
   /* Enables print statements indicating the progress of fast iris**/
-  bool verbose = true;
+  bool verbose{true};
 
   /** The initial polytope is guaranteed to contain the point if that point is
   collision-free. However, the IRIS alternation objectives do not include (and
@@ -71,7 +68,7 @@ struct FastIrisOptions {
   contained. Therefore, the IRIS paper recommends that if containment is a
   requirement, then the algorithm should simply terminate early if alternations
   would ever cause the set to not contain the point. */
-  // bool require_sample_point_is_contained{true};
+  bool require_sample_point_is_contained{true};
 
   /** For IRIS in configuration space, we retreat by this margin from each
   C-space obstacle in order to avoid the possibility of requiring an infinite

@@ -545,6 +545,9 @@ void DefineGeometryOptimization(py::module m) {
         .def_readwrite("verbose",
             &FastIrisOptions::verbose,
             cls_doc.verbose.doc)
+        .def_readwrite("require_sample_point_is_contained",
+            &FastIrisOptions::require_sample_point_is_contained,
+            cls_doc.require_sample_point_is_contained.doc)
         .def_readwrite("configuration_space_margin",
             &FastIrisOptions::configuration_space_margin,
             cls_doc.configuration_space_margin.doc)
@@ -564,9 +567,9 @@ void DefineGeometryOptimization(py::module m) {
               "num_consecutive_failures={}, "
               "max_iterations={}, "
               "max_iterations_separating_planes={}, "
-              "gradient_steps={}, "
               "bisection_steps={}, "
               "verbose={}, "
+              "require_sample_point_is_contained={}, "
               "configuration_space_margin={}, "
               "termination_threshold={}, "
               "relative_termination_threshold={}, "
@@ -575,9 +578,9 @@ void DefineGeometryOptimization(py::module m) {
               .format(self.num_particles,
                   self.num_consecutive_failures, self.max_iterations,
                   self.max_iterations_separating_planes,
-                  self.gradient_steps,
                   self.bisection_steps,
                   self.verbose,
+                  self.require_sample_point_is_contained,
                   self.configuration_space_margin,
                   self.termination_threshold,
                   self.relative_termination_threshold,

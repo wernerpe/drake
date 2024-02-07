@@ -40,7 +40,9 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
                      checker.num_allocated_contexts())
           : 1;
   RandomGenerator generator(options.random_seed);
-
+  
+  const Eigen::VectorXd starting_ellipsoid_center = starting_ellipsoid.center();
+  
   Eigen::VectorXd current_ellipsoid_center = starting_ellipsoid.center();
   Eigen::MatrixXd current_ellipsoid_A = starting_ellipsoid.A();
   double previous_volume = 1e-12;
@@ -73,7 +75,8 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   
   int iteration = 0;
   HPolyhedron P = domain;
-    
+  HPolyhedron P_prev = domain;
+
   while(true){
     Eigen::MatrixXd ATA =
       current_ellipsoid_A.transpose() * current_ellipsoid_A;
@@ -323,8 +326,16 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
     std::cout<<fmt::format("iter {}, max {}", iteration, options.max_iterations)<<std::endl;
     break;
   }
+  
+  if (options.require_sample_point_is_contained){
+    if(!(P.PointInSet(starting_ellipsoid_center))){
+        std::cout<<"initial seed point not contained"<<std::endl;
+        return P_prev;
+    }             
+  }
   previous_volume = volume;
-  //reset polytope to domain
+  //reset polytope to domain, store previous iteration
+  P_prev = P;
   P = domain;
   current_num_faces = P.A().rows();
   }
