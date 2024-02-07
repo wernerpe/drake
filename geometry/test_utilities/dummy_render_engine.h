@@ -12,7 +12,6 @@
 #include "drake/common/ssize.h"
 #include "drake/geometry/render/render_engine.h"
 #include "drake/math/rigid_transform.h"
-#include "drake/systems/sensors/color_palette.h"
 
 namespace drake {
 namespace geometry {
@@ -37,7 +36,7 @@ namespace internal {
     and which aren't (and with what configurations).
  6. Records the camera pose provided to UpdateViewpoint() and report it with
     last_updated_X_WC().  */
-class DummyRenderEngine : public render::RenderEngine {
+class DummyRenderEngine : public render::RenderEngine, private ShapeReifier {
  public:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(DummyRenderEngine);
 
@@ -60,7 +59,7 @@ class DummyRenderEngine : public render::RenderEngine {
   using render::RenderEngine::RenderDepthImage;
   using render::RenderEngine::RenderLabelImage;
 
-  using RenderEngine::ImplementGeometry;
+  using ShapeReifier::ImplementGeometry;
   void ImplementGeometry(const Box&, void*) override {}
   void ImplementGeometry(const Capsule&, void*) override {}
   void ImplementGeometry(const Convex&, void*) override {}
@@ -157,6 +156,8 @@ class DummyRenderEngine : public render::RenderEngine {
   using RenderEngine::GetColorDFromLabel;
   using RenderEngine::GetColorIFromLabel;
   using RenderEngine::LabelFromColor;
+  using RenderEngine::MakeLabelFromRgb;
+  using RenderEngine::MakeRgbFromLabel;
 
  protected:
   /* Dummy implementation that registers the given `shape` if the `properties`

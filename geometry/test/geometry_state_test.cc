@@ -1219,6 +1219,8 @@ TEST_F(GeometryStateTest, GetAllGeometryIds) {
   const GeometryId local_anchored_id = geometry_state_.RegisterAnchoredGeometry(
       test_source, make_unique<GeometryInstance>(
                        RigidTransformd(), make_unique<Sphere>(1), "anchored"));
+  geometry_state_.AssignRole(test_source, local_anchored_id,
+                             ProximityProperties{});
   SetUpSingleSourceTree();
 
   vector<GeometryId> expected_ids(geometries_);
@@ -1226,8 +1228,16 @@ TEST_F(GeometryStateTest, GetAllGeometryIds) {
   expected_ids.push_back(anchored_geometry_);
   std::sort(expected_ids.begin(), expected_ids.end());
 
-  const vector<GeometryId> all_ids = geometry_state_.GetAllGeometryIds();
+  const vector<GeometryId> all_ids =
+      geometry_state_.GetAllGeometryIds(/* role = */ std::nullopt);
   EXPECT_EQ(all_ids, expected_ids);
+
+  expected_ids.clear();
+  expected_ids.push_back(local_anchored_id);
+
+  const vector<GeometryId> proximity_ids =
+      geometry_state_.GetAllGeometryIds(Role::kProximity);
+  EXPECT_EQ(proximity_ids, expected_ids);
 }
 
 // Confirms that a GeometrySet can be converted into a set of geometry ids.
@@ -1780,7 +1790,7 @@ TEST_F(GeometryStateTest, ChangeShapeInternals) {
   const RigidTransformd X_FG2 = X_GG2 * geometry->X_FG();
 
   // Changing from sphere to box.
-  ASSERT_EQ(ShapeName(geometry->shape()).name(), ShapeName(Sphere(1.0)).name());
+  ASSERT_EQ(geometry->shape().type_name(), Sphere(1.0).type_name());
   const Box new_shape(1.0, 2.0, 3.0);
 
   geometry_state_.ChangeShape(s_id, g_id, new_shape, X_FG2);
@@ -1789,8 +1799,7 @@ TEST_F(GeometryStateTest, ChangeShapeInternals) {
   ASSERT_EQ(geometry, gs_tester_.GetGeometry(g_id));
 
   // Shape and pose have changed.
-  EXPECT_EQ(ShapeName(geometry->shape()).name(),
-            ShapeName(Box(1, 1, 1)).name());
+  EXPECT_EQ(geometry->shape().type_name(), Box(1, 1, 1).type_name());
   EXPECT_TRUE(
       CompareMatrices(X_FG2.GetAsMatrix34(), geometry->X_FG().GetAsMatrix34()));
 
@@ -1814,7 +1823,7 @@ TEST_F(GeometryStateTest, ChangeShapeIllustration) {
   const InternalGeometry original_geo(*geometry);
 
   // Changing from sphere to box.
-  ASSERT_EQ(ShapeName(geometry->shape()).name(), ShapeName(Sphere(1.0)).name());
+  ASSERT_EQ(geometry->shape().type_name(), Sphere(1.0).type_name());
   const Box new_shape(1.0, 2.0, 3.0);
 
   const GeometryVersion pre_version = geometry_state_.geometry_version();
@@ -1906,7 +1915,7 @@ TEST_F(GeometryStateTest, ChangeShapePerception) {
   ASSERT_NE(renderer1->get_and_clear_last_removed_id(), g_id);
   ASSERT_NE(renderer2->get_and_clear_last_removed_id(), g_id);
 
-  ASSERT_EQ(ShapeName(geometry->shape()).name(), ShapeName(Sphere(1.0)).name());
+  ASSERT_EQ(geometry->shape().type_name(), Sphere(1.0).type_name());
   const Box new_shape(0.1, 0.2, 0.3);
 
   const GeometryVersion pre_version = geometry_state_.geometry_version();
@@ -1950,7 +1959,7 @@ TEST_F(GeometryStateTest, ChangeShapeProximity) {
 
   // Changing from sphere to a *small* box (should be smaller than the sphere).
   // The distance between the two shapes should get *larger*.
-  ASSERT_EQ(ShapeName(geometry->shape()).name(), ShapeName(Sphere(1.0)).name());
+  ASSERT_EQ(geometry->shape().type_name(), Sphere(1.0).type_name());
   const Box new_shape(0.1, 0.2, 0.3);
 
   const GeometryVersion pre_version = geometry_state_.geometry_version();

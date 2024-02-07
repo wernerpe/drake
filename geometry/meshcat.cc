@@ -30,6 +30,7 @@
 #include "drake/common/scope_exit.h"
 #include "drake/common/ssize.h"
 #include "drake/common/text_logging.h"
+#include "drake/geometry/meshcat_file_storage_internal.h"
 #include "drake/geometry/meshcat_internal.h"
 #include "drake/geometry/meshcat_types_internal.h"
 
@@ -42,10 +43,13 @@ extern "C" {
 void us_internal_free_closed_sockets(struct us_loop_t*);
 }
 
+namespace fs = std::filesystem;
+
 namespace drake {
 namespace geometry {
 namespace {
 
+using internal::FileStorage;
 using math::RigidTransformd;
 using math::RotationMatrixd;
 
@@ -93,16 +97,45 @@ fetch("data:application/octet-binary;base64,{}")
 
 class SceneTreeElement {
  public:
-  // Member access methods (object_, transform_, and properties_ should be
-  // effectively public).
-  const std::optional<std::string>& object() const { return object_; }
-  std::optional<std::string>& object() { return object_; }
-  const std::optional<std::string>& transform() const { return transform_; }
-  std::optional<std::string>& transform() { return transform_; }
-  const std::map<std::string, std::string>& properties() const {
-    return properties_;
-  }
-  std::map<std::string, std::string>& properties() { return properties_; }
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(SceneTreeElement);
+
+  SceneTreeElement() = default;
+
+  /* Each SceneTreeElement stores the set of messages that would re-create it
+  from scratch. Some of those messages might refer to asset files. This struct
+  stores the message bytes alongside any asset handles that the message refers
+  to, so it's easier to keep the two pieces in sync. */
+  struct Message {
+    DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(Message);
+
+    Message() = default;
+
+    /* Convenience operator to assign to `bytes` (and therefore, clear any
+    `assets` used by the prior value of bytes). The assets are unconditionally
+    cleared -- even if `new_bytes` is the same as the prior `bytes. */
+    Message& operator=(std::string&& new_bytes) {
+      bytes = std::move(new_bytes);
+      assets.clear();
+      return *this;
+    }
+
+    /* The packed command message that conveys some portion of this
+    SceneTreeElement to meshcat.js. */
+    std::string bytes;
+
+    /* If the message refers to http assets (e.g., image files), then this list
+    is responsible for keeping alive a non-zero reference count for those
+    file(s) in our in-memory storage. */
+    std::vector<std::shared_ptr<const FileStorage::Handle>> assets;
+  };
+
+  // Provide direct access to all member fields except the list of children.
+  const std::optional<Message>& object() const { return object_; }
+  std::optional<Message>& object() { return object_; }
+  const std::optional<Message>& transform() const { return transform_; }
+  std::optional<Message>& transform() { return transform_; }
+  const std::map<std::string, Message>& properties() const { return props_; }
+  std::map<std::string, Message>& properties() { return props_; }
 
   // Returns this element or a descendant, based on a recursive evaluation of
   // the `path`.  Adds new elements if they do not exist.  Comparable to
@@ -176,13 +209,13 @@ class SceneTreeElement {
   // Sends the entire tree on `ws`.
   void Send(WebSocket* ws) {
     if (object_) {
-      ws->send(*object_);
+      ws->send(object_->bytes);
     }
     if (transform_) {
-      ws->send(*transform_);
+      ws->send(transform_->bytes);
     }
-    for (const auto& [_, msg] : properties_) {
-      ws->send(msg);
+    for (const auto& [_, property] : props_) {
+      ws->send(property.bytes);
     }
 
     for (const auto& [_, child] : children_) {
@@ -193,17 +226,19 @@ class SceneTreeElement {
   // Returns a string which implements the entire tree directly in javascript.
   // This is intended for use in generating a "static html" of the scene.
   std::string CreateCommands() const {
+    // N.B. The string::operator+= here might look like a performance problem,
+    // but string appending actually uses exponential growth (i.e., similar to
+    // how std::vector<char> works) so the overhead here is not bad.
     std::string html;
     if (object_) {
-      html += CreateCommand(*object_);
+      html += CreateCommand(object_->bytes);
     }
     if (transform_) {
-      html += CreateCommand(*transform_);
+      html += CreateCommand(transform_->bytes);
     }
-    for (const auto& [_, msg] : properties_) {
-      html += CreateCommand(msg);
+    for (const auto& [_, property] : props_) {
+      html += CreateCommand(property.bytes);
     }
-
     for (const auto& [_, child] : children_) {
       html += child->CreateCommands();
     }
@@ -215,25 +250,34 @@ class SceneTreeElement {
   // not been set, and therefore need not be sent over the websocket.
 
   // The msgpack'd set_object command.
-  std::optional<std::string> object_{std::nullopt};
+  std::optional<Message> object_;
   // The msgpack'd set_transform command.
-  std::optional<std::string> transform_{std::nullopt};
+  std::optional<Message> transform_;
   // The msgpack'd set_property command(s).
-  std::map<std::string, std::string> properties_{};
+  std::map<std::string, Message> props_;
   // Children, with the key value denoting their (relative) path name.
-  std::map<std::string, std::unique_ptr<SceneTreeElement>> children_{};
+  std::map<std::string, std::unique_ptr<SceneTreeElement>> children_;
 };
 
 class MeshcatShapeReifier : public ShapeReifier {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(MeshcatShapeReifier);
 
-  explicit MeshcatShapeReifier(internal::UuidGenerator* uuid_generator)
-      : uuid_generator_(*uuid_generator) {
+  MeshcatShapeReifier(internal::UuidGenerator* uuid_generator,
+                      FileStorage* file_storage)
+      : uuid_generator_(*uuid_generator), file_storage_(*file_storage) {
     DRAKE_DEMAND(uuid_generator != nullptr);
+    DRAKE_DEMAND(file_storage != nullptr);
   }
 
   ~MeshcatShapeReifier() = default;
+
+  // This encapsulates the "return value" of the reifier. The `void*` argument
+  // to ImplementGeometry() should always be passed as this type.
+  struct Output {
+    internal::LumpedObjectData& lumped;
+    std::vector<std::shared_ptr<const FileStorage::Handle>>& assets;
+  };
 
   using ShapeReifier::ImplementGeometry;
 
@@ -242,7 +286,8 @@ class MeshcatShapeReifier : public ShapeReifier {
   void ImplementMesh(const std::string& filename, const std::string& extension,
                      double scale, void* data) {
     DRAKE_DEMAND(data != nullptr);
-    auto& lumped = *static_cast<internal::LumpedObjectData*>(data);
+    auto& output = *static_cast<Output*>(data);
+    auto& lumped = output.lumped;
     // TODO(russt): Use file contents to generate the uuid, and avoid resending
     // meshes unless necessary.  Using the filename is tempting, but that leads
     // to problems when the file contents change on disk.
@@ -338,6 +383,8 @@ class MeshcatShapeReifier : public ShapeReifier {
             filename, mtllib, (basedir / mtllib).string());
       }
     } else if (format == "gltf") {
+      output.assets =
+          internal::UnbundleGltfAssets(filename, &mesh_data, &file_storage_);
       auto& meshfile_object =
           lumped.object.emplace<internal::MeshfileObjectData>();
       meshfile_object.uuid = uuid_generator_.GenerateRandom();
@@ -379,7 +426,7 @@ class MeshcatShapeReifier : public ShapeReifier {
     }
 
     // Set the scale.
-    std::visit(
+    visit_overloaded<void>(
         overloaded{[](std::monostate) {},
                    [scale](auto& lumped_object) {
                      Eigen::Map<Eigen::Matrix4d> matrix(lumped_object.matrix);
@@ -392,7 +439,8 @@ class MeshcatShapeReifier : public ShapeReifier {
 
   void ImplementGeometry(const Box& box, void* data) override {
     DRAKE_DEMAND(data != nullptr);
-    auto& lumped = *static_cast<internal::LumpedObjectData*>(data);
+    auto& output = *static_cast<Output*>(data);
+    auto& lumped = output.lumped;
     lumped.object = internal::MeshData();
 
     auto geometry = std::make_unique<internal::BoxGeometryData>();
@@ -406,7 +454,8 @@ class MeshcatShapeReifier : public ShapeReifier {
 
   void ImplementGeometry(const Capsule& capsule, void* data) override {
     DRAKE_DEMAND(data != nullptr);
-    auto& lumped = *static_cast<internal::LumpedObjectData*>(data);
+    auto& output = *static_cast<Output*>(data);
+    auto& lumped = output.lumped;
     auto& mesh = lumped.object.emplace<internal::MeshData>();
 
     auto geometry = std::make_unique<internal::CapsuleGeometryData>();
@@ -427,7 +476,8 @@ class MeshcatShapeReifier : public ShapeReifier {
 
   void ImplementGeometry(const Cylinder& cylinder, void* data) override {
     DRAKE_DEMAND(data != nullptr);
-    auto& lumped = *static_cast<internal::LumpedObjectData*>(data);
+    auto& output = *static_cast<Output*>(data);
+    auto& lumped = output.lumped;
     auto& mesh = lumped.object.emplace<internal::MeshData>();
 
     auto geometry = std::make_unique<internal::CylinderGeometryData>();
@@ -446,7 +496,8 @@ class MeshcatShapeReifier : public ShapeReifier {
   void ImplementGeometry(const Ellipsoid& ellipsoid, void* data) override {
     // Implemented as a Sphere stretched by a diagonal transform.
     DRAKE_DEMAND(data != nullptr);
-    auto& lumped = *static_cast<internal::LumpedObjectData*>(data);
+    auto& output = *static_cast<Output*>(data);
+    auto& lumped = output.lumped;
     auto& mesh = lumped.object.emplace<internal::MeshData>();
 
     auto geometry = std::make_unique<internal::SphereGeometryData>();
@@ -472,7 +523,8 @@ class MeshcatShapeReifier : public ShapeReifier {
 
   void ImplementGeometry(const MeshcatCone& cone, void* data) override {
     DRAKE_DEMAND(data != nullptr);
-    auto& lumped = *static_cast<internal::LumpedObjectData*>(data);
+    auto& output = *static_cast<Output*>(data);
+    auto& lumped = output.lumped;
     auto& mesh = lumped.object.emplace<internal::MeshData>();
 
     auto geometry = std::make_unique<internal::CylinderGeometryData>();
@@ -494,7 +546,8 @@ class MeshcatShapeReifier : public ShapeReifier {
 
   void ImplementGeometry(const Sphere& sphere, void* data) override {
     DRAKE_DEMAND(data != nullptr);
-    auto& lumped = *static_cast<internal::LumpedObjectData*>(data);
+    auto& output = *static_cast<Output*>(data);
+    auto& lumped = output.lumped;
     lumped.object = internal::MeshData();
 
     auto geometry = std::make_unique<internal::SphereGeometryData>();
@@ -505,6 +558,7 @@ class MeshcatShapeReifier : public ShapeReifier {
 
  private:
   internal::UuidGenerator& uuid_generator_;
+  FileStorage& file_storage_;
 };
 
 int ToMeshcatColor(const Rgba& rgba) {
@@ -764,8 +818,11 @@ class Meshcat::Impl {
     // them again for efficiency. We don't want to send meshes over the network
     // (which could be from the cloud to a local browser) more than necessary.
 
-    MeshcatShapeReifier reifier(&uuid_generator_);
-    shape.Reify(&reifier, &data.object);
+    MeshcatShapeReifier reifier(&uuid_generator_, &file_storage_);
+    std::vector<std::shared_ptr<const FileStorage::Handle>> assets;
+    MeshcatShapeReifier::Output reifier_output{.lumped = data.object,
+                                               .assets = assets};
+    shape.Reify(&reifier, &reifier_output);
 
     if (std::holds_alternative<std::monostate>(data.object.object)) {
       // Then this shape is not supported, and I should not send the message,
@@ -801,7 +858,7 @@ class Meshcat::Impl {
       data.object.material = std::move(material);
     }
 
-    Defer([this, data = std::move(data)]() {
+    Defer([this, data = std::move(data), assets = std::move(assets)]() {
       DRAKE_DEMAND(IsThread(websocket_thread_id_));
       DRAKE_DEMAND(app_ != nullptr);
       std::stringstream message_stream;
@@ -812,7 +869,8 @@ class Meshcat::Impl {
       std::string message = message_stream.str();
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
-      e.object() = std::move(message);
+      e.object().emplace() = std::move(message);
+      e.object()->assets = std::move(assets);
     });
   }
 
@@ -855,7 +913,7 @@ class Meshcat::Impl {
       std::string message = message_stream.str();
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
-      e.object() = std::move(message);
+      e.object().emplace() = std::move(message);
     });
   }
 
@@ -938,7 +996,7 @@ class Meshcat::Impl {
       std::string message = message_stream.str();
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
-      e.object() = std::move(message);
+      e.object().emplace() = std::move(message);
     });
   }
 
@@ -984,7 +1042,7 @@ class Meshcat::Impl {
       std::string message = message_stream.str();
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
-      e.object() = std::move(message);
+      e.object().emplace() = std::move(message);
     });
   }
 
@@ -1031,7 +1089,7 @@ class Meshcat::Impl {
       std::string message = message_stream.str();
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
-      e.object() = std::move(message);
+      e.object().emplace() = std::move(message);
     });
   }
 
@@ -1055,7 +1113,7 @@ class Meshcat::Impl {
       std::string message = message_stream.str();
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
-      e.object() = std::move(message);
+      e.object().emplace() = std::move(message);
     });
   }
 
@@ -1083,7 +1141,7 @@ class Meshcat::Impl {
       std::string message = message_stream.str();
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
-      e.transform() = std::move(message);
+      e.transform().emplace() = std::move(message);
     });
   }
 
@@ -1125,6 +1183,44 @@ class Meshcat::Impl {
       app_->publish("all", message, uWS::OpCode::BINARY, false);
       SceneTreeElement& e = scene_tree_root_[data.path];
       e.properties()[data.property] = std::move(message);
+    });
+  }
+
+  // Sets the `property` of `path` to a CAS URL that refers to `file_path`. The
+  // file is copied into memory (in `file_storage_`) so that our HTTP server can
+  // serve it anytime a browser requests it.
+  //
+  // This function is a file-internal helper, not public in the PIMPL.
+  void SetPropertyToFile(std::string_view path, std::string property,
+                         const fs::path& file_path) {
+    DRAKE_DEMAND(IsThread(main_thread_id_));
+
+    // Read the file and insert it into the database.
+    std::optional<std::string> content = ReadFile(file_path);
+    if (!content) {
+      throw std::runtime_error(fmt::format(
+          "Cannot open '{}' when attempting to set property '{}' on '{}'",
+          file_path.string(), property, path));
+    }
+    std::shared_ptr<const FileStorage::Handle> asset =
+        file_storage_.Insert(std::move(*content), file_path.string());
+
+    internal::SetPropertyData<std::string> data;
+    data.path = FullPath(path);
+    data.property = std::move(property);
+    data.value = FileStorage::GetCasUrl(*asset);
+
+    Defer([this, data = std::move(data), asset = std::move(asset)]() {
+      DRAKE_DEMAND(IsThread(websocket_thread_id_));
+      DRAKE_DEMAND(app_ != nullptr);
+      std::stringstream message_stream;
+      msgpack::pack(message_stream, data);
+      std::string message = message_stream.str();
+      app_->publish("all", message, uWS::OpCode::BINARY, false);
+      SceneTreeElement& e = scene_tree_root_[data.path];
+      SceneTreeElement::Message& m = e.properties()[data.property];
+      m.bytes = std::move(message);
+      m.assets = {std::move(asset)};
     });
   }
 
@@ -1561,18 +1657,42 @@ class Meshcat::Impl {
       html.insert(js_pos + 1, url_data);
     }
 
+    // Insert a JavaScript URL hook that knows how to serve the CAS database.
+    // (See FileStorage and GetCasUrl for details about CAS.)
+    std::string javascript("casAssets = {};\n");
+    std::vector<std::shared_ptr<const FileStorage::Handle>> assets =
+        file_storage_.DumpEverything();
+    for (const auto& asset : assets) {
+      javascript += fmt::format("// {}\n", asset->filename_hint);
+      javascript += fmt::format(
+          "casAssets[\"{}\"] = "
+          "\"data:application/octet-binary;base64,{}\";\n",
+          FileStorage::GetCasUrl(*asset),
+          common_robotics_utilities::base64_helpers::Encode(
+              std::vector<uint8_t>(asset->content.begin(),
+                                   asset->content.end())));
+    }
+    javascript += R"""(
+        MeshCat.THREE.DefaultLoadingManager.setURLModifier(url => {
+            if (url in casAssets) {
+                return casAssets[url];
+            }
+            return url;
+        });
+)""";
+
     // Replace the javascript code in the original html file which connects via
     // websockets with the static javascript commands.
-    std::string commands = scene_tree_root_.CreateCommands();
+    javascript += scene_tree_root_.CreateCommands();
     if (!animation_.empty()) {
-      commands += CreateCommand(animation_);
+      javascript += CreateCommand(animation_);
     }
     if (!camera_target_message_.empty()) {
-      commands += CreateCommand(camera_target_message_);
+      javascript += CreateCommand(camera_target_message_);
     }
     std::regex block_re(
         "<!-- CONNECTION BLOCK BEGIN [^]+ CONNECTION BLOCK END -->\n");
-    html = std::regex_replace(html, block_re, commands);
+    html = std::regex_replace(html, block_re, javascript);
 
     return html;
   }
@@ -1611,11 +1731,11 @@ class Meshcat::Impl {
     Defer([this, path = FullPath(path), p = std::move(p)]() mutable {
       DRAKE_DEMAND(IsThread(websocket_thread_id_));
       const SceneTreeElement* e = scene_tree_root_.Find(path);
-      if (!e || !e->object()) {
-        p.set_value("");
-      } else {
-        p.set_value(*e->object());
+      std::string value;
+      if ((e != nullptr) && e->object().has_value()) {
+        value = e->object().value().bytes;
       }
+      p.set_value(std::move(value));
     });
     return f.get();
   }
@@ -1629,11 +1749,11 @@ class Meshcat::Impl {
     Defer([this, path = FullPath(path), p = std::move(p)]() mutable {
       DRAKE_DEMAND(IsThread(websocket_thread_id_));
       const SceneTreeElement* e = scene_tree_root_.Find(path);
-      if (!e || !e->transform()) {
-        p.set_value("");
-      } else {
-        p.set_value(*e->transform());
+      std::string value;
+      if ((e != nullptr) && e->transform().has_value()) {
+        value = e->transform().value().bytes;
       }
+      p.set_value(std::move(value));
     });
     return f.get();
   }
@@ -1649,16 +1769,14 @@ class Meshcat::Impl {
            p = std::move(p)]() mutable {
       DRAKE_DEMAND(IsThread(websocket_thread_id_));
       const SceneTreeElement* e = scene_tree_root_.Find(path);
-      if (!e) {
-        p.set_value("");
-      } else {
+      std::string value;
+      if (e != nullptr) {
         auto prop = e->properties().find(property);
-        if (prop == e->properties().end()) {
-          p.set_value("");
-        } else {
-          p.set_value(prop->second);
+        if (prop != e->properties().end()) {
+          value = prop->second.bytes;
         }
       }
+      p.set_value(std::move(value));
     });
     return f.get();
   }
@@ -1918,6 +2036,35 @@ class Meshcat::Impl {
       response->end(content);
       return;
     }
+    // Handle content-addressable storage. This must align with GetCasUrl() in
+    // FileStorage so if you change it be sure to change both places.
+    if (url_path.substr(0, 8) == "/cas-v1-") {
+      const std::string_view suffix = url_path.substr(8);
+      std::optional<Sha256> key = Sha256::Parse(suffix);
+      if (!key.has_value()) {
+        drake::log()->warn("Meshcat: Malformed CAS key {}", suffix);
+        response->writeStatus("400 Unparseable CAS key");
+        response->end("");
+        return;
+      }
+      std::shared_ptr<const FileStorage::Handle> handle =
+          file_storage_.Find(*key);
+      if (handle == nullptr) {
+        drake::log()->warn(
+            "Meshcat: Unknown CAS key {} (there are {} assets in the cache)",
+            suffix, file_storage_.size());
+        response->writeStatus("404 CAS key not found");
+        response->writeHeader("Cache-Control", "no-cache");
+        response->end("");
+        return;
+      }
+      response->writeHeader("Meshcat-Cas-Filename", handle->filename_hint);
+      // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control#immutable
+      response->writeHeader("Cache-Control",
+                            "public, max-age=604800, immutable");
+      response->end(handle->content);
+      return;
+    }
     // Handle static (i.e., compiled-in) files.
     if (const std::optional<std::string_view> content =
             internal::GetMeshcatStaticResource(url_path)) {
@@ -1932,7 +2079,7 @@ class Meshcat::Impl {
     // Unknown URL.
     log()->warn("Meshcat: Failed http request for unknown URL {}", url_path);
     response->writeStatus("404 Not Found");
-    response->writeHeader("Cache-Control:", "no-cache");
+    response->writeHeader("Cache-Control", "no-cache");
     response->end("");
   }
 
@@ -2101,6 +2248,9 @@ class Meshcat::Impl {
   // This variable may be accessed from any thread, but should only be modified
   // in the websocket thread.
   std::atomic<int> num_websockets_{0};
+
+  // This variable may be accessed from any thread. It has an internal mutex.
+  FileStorage file_storage_;
 
   // The loop_ pointer is used to pass functors from the main thread into the
   // websocket worker thread, via loop_->defer(...). See the documentation of
@@ -2415,36 +2565,13 @@ void Meshcat::SetProperty(std::string_view path, std::string property,
 }
 
 void Meshcat::SetEnvironmentMap(const std::filesystem::path& image_path) {
-  // We broadcast the image to Meshcat as a base64-encoded data URL. So, we
-  // need to determine its mime type (from extension) and encode the image
-  // contents. We have a stated prereq that the file is actually an image, So,
-  // we're not even validating the extension. In the case of a bad extension or
-  // bad file contents, we defer to meshcat to report problems in the browser.
-  std::string ext = image_path.extension();
-  std::string image_encoding = "";
-  if (ssize(ext) > 1) {
-    ext = ext.substr(1);
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
-      return std::tolower(c);
-    });
-    std::ifstream map_stream(image_path, std::ios::binary | std::ios::ate);
-    if (map_stream.is_open()) {
-      int map_size = map_stream.tellg();
-      map_stream.seekg(0, std::ios::beg);
-      std::vector<uint8_t> map_data;
-      map_data.reserve(map_size);
-      map_data.assign(std::istreambuf_iterator<char>(map_stream),
-                      std::istreambuf_iterator<char>());
-      image_encoding =
-          fmt::format("data:image/{};base64,", ext) +
-          common_robotics_utilities::base64_helpers::Encode(map_data);
-    } else {
-      throw std::runtime_error(
-          fmt::format("Requested environment map cannot be read: '{}'.",
-                      image_path.string()));
-    }
+  const std::string_view property_path = "/Background/<object>";
+  const std::string property_name = "environment_map";
+  if (image_path.empty()) {
+    impl().SetProperty(property_path, property_name, std::string{});
+  } else {
+    impl().SetPropertyToFile(property_path, property_name, image_path);
   }
-  impl().SetProperty("/Background/<object>", "environment_map", image_encoding);
 }
 
 void Meshcat::SetAnimation(const MeshcatAnimation& animation) {
