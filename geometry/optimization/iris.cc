@@ -19,6 +19,7 @@
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/ipopt_solver.h"
 #include "drake/solvers/snopt_solver.h"
+#include "drake/solvers/solve.h"
 
 namespace drake {
 namespace geometry {
@@ -630,16 +631,15 @@ Eigen::VectorXd SampleFromEllipsoid(const Eigen::MatrixXd& A, RandomGenerator* g
 }  // namespace
 
 namespace {
-std::pair<Eigen::VectorXd, int> CollisionLineSearch(MultibodyPlant<double>& plant,
-      const Context<double>& context, const std::vector<GeometryPairWithDistance>& sorted_pairs, const HPolyhedron& P, const Eigen::VectorXd& center, const Eigen::VectorXd& direction, const int num_steps = 100) {
+std::pair<Eigen::VectorXd, int> CollisionLineSearch(const MultibodyPlant<double>& plant, Context<double>* context,const std::vector<GeometryPairWithDistance>& sorted_pairs, const HPolyhedron& P, const Eigen::VectorXd& center, const Eigen::VectorXd& direction, const int num_steps = 100) {
   // Find where line hits polytope.
   MathematicalProgram prog;
-  d = prog.NewContinuousVariables(1);
-  prog.AddLinearCost(-d); // Maximize distance along direction.
-  x = prog.NewContinuousVariables(direction.size());
-  prog.AddLinearConstraint(center + d * direction - x); // x is distance d from center, along direction.
-  P.AddPointInSetConstraints(prog, x);
-  result = prog.Solve();
+  solvers::VectorXDecisionVariable d = prog.NewContinuousVariables(1);
+  prog.AddLinearCost(-d[0]); // Maximize distance along direction.
+  solvers::VectorXDecisionVariable x = prog.NewContinuousVariables(direction.size());
+  prog.AddLinearEqualityConstraint(center + d * direction - x, Eigen::VectorXd::Zero(P.ambient_dimension())); // x is distance d from center, along direction.
+  P.AddPointInSetConstraints(&prog, x);
+  auto result = solvers::Solve(prog);
   double d_max = - result.get_optimal_cost();
 
   // Do a line search for closest collision to center, along direction vector.
@@ -648,14 +648,16 @@ std::pair<Eigen::VectorXd, int> CollisionLineSearch(MultibodyPlant<double>& plan
   // VectorXd collision_configuration(P.ambient_dimension());
   VectorXd collision_configuration = Eigen::VectorXd::Zero(P.ambient_dimension());
   while (i < num_steps && pair_in_collision < 0) {
-    const VectorXd configuration = center + ((i + 1) * closest_collision_distance / num_steps) * direction;
+    const Eigen::VectorXd configuration = center + ((i + 1) * d_max / num_steps) * direction;
     int i_pair = 0;
     for (const auto& pair : sorted_pairs) {
-      Context<double>& mutable_context =
-          plant.GetMyMutableContextFromRoot(context);
-      plant.SetPositions(&mutable_context, configuration);
+      // Context<double>& mutable_context =
+      //     plant.GetMyMutableContextFromRoot(const_cast<Context<double>*>(context));
+      // auto mutable_state = symbolic_context_.get_mutable_state();
+      plant.SetPositions(context, configuration);
+      // plant.SetPositions(context.get(), configuration);
       auto query_object =
-          plant.get_geometry_query_input_port().Eval<QueryObject<double>>(mutable_context);
+          plant.get_geometry_query_input_port().Eval<QueryObject<double>>(context);
       const double distance =
       query_object.ComputeSignedDistancePairClosestPoints(pair.geomA, pair.geomB)
           .distance;
@@ -668,7 +670,7 @@ std::pair<Eigen::VectorXd, int> CollisionLineSearch(MultibodyPlant<double>& plan
     }
     ++i;
   }
-  return std::make_pair(collision_configuration, pair_in_collision)
+  return std::make_pair(collision_configuration, pair_in_collision);
 }
 }  // namespace
 
@@ -834,6 +836,9 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
   auto solver = solvers::MakeFirstAvailableSolver(
       {solvers::SnoptSolver::id(), solvers::IpoptSolver::id()});
 
+
+  auto mutable_context = plant.CreateDefaultContext();
+  mutable_context->SetTimeStateAndParametersFrom(context);
   while (true) {
     int num_constraints = num_initial_constraints;
     bool sample_point_requirement = true;
@@ -874,14 +879,20 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
 
     if (!sample_point_requirement) break;
 
-    int consecutive_failures = 0;
-    while (consecutive_failures < options.num_collision_infeasible_samples) {
-      Eigen::VectorXd direction = SampleFromEllipsoid(E.A(), generator);
-      std::pair<Eigen::VectorXd, int> closest_collision_info = CollisionLineSearch(plant, context, sorted_pairs, P_candidate, E.center(), direction);
+    int consecutive__sample_failures = 0;
+    
+    
+    while (consecutive__sample_failures < options.num_collision_infeasible_samples) {
+      Eigen::VectorXd direction = SampleFromEllipsoid(E.A(), &generator);
+      
+      std::pair<Eigen::VectorXd, int> closest_collision_info = CollisionLineSearch(plant, mutable_context.get(), sorted_pairs, P_candidate, E.center(), direction);
       Eigen::VectorXd collision_configuration = closest_collision_info.first;
       int collision_pair_index = closest_collision_info.second;
+      auto pair_iterator = std::next(sorted_pairs.begin(), collision_pair_index);
+      const auto collision_pair = *pair_iterator;
       if (collision_pair_index >= 0) { // pair is actually in collision
-        const auto collision_pair = pairs[collision_pair_index];
+        // const auto collision_pair = pairs[collision_pair_index];
+        
         ClosestCollisionProgram prog(
           same_point_constraint, *frames.at(collision_pair.geomA), *frames.at(collision_pair.geomB),
           *sets.at(collision_pair.geomA), *sets.at(collision_pair.geomB), E,
@@ -900,10 +911,10 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
             prog.UpdatePolytope(A.topRows(num_constraints),
                                 b.head(num_constraints));
         } else {
-          log()->info("seeded SNOPT with feasible guess but did not get feasible soln") // TODO(rhjiang) remove after debugging
+          log()->info("seeded SNOPT with feasible guess but did not get feasible soln"); // TODO(rhjiang) remove after debugging
         }
       } else {
-        ++consecutive_failures;
+        ++consecutive__sample_failures;
       }
     }
 
