@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -163,8 +164,23 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
   /// @see System<T>::get_name()
   template <template <typename> class MySystem>
   const MySystem<T>& GetDowncastSubsystemByName(std::string_view name) const {
+    return GetDowncastSubsystemByName<MySystem<T>>(name);
+  }
+
+  /// Alternate signature for a subsystem that has the Diagram's scalar type T
+  /// but is not explicitly templatized on T. This can happen if the
+  /// subsystem class declaration inherits, for example, from a `LeafSystem<T>`.
+  /// @pre The Scalar type of MyUntemplatizedSystem matches the %Diagram
+  ///      Scalar type T (will fail to compile if not).
+  template <class MyUntemplatizedSystem>
+  const MyUntemplatizedSystem& GetDowncastSubsystemByName(std::string_view name)
+      const {
+    static_assert(std::is_same_v<
+        typename MyUntemplatizedSystem::Scalar, T>,
+        "Scalar type of untemplatized System doesn't match the Diagram's.");
     const System<T>& subsystem = this->GetSubsystemByName(name);
-    return *dynamic_pointer_cast_or_throw<const MySystem<T>>(&subsystem);
+    return *dynamic_pointer_cast_or_throw<const MyUntemplatizedSystem>
+        (&subsystem);
   }
 
   /// Retrieves the state derivatives for a particular subsystem from the
@@ -215,25 +231,6 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
   /// diagram.
   const State<T>& GetSubsystemState(const System<T>& subsystem,
                                     const State<T>& state) const;
-
-  //----------------------------------------------------------------------------
-  /// @name                      Graphviz methods
-  //@{
-
-  /// Returns a Graphviz fragment describing this Diagram. To obtain a complete
-  /// Graphviz graph, call System<T>::GetGraphvizString.
-  void GetGraphvizFragment(int max_depth,
-                           std::stringstream* dot) const override;
-
-  void GetGraphvizInputPortToken(const InputPort<T>& port,
-                                 int max_depth,
-                                 std::stringstream* dot) const final;
-
-  void GetGraphvizOutputPortToken(const OutputPort<T>& port,
-                                  int max_depth,
-                                  std::stringstream* dot) const final;
-
-  //@}
 
   /// Returns the index of the given @p sys in this diagram, or aborts if @p sys
   /// is not a member of the diagram.
@@ -359,6 +356,18 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
       const std::type_info& source_type,
       const std::type_info& destination_type) const final;
 
+#ifndef DRAKE_DOXYGEN_CXX
+  // Bring these into scope, to avoid a lot of extra syntax.
+  using GraphvizFragment = typename System<T>::GraphvizFragment;
+  using GraphvizFragmentParams = typename System<T>::GraphvizFragmentParams;
+#endif
+
+  /// The NVI implementation of SystemBase::GetGraphvizFragment() for subclasses
+  /// to override if desired. The default behavior should be sufficient in most
+  /// cases.
+  GraphvizFragment DoGetGraphvizFragment(
+      const GraphvizFragmentParams& params) const override;
+
  private:
   std::unique_ptr<AbstractValue> DoAllocateInput(
       const InputPort<T>& input_port) const final;
@@ -385,8 +394,13 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
   const SystemBase& GetRootSystemBase() const final;
 
   // Returns true if there might be direct feedthrough from the given
-  // @p input_port of the Diagram to the given @p output_port of the Diagram.
-  bool DiagramHasDirectFeedthrough(int input_port, int output_port) const;
+  // `input_port` of the Diagram to the given `output_port` of the Diagram.
+  // The `memoize` dictionary caches the subsystem's reported feedthrough,
+  // to accelerate repeated calls to this function.
+  bool DiagramHasDirectFeedthrough(
+      int input_port, int output_port,
+      std::unordered_map<const System<T>*, std::multimap<int, int>>* memoize)
+      const;
 
   // Allocates a collection of homogeneous events (e.g., publish events) for
   // this Diagram.
@@ -404,7 +418,7 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
   // For each subsystem, if there is a publish event in its corresponding
   // subevent collection, calls its Publish method with the appropriate
   // subcontext and subevent collection.
-  void DispatchPublishHandler(
+  [[nodiscard]] EventStatus DispatchPublishHandler(
       const Context<T>& context,
       const EventCollection<PublishEvent<T>>& event_info) const final;
 
@@ -412,7 +426,7 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
   // corresponding subevent collection, calls its CalcDiscreteVariableUpdate()
   // method with the appropriate subcontext, subevent collection and
   // substate.
-  void DispatchDiscreteVariableUpdateHandler(
+  [[nodiscard]] EventStatus DispatchDiscreteVariableUpdateHandler(
       const Context<T>& context,
       const EventCollection<DiscreteUpdateEvent<T>>& events,
       DiscreteValues<T>* discrete_state) const final;
@@ -424,7 +438,7 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
   // For each subsystem, if there is an unrestricted update event in its
   // corresponding subevent collection, calls its CalcUnrestrictedUpdate
   // method with the appropriate subcontext, subevent collection and substate.
-  void DispatchUnrestrictedUpdateHandler(
+  [[nodiscard]] EventStatus DispatchUnrestrictedUpdateHandler(
       const Context<T>& context,
       const EventCollection<UnrestrictedUpdateEvent<T>>& events,
       State<T>* state) const final;
@@ -563,6 +577,9 @@ class Diagram : public System<T>, internal::SystemParentServiceInterface {
   bool NamesAreUniqueAndNonEmpty() const;
 
   int num_subsystems() const;
+
+  // Sugar to bring SystemBase::GetGraphvizPortLabels() into scope.
+  std::vector<std::string> GetGraphvizPortLabels(bool input) const;
 
   // A map from the input ports of constituent systems, to the output ports of
   // the systems from which they get their values.

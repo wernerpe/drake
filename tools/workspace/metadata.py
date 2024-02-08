@@ -37,7 +37,6 @@ def read_repository_metadata(repositories=None):
 
         # These are starlark deps, so don't show up in the query.
         repositories.add("bazel_skylib")
-        repositories.add("rules_pkg")
 
     # Make sure all of the repository_rule results are up-to-date.
     subprocess.check_call(["bazel", "fetch", "//..."])
@@ -52,5 +51,18 @@ def read_repository_metadata(repositories=None):
                 result[data["name"]] = data
         except IOError:
             pass
+
+    # Add 'magic' metadata for repositories that don't/can't generate it the
+    # usual way.
+    result["crate_universe"] = {
+        "repository_rule_type": "scripted",
+        "upgrade_script": "upgrade.sh",
+        "downloads": {},
+    }
+    result["rust_toolchain"] = {
+        "repository_rule_type": "scripted",
+        "upgrade_script": "upgrade.py",
+        "downloads": {},
+    }
 
     return result

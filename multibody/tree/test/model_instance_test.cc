@@ -2,6 +2,7 @@
 
 #include "drake/common/eigen_types.h"
 #include "drake/common/test_utilities/eigen_matrix_compare.h"
+#include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/multibody/tree/multibody_tree-inl.h"
 #include "drake/multibody/tree/multibody_tree_system.h"
 #include "drake/multibody/tree/prismatic_joint.h"
@@ -10,6 +11,13 @@
 namespace drake {
 namespace multibody {
 namespace {
+
+GTEST_TEST(ModelInstance, MissingName) {
+  const std::string empty_name;
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      internal::ModelInstance<double>(ModelInstanceIndex{1}, empty_name),
+      ".*name.*empty.*");
+}
 
 GTEST_TEST(ModelInstance, ModelInstanceTest) {
   // Create a tree with enough bodies to make two models, one with a
@@ -26,10 +34,12 @@ GTEST_TEST(ModelInstance, ModelInstanceTest) {
   const RigidBody<double>& body3 =
       tree.AddRigidBody("Body3", instance1, SpatialInertia<double>());
 
-  tree.AddJoint<WeldJoint>(
+  const auto& weld1 = tree.AddJoint<WeldJoint>(
       "weld1", tree.world_body(), math::RigidTransformd::Identity(),
       body1, math::RigidTransformd::Identity(),
       math::RigidTransformd::Identity());
+  EXPECT_EQ(weld1.frame_on_parent().model_instance(), instance1);
+  EXPECT_EQ(weld1.frame_on_child().model_instance(), instance1);
   // Test minimal `AddJoint` overload.
   const Joint<double>& body1_body2 =
       tree.AddJoint(
@@ -156,6 +166,36 @@ GTEST_TEST(ModelInstance, ModelInstanceTest) {
   EXPECT_EQ(tree_ad->num_positions(instance2), 8);
   EXPECT_EQ(tree_ad->num_velocities(instance2), 7);
   EXPECT_EQ(tree_ad->num_actuated_dofs(instance2), 1);
+}
+
+GTEST_TEST(ModelInstance, ModelInstanceRenameTest) {
+  auto tree_pointer = std::make_unique<internal::MultibodyTree<double>>();
+  internal::MultibodyTree<double>& tree = *tree_pointer;
+
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      tree.RenameModelInstance(ModelInstanceIndex(99), "invalid"),
+      ".*no model instance id 99.*");
+
+  const ModelInstanceIndex model0 = tree.AddModelInstance("before");
+  EXPECT_EQ(tree.GetModelInstanceName(model0), "before");
+  EXPECT_EQ(tree.GetModelInstanceByName("before"), model0);
+
+  tree.RenameModelInstance(model0, "after");
+  EXPECT_FALSE(tree.HasModelInstanceNamed("before"));
+  EXPECT_EQ(tree.GetModelInstanceName(model0), "after");
+  EXPECT_EQ(tree.GetModelInstanceByName("after"), model0);
+  tree.RenameModelInstance(model0, "after");  // to same name is not an error.
+
+  const ModelInstanceIndex model1 = tree.AddModelInstance("another");
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      tree.RenameModelInstance(model1, "after"),
+      ".*names must be unique.*");
+
+  tree.Finalize();
+
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      tree.RenameModelInstance(model0, "too_late"),
+      ".*is finalized already.*");
 }
 
 }  // namespace

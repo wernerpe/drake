@@ -1,9 +1,7 @@
 # -*- bazel -*-
 
-load(
-    "@drake//tools/install:install.bzl",
-    "install",
-)
+load("@drake//tools/skylark:cc.bzl", "cc_library")
+load("@drake//tools/install:install.bzl", "install")
 
 licenses(["notice"])  # MIT
 
@@ -22,7 +20,6 @@ cc_library(
     name = "stduuid",
     hdrs = ["include/uuid.h"],
     strip_include_prefix = "include",
-    include_prefix = "drake_vendor",
     linkstatic = 1,
     deps = [":gsl"],
 )

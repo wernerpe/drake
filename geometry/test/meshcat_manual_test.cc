@@ -4,9 +4,12 @@
 #include <iostream>
 #include <thread>
 
+#include <gflags/gflags.h>
+
 #include "drake/common/find_resource.h"
 #include "drake/common/find_runfiles.h"
 #include "drake/common/temp_directory.h"
+#include "drake/common/test_utilities/maybe_pause_for_user.h"
 #include "drake/geometry/meshcat.h"
 #include "drake/geometry/meshcat_animation.h"
 #include "drake/geometry/meshcat_visualizer.h"
@@ -25,80 +28,101 @@ then follow the instructions on your console. */
 
 namespace drake {
 namespace geometry {
+namespace {
 
+using common::MaybePauseForUser;
 using Eigen::Vector3d;
 using math::RigidTransformd;
 using math::RotationMatrixd;
 
+// Returns an offset pointer inside message that skips over leading newlines.
+const char* ltrim(const char* message) {
+  while (*message == '\n') {
+    ++message;
+  }
+  return message;
+}
+
 int do_main() {
   auto meshcat = std::make_shared<Meshcat>();
 
-  Vector3d sphere_home{-4, 0, 0};
-  meshcat->SetObject("sphere", Sphere(.25), Rgba(1.0, 0, 0, 1));
+  // For every two items we add to the initial array, decrement start_x by one
+  // to keep things centered.
+  // Use ++x as the x-position of new items.
+  const double start_x = -8;
+  double x = start_x;
+
+  Vector3d sphere_home{++x, 0, 0};
+  meshcat->SetObject("sphere", Sphere(0.25), Rgba(1.0, 0, 0, 1));
   meshcat->SetTransform("sphere", RigidTransformd(sphere_home));
 
-  meshcat->SetObject("cylinder", Cylinder(.25, .5), Rgba(0.0, 1.0, 0, 1));
-  meshcat->SetTransform("cylinder", RigidTransformd(Vector3d{-3, 0, 0}));
+  meshcat->SetObject("cylinder", Cylinder(0.25, 0.5), Rgba(0.0, 1.0, 0, 1));
+  meshcat->SetTransform("cylinder", RigidTransformd(Vector3d{++x, 0, 0}));
 
-  meshcat->SetObject("ellipsoid", Ellipsoid(.25, .25, .5), Rgba(1., 0, 1, .5));
-  meshcat->SetTransform("ellipsoid", RigidTransformd(Vector3d{-2, 0, 0}));
+  // For animation, we'll aim the camera between the cylinder and ellipsoid.
+  const Vector3d animation_target{x + 0.5, 0, 0};
 
-  Vector3d box_home{-1, 0, 0};
-  meshcat->SetObject("box", Box(.25, .25, .5), Rgba(0, 0, 1, 1));
+  meshcat->SetObject("ellipsoid", Ellipsoid(0.25, 0.25, 0.5),
+                     Rgba(1.0, 0, 1, 0.5));
+  meshcat->SetTransform("ellipsoid", RigidTransformd(Vector3d{++x, 0, 0}));
+
+  Vector3d box_home{++x, 0, 0};
+  meshcat->SetObject("box", Box(0.25, 0.25, 0.5), Rgba(0, 0, 1, 1));
   meshcat->SetTransform("box", RigidTransformd(box_home));
 
-  meshcat->SetObject("capsule", Capsule(.25, .5), Rgba(0, 1, 1, 1));
-  meshcat->SetTransform("capsule", RigidTransformd(Vector3d{0, 0, 0}));
+  meshcat->SetObject("capsule", Capsule(0.25, 0.5), Rgba(0, 1, 1, 1));
+  meshcat->SetTransform("capsule", RigidTransformd(Vector3d{++x, 0, 0}));
 
   // Note that height (in z) is the first argument.
-  meshcat->SetObject("cone", MeshcatCone(.5, .25, .5), Rgba(1, 0, 0, 1));
-  meshcat->SetTransform("cone", RigidTransformd(Vector3d{1, 0, 0}));
+  meshcat->SetObject("cone", MeshcatCone(0.5, 0.25, 0.5), Rgba(1, 0, 0, 1));
+  meshcat->SetTransform("cone", RigidTransformd(Vector3d{++x, 0, 0}));
 
-  // The green color of this cube comes from the texture map.
+  // The color and shininess properties come from PBR materials.
   meshcat->SetObject(
-      "obj", Mesh(FindResourceOrThrow(
-                      "drake/geometry/render/test/meshes/box.obj"),
-                  .25));
-  meshcat->SetTransform("obj", RigidTransformd(Vector3d{2, 0, 0}));
+      "gltf",
+      Mesh(FindResourceOrThrow("drake/geometry/render/test/meshes/cube.gltf"),
+           0.25));
+  const Vector3d gltf_pose{++x, 0, 0};
+  meshcat->SetTransform("gltf", RigidTransformd(gltf_pose));
 
   auto mustard_obj =
       FindRunfile("drake_models/ycb/meshes/006_mustard_bottle_textured.obj")
           .abspath;
   meshcat->SetObject("mustard", Mesh(mustard_obj, 3.0));
-  meshcat->SetTransform("mustard", RigidTransformd(Vector3d{3, 0, 0}));
+  meshcat->SetTransform("mustard", RigidTransformd(Vector3d{++x, 0, 0}));
 
   {
     const int kPoints = 100000;
     perception::PointCloud cloud(
         kPoints, perception::pc_flags::kXYZs | perception::pc_flags::kRGBs);
     Eigen::Matrix3Xf m = Eigen::Matrix3Xf::Random(3, kPoints);
-    cloud.mutable_xyzs() = Eigen::DiagonalMatrix<float, 3>{.25, .25, .5} * m;
+    cloud.mutable_xyzs() = Eigen::DiagonalMatrix<float, 3>{0.25, 0.25, 0.5} * m;
     cloud.mutable_rgbs() = (255.0 * (m.array() + 1.0) / 2.0).cast<uint8_t>();
     meshcat->SetObject("point_cloud", cloud, 0.01);
-    meshcat->SetTransform("point_cloud", RigidTransformd(Vector3d{4, 0, 0}));
+    meshcat->SetTransform("point_cloud", RigidTransformd(Vector3d{++x, 0, 0}));
   }
 
   {
     Eigen::Matrix3Xd vertices(3, 200);
     Eigen::RowVectorXd t = Eigen::RowVectorXd::LinSpaced(200, 0, 10 * M_PI);
-    vertices << .25 * t.array().sin(), .25 * t.array().cos(), t / (10 * M_PI);
+    vertices << 0.25 * t.array().sin(), 0.25 * t.array().cos(), t / (10 * M_PI);
     meshcat->SetLine("line", vertices, 3.0, Rgba(0, 0, 1, 1));
-    meshcat->SetTransform("line", RigidTransformd(Vector3d{5, 0, -.5}));
+    meshcat->SetTransform("line", RigidTransformd(Vector3d{++x, 0, -0.5}));
   }
 
   {
     Eigen::Matrix3Xd start(3, 4), end(3, 4);
     // clang-format off
-    start << -.1, -.1,  .1, .1,
-            -.1,  .1, -.1, .1,
-            0, 0, 0, 0;
+    start << -0.1, -0.1,  0.1,  0.1,
+             -0.1,  0.1, -0.1,  0.1,
+                0,    0,    0,    0;
     // clang-format on
     end = start;
     end.row(2) = Eigen::RowVector4d::Ones();
     meshcat->SetLineSegments("line_segments", start, end, 5.0,
                              Rgba(0, 1, 0, 1));
     meshcat->SetTransform("line_segments",
-                          RigidTransformd(Vector3d{6, 0, -.5}));
+                          RigidTransformd(Vector3d{++x, 0, -0.5}));
   }
 
   // The TriangleSurfaceMesh variant of SetObject calls SetTriangleMesh(), so
@@ -111,16 +135,16 @@ int do_main() {
         {0, 0, 0}, {0.5, 0, 0}, {0.5, 0.5, 0}, {0, 0.5, 0.5}};
     std::vector<Vector3d> vertices;
     for (int v = 0; v < 4; ++v) vertices.emplace_back(vertex_data[v]);
-    TriangleSurfaceMesh<double> surface_mesh(
-        std::move(faces), std::move(vertices));
-    meshcat->SetObject("triangle_mesh", surface_mesh, Rgba(.9, 0, .9, 1.0));
+    TriangleSurfaceMesh<double> surface_mesh(std::move(faces),
+                                             std::move(vertices));
+    meshcat->SetObject("triangle_mesh", surface_mesh, Rgba(0.9, 0, 0.9, 1.0));
     meshcat->SetTransform("triangle_mesh",
-                          RigidTransformd(Vector3d{6.75, -.25, 0}));
+                          RigidTransformd(Vector3d{++x, -0.25, 0}));
 
     meshcat->SetObject("triangle_mesh_wireframe", surface_mesh,
-                       Rgba(.9, 0, .9, 1.0), true, 5.0);
+                       Rgba(0.9, 0, 0.9, 1.0), true, 5.0);
     meshcat->SetTransform("triangle_mesh_wireframe",
-                          RigidTransformd(Vector3d{7.75, -.25, 0}));
+                          RigidTransformd(Vector3d{++x, -0.25, 0}));
   }
 
   // SetTriangleColorMesh.
@@ -145,7 +169,7 @@ int do_main() {
     meshcat->SetTriangleColorMesh("triangle_color_mesh", vertices, faces,
                                   colors);
     meshcat->SetTransform("triangle_color_mesh",
-                          RigidTransformd(Vector3d{8.75, -.25, 0}));
+                          RigidTransformd(Vector3d{++x, -0.25, 0}));
   }
 
   // PlotSurface.
@@ -157,14 +181,55 @@ int do_main() {
     // z = y*sin(5*x)
     Eigen::MatrixXd Z = (Y.array() * (5 * X.array()).sin()).matrix();
 
-    meshcat->PlotSurface("plot_surface", X, Y, Z, Rgba(0, 0, .9, 1.0), true);
+    meshcat->PlotSurface("plot_surface", X, Y, Z, Rgba(0, 0, 0.9, 1.0), true);
     meshcat->SetTransform("plot_surface",
-                          RigidTransformd(Vector3d{9.75, -.25, 0}));
+                          RigidTransformd(Vector3d{++x, -0.25, 0}));
   }
 
-  std::cout << R"""(
-Open up your browser to the URL above.
+  std::cout << "\nDo *not* open up your browser to the URL above. Instead use "
+            << "the following URL\n\n"
+            << meshcat->web_url() << "?tracked_camera=on\n\n";
 
+  MaybePauseForUser();
+
+  // Note: this tests that the parameter on the html page is enough to enable
+  // camera tracking. Full camera tracking protocols are tested in
+  // meshcat_camera_tracking_test.py.
+  if (meshcat->GetTrackedCameraPose() == std::nullopt) {
+    std::cout << "Meshcat isn't receiving tracked camera poses from your "
+              << "browser. Are you sure your browser is using the full URL?\n"
+              << "\n    " << meshcat->web_url() << "?tracked_camera=on\n\n"
+              << "If not, use the url with the 'tracked_camera' parameter.\n\n";
+
+    MaybePauseForUser();
+
+    if (meshcat->GetTrackedCameraPose() == std::nullopt) {
+      std::cout << "  !!! ERROR !!! It appears that camera tracking isn't "
+                << "working!\n";
+      return 1;
+    } else {
+      std::cout << "That did it. Now we can move on.\n";
+    }
+  }
+
+  std::cout << ltrim(R"""(
+Open the developer tools of your browser (F12) and within that panel switch to
+the "Console" tab.
+
+Keep that panel visible throughout the entire testing process. Any errors or
+warnings displayed in that Console most likely indicate a bug in our code and
+should be fixed. (If you are running this test as part of a pull request code
+review, be sure to post the message as a Reviewable discussion.)
+
+Less severe Console messages (info, debug, etc.) are not bugs and can be
+ignored.
+
+Caveat: At the moment, you might see Console warnings related to deprecations.
+Ignore those for now; we'll need to circle back and fix them later.
+)""");
+  MaybePauseForUser();
+
+  std::cout << ltrim(R"""(
 - The background should be grey.
 - From left to right along the x axis, you should see:
   - a red sphere
@@ -173,7 +238,7 @@ Open up your browser to the URL above.
   - a blue box (long axis in z)
   - a teal capsule (long axis in z)
   - a red cone (expanding in +z, twice as wide in y than in x)
-  - a bright green cube (the green comes from a texture map)
+  - a shiny, green, dented cube (created with a PBR material)
   - a yellow mustard bottle w/ label
   - a dense rainbow point cloud in a box (long axis in z)
   - a blue line coiling up (in z).
@@ -182,33 +247,35 @@ Open up your browser to the URL above.
   - the same purple triangle mesh drawn as a wireframe.
   - the same triangle mesh drawn in multicolor.
   - a blue mesh plot of the function z = y*sin(5*x).
-)""";
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+)""");
+  MaybePauseForUser();
 
   std::cout << "Calling meshcat.Flush(), which will block until all clients "
                "have received all the data)...";
   meshcat->Flush();
   std::cout << "Done." << std::endl;
 
-  std::cout << "Animations:\n";
+  std::cout << "\nAnimations:\n";
+  meshcat->SetCameraPose(animation_target + Vector3d{0, -3, 1.5},
+                         animation_target);
+  std::cout << "The camera has moved to focus on the following animated "
+               "geometries:\n";
   MeshcatAnimation animation;
   std::cout << "- the red sphere should move up and down in z.\n";
   animation.SetTransform(0, "sphere", RigidTransformd(sphere_home));
-  animation.SetTransform(20, "sphere", RigidTransformd(sphere_home +
-                                                       Vector3d::UnitZ()));
+  animation.SetTransform(20, "sphere",
+                         RigidTransformd(sphere_home + Vector3d::UnitZ()));
   animation.SetTransform(40, "sphere", RigidTransformd(sphere_home));
 
   std::cout << "- the blue box should spin clockwise about the +z axis.\n";
-  animation.SetTransform(0, "box",
-                         RigidTransformd(RotationMatrixd::MakeZRotation(0),
-                                         box_home));
-  animation.SetTransform(20, "box",
-                         RigidTransformd(RotationMatrixd::MakeZRotation(M_PI),
-                                         box_home));
   animation.SetTransform(
-      40, "box", RigidTransformd(RotationMatrixd::MakeZRotation(2 * M_PI),
-                                 box_home));
+      0, "box", RigidTransformd(RotationMatrixd::MakeZRotation(0), box_home));
+  animation.SetTransform(
+      20, "box",
+      RigidTransformd(RotationMatrixd::MakeZRotation(M_PI), box_home));
+  animation.SetTransform(
+      40, "box",
+      RigidTransformd(RotationMatrixd::MakeZRotation(2 * M_PI), box_home));
   animation.set_repetitions(4);
 
   std::cout << "- the green cylinder should appear and disappear.\n";
@@ -227,30 +294,33 @@ Open up your browser to the URL above.
   meshcat->SetAnimation(animation);
 
   std::cout << "You can review/replay the animation from the controls menu.\n";
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
 
-  meshcat->Set2dRenderMode(math::RigidTransform(Vector3d{0, -3, 0}), -4,
-                           4, -2, 2);
+  meshcat->Set2dRenderMode(math::RigidTransform(Vector3d{0, -3, 0}), -4, 4, -2,
+                           2);
 
   std::cout << "- The scene should have switched to 2D rendering mode.\n";
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
 
   meshcat->Set2dRenderMode(
       math::RigidTransform(math::RotationMatrixd::MakeZRotation(-M_PI / 2.0),
                            sphere_home),
       -2, 2, -2, 2);
+  // This call shows that SetCameraTarget() is a no-op for orthographic cameras.
+  // The described view should be unaffected by this absurd target point.
+  meshcat->SetCameraTarget(Vector3d{0, -100, -50});
 
   std::cout << "- Now 2D rendering along the +x axis (red sphere in front).\n";
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
+
+  meshcat->SetCameraPose(Vector3d{2, 2, 2}, Vector3d::Zero());
+  std::cout << "- Now we have an isometric 3/4 view.\n";
+  MaybePauseForUser();
 
   std::cout << "- The scene should have switched back to 3D.\n";
   meshcat->ResetRenderMode();
 
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
 
   // Turn off the background (it will appear white).
   meshcat->SetProperty("/Background", "visible", false);
@@ -263,14 +333,39 @@ Open up your browser to the URL above.
       << "- The lights should have dimmed.\n"
       << "- The background should have been disabled (it will appear white)"
       << std::endl;
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
 
+  meshcat->SetCameraTarget(gltf_pose);
+  meshcat->SetProperty("/Background", "visible", true);
+  meshcat->SetEnvironmentMap(
+      FindResourceOrThrow("drake/geometry/test/env_256_cornell_box.png"));
+
+  std::cout << "- An environment map has been loaded from a png -- the Cornell "
+            << "box.\n"
+            << "  The dented green box should reflect it (the camera has moved "
+               "to focus on the box).\n";
+  MaybePauseForUser();
+
+  meshcat->SetEnvironmentMap(
+      FindResourceOrThrow("drake/geometry/test/env_256_brick_room.jpg"));
+
+  std::cout << "- The Cornell box has been replaced by a room with brick walls "
+            << "loaded from a jpg.\n";
+  MaybePauseForUser();
+
+  std::cout << ltrim(R"""(
+- Reloading the page should always succeed. Force a complete reload now using
+  Ctrl-Shift-R and confirm you still see same objects, the animation, the brick
+  walls, etc.
+)""");
+  MaybePauseForUser();
+
+  meshcat->SetEnvironmentMap("");
+  meshcat->SetCameraTarget(Vector3d::Zero());
   meshcat->Delete();
-  std::cout << "- Everything else should have disappeared." << std::endl;
+  std::cout << "- Everything should have disappeared." << std::endl;
 
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
 
   meshcat->SetProperty("/Lights/AmbientLight/<object>", "intensity", 0.6);
 
@@ -311,16 +406,17 @@ Open up your browser to the URL above.
     plant.SetPositions(&plant.GetMyMutableContextFromRoot(context.get()),
                        Eigen::Vector2d{0.1, 0.3});
     diagram->ForcedPublish(*context);
+    meshcat->SetCameraPose(Vector3d{0, -1.5, 1}, Vector3d{0.25, 0, 0});
     std::cout << "- Now you should see three colliding hydroelastic spheres."
               << std::endl;
-    std::cout << "[Press RETURN to continue]." << std::endl;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    MaybePauseForUser();
 
     contact.Delete();
     visualizer.Delete();
   }
 
   {
+    meshcat->SetCameraPose(Vector3d{-1.0, -1.0, 1.5}, Vector3d{0, 0, 0.5});
     systems::DiagramBuilder<double> builder;
     auto [plant, scene_graph] =
         multibody::AddMultibodyPlantSceneGraph(&builder, 0.001);
@@ -334,7 +430,7 @@ Open up your browser to the URL above.
         "extra_heavy_duty_table_surface_only_collision.sdf"));
     const double table_height = 0.7645;
     plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("link"),
-                     RigidTransformd(Vector3d{0, 0, -table_height - .01}));
+                     RigidTransformd(Vector3d{0, 0, -table_height - 0.01}));
     plant.Finalize();
 
     builder.ExportInput(plant.get_actuation_input_port(), "actuation_input");
@@ -357,8 +453,7 @@ Open up your browser to the URL above.
         << "- Now you should see a kuka model (from MultibodyPlant/SceneGraph)"
         << std::endl;
 
-    std::cout << "[Press RETURN to continue]." << std::endl;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    MaybePauseForUser();
 
     std::cout << "Now we'll run the simulation...\n"
               << "- You should see the robot fall down and hit the table\n"
@@ -376,28 +471,34 @@ Open up your browser to the URL above.
            "animation.  Use the animation GUI to confirm."
         << std::endl;
 
-    std::cout << "[Press RETURN to continue]." << std::endl;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    MaybePauseForUser();
   }
 
-  const std::string html_filename(temp_directory() + "/meshcat_static.html");
-  std::ofstream html_file(html_filename);
-  html_file << meshcat->StaticHtml();
-  html_file.close();
+  std::cout << "Now we'll add back an environment map and move the camera, in\n"
+               "preparation for testing the standalone HTML download ...\n\n";
 
-  std::cout << "A standalone HTML file capturing this scene (including the "
-               "animation) has been written to file://"
-            << html_filename
-            << "\nOpen that location in your browser now and confirm that "
-               "the iiwa is visible and the animation plays."
-            << std::endl;
+  meshcat->SetEnvironmentMap(
+      FindResourceOrThrow("drake/geometry/test/env_256_cornell_box.png"));
+  meshcat->SetCameraTarget(Vector3d{-0.4, 0, 0});
 
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-
-  std::remove(html_filename.c_str());
   std::cout
-      << "Note: I've deleted the temporary HTML file (it's several Mb).\n\n";
+      << "Now we'll check the standalone HTML file capturing this scene.\n"
+         "Open this link to download an HTML file:\n\n"
+      << "  " << meshcat->web_url() << "/download\n\n"
+      << "Open the downloaded file in a new browser tab confirm that:\n"
+         "- the camera is focused on the contact point between the robot and "
+         "table,\n"
+         "- the iiwa is visible,\n"
+         "- the animation plays,\n"
+         "- the environment map is present, and\n"
+         "- the browser Console has no warnings nor errors\n"
+         "  (use F12 to open the panel with the Console).\n\n";
+  std::cout << "When you're done, close the browser tab.\n";
+
+  MaybePauseForUser();
+
+  meshcat->SetEnvironmentMap("");
+  meshcat->SetCameraPose(Vector3d{-1.0, -1.0, 1.5}, Vector3d{0, 0, 0.5});
 
   meshcat->AddButton("ButtonTest");
   meshcat->AddButton("Press t Key");
@@ -417,15 +518,15 @@ Open up your browser to the URL above.
             << ") and confirm that moving the slider in one updates the slider "
                "in the other.\n";
 
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
 
   std::cout << "Got " << meshcat->GetButtonClicks("ButtonTest")
             << " clicks on ButtonTest.\n"
             << "Got " << meshcat->GetButtonClicks("Press t Key")
             << " clicks on \"Press t Key\".\n"
             << "Got " << meshcat->GetSliderValue("SliderTest")
-            << " value for SliderTest.\n\n" << std::endl;
+            << " value for SliderTest.\n\n"
+            << std::endl;
 
   std::cout << "Next, we'll test gamepad (i.e., joystick) features.\n\n";
   std::cout
@@ -439,8 +540,7 @@ Open up your browser to the URL above.
       << "sufficient to consider the test passing; the exact values do not "
       << "matter.\n";
 
-  std::cout << "[Press RETURN to continue]." << std::endl;
-  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+  MaybePauseForUser();
 
   Meshcat::Gamepad gamepad = meshcat->GetGamepad();
   if (!gamepad.index) {
@@ -464,11 +564,62 @@ Open up your browser to the URL above.
     }
   }
 
+  std::cout << "\n";
+  std::cout << "Now we'll test the WebXR functionality.\n";
+  std::cout << "In a new browser window, open the URL:\n  "
+            << meshcat->web_url() << "?webxr=vr&controller=on\n";
+  std::cout << "If you don't have VR hardware installed on your machine, "
+               "you'll have to install the WebXR API emulator appropriate to "
+               "your browser. For Google Chrome "
+               "see:\n  https://chrome.google.com/webstore/detail/"
+               "webxr-api-emulator/mjddjgeghkdijejnciaefnkjmkafnnje\n"
+               "If you are using Firefox see:\n "
+               "https://addons.mozilla.org/de/firefox/addon/"
+               "webxr-api-emulator/";
+  std::cout << "\nIf the emulator is installed properly, you should see a "
+               "button at the bottom that says \"Enter VR\".\n";
+  std::cout << "Open the developer tools of your browser (F12). At the top "
+               "of the developer tools windows click on the double arrows icon "
+               "and a new tab should be available saying \" WebXR \". "
+               "Make sure to select a device with controllers from the top "
+               "drop-down menu (e.g., Oculus Quest). Click the "
+               "\"Enter VR\" button. You should see the following:\n"
+            << "  - The rendering screen is now split into two images.\n"
+            << "  - The meshcat controls are gone (there is a message in the "
+               "console informing you of this).\n"
+            << "  - You should be able to manipulate the view in the WebXR "
+               "emulator to affect what you see."
+            << "  - Clicking on the headset/controller "
+               "mesh for the first time in "
+               "the emulator window will bring up colored arrows which you can "
+               "use to move the mesh. Click a second time on the mesh to "
+               "switch to rotation mode."
+            << "When you're done, close the browser window.\n\n";
+
+  MaybePauseForUser();
+
+  std::cout << "\nNow we'll try it again with *augmented* reality.\n"
+            << "In yet another browser window, open:\n"
+            << meshcat->web_url() << "?webxr=ar&controller=on\n"
+            << "This should be the same as before but with two differences:\n"
+            << "  - The button reads \"Enter XR\"\n"
+            << "  - When you click the button, the background becomes white. "
+               "If you have an actual AR device, you should see the camera's "
+               "image as the background.\n"
+            << "When you're done, close the browser window.\n\n";
+
+  MaybePauseForUser();
+
   std::cout << "Exiting..." << std::endl;
   return 0;
 }
 
+}  // namespace
 }  // namespace geometry
 }  // namespace drake
 
-int main() { return drake::geometry::do_main(); }
+int main(int argc, char* argv[]) {
+  // This enables ":add_text_logging_gflags" to control the spdlog level.
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  return drake::geometry::do_main();
+}

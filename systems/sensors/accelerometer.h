@@ -34,7 +34,7 @@ namespace sensors {
 ///      (e.g. plant.get_body_spatial_accelerations_output_port())
 ///
 /// This class is therefore defined by:
-///   1. The body to which this sensor is rigidly affixed.
+///   1. The rigid body to which this sensor is rigidly affixed.
 ///   2. A rigid transform from the body frame to the sensor frame.
 ///
 /// @system
@@ -58,7 +58,8 @@ class Accelerometer final : public LeafSystem<T> {
   /// @param gravity_vector the constant acceleration due to gravity
   ///    expressed in world coordinates
   Accelerometer(
-      const multibody::Body<T>& body, const math::RigidTransform<double>& X_BS,
+      const multibody::RigidBody<T>& body,
+      const math::RigidTransform<double>& X_BS,
       const Eigen::Vector3d& gravity_vector = Eigen::Vector3d::Zero());
 
   /// Scalar-converting copy constructor.  See @ref system_scalar_conversion.
@@ -81,16 +82,14 @@ class Accelerometer final : public LeafSystem<T> {
     return *measurement_output_port_;
   }
 
-  /// Returns the index of the Body that was supplied in the constructor.
+  /// Returns the index of the RigidBody that was supplied in the constructor.
   const multibody::BodyIndex& body_index() const { return body_index_; }
 
   /// Returns the gravity vector supplied in the constructor, or zero if none.
   const Eigen::Vector3d& gravity_vector() const { return gravity_vector_; }
 
   /// Gets X_BS, the pose of sensor frame S in body B
-  const math::RigidTransform<double>& pose() const {
-    return X_BS_;
-  }
+  const math::RigidTransform<double>& pose() const { return X_BS_; }
 
   /// Static factory method that creates an Accelerometer object and connects
   /// it to the given plant. Modifies a Diagram by connecting the input ports
@@ -104,14 +103,15 @@ class Accelerometer final : public LeafSystem<T> {
   ///        this.get_body_velocities_input_port()
   /// 3. plant.get_body_spatial_accelerations_output_port() to
   ///        this.get_body_spatial_accelerations_output_port()
-  /// @param body the body B to which the sensor is affixed
+  /// @param body the rigid body B to which the sensor is affixed
   /// @param X_BS the pose of sensor frame S in body B
   /// @param gravity_vector the constant acceleration due to gravity
   ///    expressed in world coordinates
   /// @param plant the plant to which the sensor will be connected
   /// @param builder a pointer to the DiagramBuilder
   static const Accelerometer& AddToDiagram(
-      const multibody::Body<T>& body, const math::RigidTransform<double>& X_BS,
+      const multibody::RigidBody<T>& body,
+      const math::RigidTransform<double>& X_BS,
       const Eigen::Vector3d& gravity_vector,
       const multibody::MultibodyPlant<T>& plant, DiagramBuilder<T>* builder);
 

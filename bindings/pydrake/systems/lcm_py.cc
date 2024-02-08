@@ -1,9 +1,7 @@
 #include <cstring>
 
 #include "pybind11/eval.h"
-#include "pybind11/pybind11.h"
 
-#include "drake/bindings/pydrake/common/deprecation_pybind.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
 #include "drake/bindings/pydrake/pydrake_pybind.h"
 #include "drake/bindings/pydrake/systems/lcm_py_bind_cpp_serializers.h"
@@ -22,6 +20,7 @@ namespace pydrake {
 
 using lcm::DrakeLcm;
 using lcm::DrakeLcmInterface;
+using lcm::DrakeLcmParams;
 using pysystems::pylcm::BindCppSerializers;
 using systems::lcm::SerializerInterface;
 
@@ -41,14 +40,6 @@ class PySerializerInterface : public py::wrapper<SerializerInterface> {
   // `PySerializerInterface`). C++ implementations will use the bindings on the
   // interface below.
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  std::unique_ptr<SerializerInterface> Clone() const override {
-    PYBIND11_OVERLOAD_PURE(
-        std::unique_ptr<SerializerInterface>, SerializerInterface, Clone);
-  }
-#pragma GCC diagnostic pop
-
   std::unique_ptr<AbstractValue> CreateDefaultValue() const override {
     PYBIND11_OVERLOAD_PURE(std::unique_ptr<AbstractValue>, SerializerInterface,
         CreateDefaultValue);
@@ -56,6 +47,7 @@ class PySerializerInterface : public py::wrapper<SerializerInterface> {
 
   void Deserialize(const void* message_bytes, int message_length,
       AbstractValue* abstract_value) const override {
+    py::gil_scoped_acquire guard;
     py::bytes buffer(
         reinterpret_cast<const char*>(message_bytes), message_length);
     PYBIND11_OVERLOAD_PURE(
@@ -64,6 +56,7 @@ class PySerializerInterface : public py::wrapper<SerializerInterface> {
 
   void Serialize(const AbstractValue& abstract_value,
       std::vector<uint8_t>* message_bytes) const override {
+    py::gil_scoped_acquire guard;
     auto wrapped = [&]() -> py::bytes {
       // N.B. We must pass `abstract_value` as a pointer to prevent `pybind11`
       // from copying it.
@@ -110,7 +103,16 @@ PYBIND11_MODULE(lcm, m) {
         (std::string(cls_doc.doc) + kLcmInterfaceSystemClassWarning).c_str())
         .def(py::init<DrakeLcmInterface*>(),
             // Keep alive, reference: `self` keeps `lcm` alive.
-            py::keep_alive<1, 2>(), py::arg("lcm"), cls_doc.ctor.doc_1args_lcm);
+            py::keep_alive<1, 2>(), py::arg("lcm"), cls_doc.ctor.doc_1args_lcm)
+        // Because we can't tell pybind11 that we inherit DrakeLcmInterface,
+        // we'll need to manually bind any functions on that interface that we
+        // want in Python. For now, we'll just bind the simple ones that don't
+        // use function callbacks.
+        .def("get_lcm_url", &Class::get_lcm_url,
+            pydrake_doc.drake.lcm.DrakeLcmInterface.get_lcm_url.doc)
+        .def("HandleSubscriptions", &Class::HandleSubscriptions,
+            py::arg("timeout_millis"),
+            pydrake_doc.drake.lcm.DrakeLcmInterface.HandleSubscriptions.doc);
   }
 
   {
@@ -148,24 +150,6 @@ PYBIND11_MODULE(lcm, m) {
                   message_bytes.size());
             },
             py::arg("abstract_value"), cls_doc.Serialize.doc);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-    constexpr char kCloneDeprecation[] =
-        "PySerializer objects are immutable, there is no need to copy nor "
-        "clone them. The deprecated code will be removed from Drake on or "
-        "after 2023-09-01.";
-    cls  // BR
-        .def("Clone", WrapDeprecated(kCloneDeprecation, &Class::Clone),
-            kCloneDeprecation)
-        .def("__copy__", WrapDeprecated(kCloneDeprecation, &Class::Clone),
-            kCloneDeprecation)
-        .def("__deepcopy__",
-            WrapDeprecated(kCloneDeprecation,
-                [](const Class* self, py::dict /* memo */) {
-                  return self->Clone();
-                }),
-            kCloneDeprecation);
-#pragma GCC diagnostic pop
   }
 
   {
@@ -173,6 +157,12 @@ PYBIND11_MODULE(lcm, m) {
     constexpr auto& cls_doc = doc.LcmBuses;
     py::class_<Class> cls(m, "LcmBuses");
     cls  // BR
+        .def_readonly_static("kLcmUrlMemqNull", &Class::kLcmUrlMemqNull
+            // TODO(jwnimmer-tri) The `cls_doc.kLcmUrlMemqNull.doc` docstring
+            // constant is absent for some unknown reason, but it wouldn't help
+            // anyway because pybind11 throws away docs on static constants:
+            // https://github.com/pybind/pybind11/issues/1111
+            )
         .def(py::init(), cls_doc.ctor.doc)
         .def("size", &Class::size, cls_doc.size.doc)
         .def("Find", &Class::Find, py::arg("description_of_caller"),
@@ -184,8 +174,11 @@ PYBIND11_MODULE(lcm, m) {
             py::keep_alive<1, 3>(), cls_doc.Add.doc);
   }
 
-  m.def("ApplyLcmBusConfig", &ApplyLcmBusConfig, py::arg("lcm_buses"),
-      py::arg("builder"), doc.ApplyLcmBusConfig.doc);
+  m.def("ApplyLcmBusConfig",
+      py::overload_cast<
+          const std::map<std::string, std::optional<DrakeLcmParams>>&,
+          systems::DiagramBuilder<double>*>(&ApplyLcmBusConfig),
+      py::arg("lcm_buses"), py::arg("builder"), doc.ApplyLcmBusConfig.doc);
 
   {
     using Class = LcmPublisherSystem;
@@ -194,32 +187,35 @@ PYBIND11_MODULE(lcm, m) {
     cls  // BR
         .def(py::init<const std::string&,
                  std::shared_ptr<const SerializerInterface>,
-                 LcmInterfaceSystem*, double>(),
+                 LcmInterfaceSystem*, double, double>(),
             py::arg("channel"), py::arg("serializer"), py::arg("lcm"),
-            py::arg("publish_period") = 0.0,
+            py::arg("publish_period") = 0.0, py::arg("publish_offset") = 0.0,
             // Keep alive, reference: `self` keeps `lcm` alive.
-            py::keep_alive<1, 4>(), cls_doc.ctor.doc_4args)
+            py::keep_alive<1, 4>(), cls_doc.ctor.doc_5args)
         .def(py::init<const std::string&,
                  std::shared_ptr<const SerializerInterface>, DrakeLcmInterface*,
-                 double>(),
+                 double, double>(),
             py::arg("channel"), py::arg("serializer"), py::arg("lcm"),
-            py::arg("publish_period") = 0.0,
+            py::arg("publish_period") = 0.0, py::arg("publish_offset") = 0.0,
             // Keep alive, reference: `self` keeps `lcm` alive.
-            py::keep_alive<1, 4>(), cls_doc.ctor.doc_4args)
-        .def(py::init<const std::string&,
-                 std::shared_ptr<const SerializerInterface>,
-                 LcmInterfaceSystem*, const systems::TriggerTypeSet&, double>(),
+            py::keep_alive<1, 4>(), cls_doc.ctor.doc_5args)
+        .def(
+            py::init<const std::string&,
+                std::shared_ptr<const SerializerInterface>, LcmInterfaceSystem*,
+                const systems::TriggerTypeSet&, double, double>(),
             py::arg("channel"), py::arg("serializer"), py::arg("lcm"),
             py::arg("publish_triggers"), py::arg("publish_period") = 0.0,
+            py::arg("publish_offset") = 0.0,
             // Keep alive, reference: `self` keeps `lcm` alive.
-            py::keep_alive<1, 4>(), cls_doc.ctor.doc_4args)
+            py::keep_alive<1, 4>(), cls_doc.ctor.doc_6args)
         .def(py::init<const std::string&,
                  std::shared_ptr<const SerializerInterface>, DrakeLcmInterface*,
-                 const systems::TriggerTypeSet&, double>(),
+                 const systems::TriggerTypeSet&, double, double>(),
             py::arg("channel"), py::arg("serializer"), py::arg("lcm"),
             py::arg("publish_triggers"), py::arg("publish_period") = 0.0,
+            py::arg("publish_offset") = 0.0,
             // Keep alive, reference: `self` keeps `lcm` alive.
-            py::keep_alive<1, 4>(), cls_doc.ctor.doc_4args);
+            py::keep_alive<1, 4>(), cls_doc.ctor.doc_6args);
   }
 
   {
@@ -228,14 +224,16 @@ PYBIND11_MODULE(lcm, m) {
     py::class_<Class, LeafSystem<double>>(m, "LcmSubscriberSystem")
         .def(py::init<const std::string&,
                  std::shared_ptr<const SerializerInterface>,
-                 LcmInterfaceSystem*>(),
+                 LcmInterfaceSystem*, double>(),
             py::arg("channel"), py::arg("serializer"), py::arg("lcm"),
+            py::arg("wait_for_message_on_initialization_timeout") = 0.0,
             // Keep alive, reference: `self` keeps `lcm` alive.
             py::keep_alive<1, 4>(), doc.LcmSubscriberSystem.ctor.doc)
         .def(py::init<const std::string&,
-                 std::shared_ptr<const SerializerInterface>,
-                 DrakeLcmInterface*>(),
+                 std::shared_ptr<const SerializerInterface>, DrakeLcmInterface*,
+                 double>(),
             py::arg("channel"), py::arg("serializer"), py::arg("lcm"),
+            py::arg("wait_for_message_on_initialization_timeout") = 0.0,
             // Keep alive, reference: `self` keeps `lcm` alive.
             py::keep_alive<1, 4>(), doc.LcmSubscriberSystem.ctor.doc)
         .def("WaitForMessage", &Class::WaitForMessage,

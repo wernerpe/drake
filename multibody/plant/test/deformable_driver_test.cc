@@ -6,7 +6,7 @@
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/geometry/proximity_properties.h"
 #include "drake/multibody/plant/compliant_contact_manager.h"
-#include "drake/multibody/plant/test/compliant_contact_manager_tester.h"
+#include "drake/multibody/plant/multibody_plant.h"
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram_builder.h"
 
@@ -36,13 +36,19 @@ class DeformableDriverTest : public ::testing::Test {
     body_id_ = RegisterSphere(deformable_model.get(), kRezHint);
     model_ = deformable_model.get();
     plant_->AddPhysicalModel(std::move(deformable_model));
-    // N.B. Currently the manager only supports SAP.
-    plant_->set_discrete_contact_solver(DiscreteContactSolver::kSap);
+    const RigidBody<double>& body = plant_->AddRigidBody(
+        "rigid_body", SpatialInertia<double>::SolidSphereWithMass(1.0, 1.0));
+    // N.B. Deformables are only supported with the SAP solver.
+    // Thus for testing we choose one arbitrary contact approximation that uses
+    // the SAP solver.
+    plant_->set_discrete_contact_approximation(
+        DiscreteContactApproximation::kSap);
     plant_->Finalize();
     auto contact_manager = make_unique<CompliantContactManager<double>>();
     manager_ = contact_manager.get();
     plant_->SetDiscreteUpdateManager(std::move(contact_manager));
-    driver_ = CompliantContactManagerTester::deformable_driver(*manager_);
+    driver_ = manager_->deformable_driver();
+    DRAKE_DEMAND(driver_ != nullptr);
 
     builder.Connect(model_->vertex_positions_port(),
                     scene_graph_->get_source_configuration_port(
@@ -51,6 +57,9 @@ class DeformableDriverTest : public ::testing::Test {
     diagram_context_ = diagram_->CreateDefaultContext();
     plant_context_ =
         &plant_->GetMyMutableContextFromRoot(diagram_context_.get());
+    // Lock the rigid body to test locking support in the presence of deformable
+    // DoFs.
+    body.Lock(plant_context_);
   }
 
   /* Forwarding calls to private member functions in DeformableDriver with the
@@ -104,7 +113,9 @@ class DeformableDriverTest : public ::testing::Test {
 namespace {
 
 /* Verifies that a DeformableDriver has been successfully created. */
-TEST_F(DeformableDriverTest, Constructor) { ASSERT_NE(driver_, nullptr); }
+TEST_F(DeformableDriverTest, Constructor) {
+  ASSERT_NE(driver_, nullptr);
+}
 
 TEST_F(DeformableDriverTest, ScalarConversion) {
   EXPECT_FALSE(driver_->is_cloneable_to_double());

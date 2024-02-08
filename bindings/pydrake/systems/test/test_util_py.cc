@@ -1,7 +1,3 @@
-#include "pybind11/eigen.h"
-#include "pybind11/functional.h"
-#include "pybind11/pybind11.h"
-
 #include "drake/bindings/pydrake/common/value_pybind.h"
 #include "drake/bindings/pydrake/pydrake_pybind.h"
 #include "drake/systems/analysis/simulator.h"
@@ -97,7 +93,8 @@ PYBIND11_MODULE(test_util, m) {
       // Call `Publish` to test `DoPublish`.
       auto events =
           LeafEventCollection<PublishEvent<T>>::MakeForcedEventCollection();
-      system.Publish(*context, *events);
+      const EventStatus status = system.Publish(*context, *events);
+      DRAKE_DEMAND(status.did_nothing());
     }
     {
       // Call `HasDirectFeedthrough` to test `DoHasDirectFeedthrough`.

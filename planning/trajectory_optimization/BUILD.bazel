@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -109,7 +109,10 @@ drake_cc_library(
         "//common",
         "//common/trajectories:bezier_curve",
         "//common/trajectories:composite_trajectory",
+        "//geometry/optimization:geodesic_convexity",
         "//geometry/optimization:graph_of_convex_sets",
+        "//multibody/plant",
+        "//solvers:solve",
     ],
 )
 
@@ -183,6 +186,7 @@ drake_cc_googletest(
         ":kinematic_trajectory_optimization",
         "//common/test_utilities:eigen_matrix_compare",
         "//solvers:constraint",
+        "//solvers:ipopt_solver",
         "//solvers:osqp_solver",
         "//solvers:solve",
     ],
@@ -206,4 +210,4 @@ drake_cc_googletest(
     ],
 )
 
-add_lint_tests(enable_clang_format_lint = True)
+add_lint_tests()

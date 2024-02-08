@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <optional>
 
 #include "drake/common/drake_copyable.h"
+#include "drake/common/drake_throw.h"
 #include "drake/common/eigen_types.h"
 #include "drake/common/name_value.h"
 
@@ -19,9 +21,7 @@ class Rgba {
 
   /** Constructs with given (r, g, b, a) values.
    @pre All values are within the range of [0, 1]. */
-  Rgba(double r, double g, double b, double a = 1.0) {
-    set(r, g, b, a);
-  }
+  Rgba(double r, double g, double b, double a = 1.0) { set(r, g, b, a); }
 
   /** Red. */
   double r() const { return value_[0]; }
@@ -68,13 +68,28 @@ class Rgba {
            std::abs(a() - other.a()) <= tolerance;
   }
 
-  bool operator==(const Rgba& other) const {
-    return value_ == other.value_;
+  bool operator==(const Rgba& other) const { return value_ == other.value_; }
+
+  bool operator!=(const Rgba& other) const { return !(*this == other); }
+
+  /** Computes the element-wise product of two rgba colors. This type of
+   calculation is frequently used to modulate one color with another (e.g., for
+   lighting or texturing). */
+  Rgba operator*(const Rgba& other) const {
+    return {r() * other.r(), g() * other.g(), b() * other.b(), a() * other.a()};
   }
 
-  bool operator!=(const Rgba& other) const {
-    return !(*this == other);
+  /** Computes a new %Rgba color by multiplying the color channels (rgb) by the
+   given scalar `scalar`. All resultant channel values saturate at one. The
+   result has `this` %Rgba's alpha values.
+   @pre scale >= 0. */
+  Rgba scale_rgb(double scale) const {
+    DRAKE_THROW_UNLESS(scale >= 0);
+    return {std::min(1.0, r() * scale), std::min(1.0, g() * scale),
+            std::min(1.0, b() * scale), a()};
   }
+
+  friend std::ostream& operator<<(std::ostream& out, const Rgba& rgba);
 
   /** Passes this object to an Archive.
 

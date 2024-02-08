@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
     "drake_cc_googletest",
     "drake_cc_library",
@@ -7,11 +7,11 @@ load(
     "drake_cc_test",
 )
 load(
-    "@drake//tools/skylark:drake_py.bzl",
+    "//tools/skylark:drake_py.bzl",
     "drake_py_binary",
     "drake_py_unittest",
 )
-load("@drake//tools/install:install.bzl", "install")
+load("//tools/install:install.bzl", "install")
 load("//tools/lint:lint.bzl", "add_lint_tests")
 
 package(default_visibility = ["//visibility:public"])
@@ -44,6 +44,8 @@ drake_cc_package_library(
         ":name_value",
         ":network_policy",
         ":nice_type_name",
+        ":overloaded",
+        ":parallelism",
         ":pointer_cast",
         ":polynomial",
         ":random",
@@ -51,6 +53,7 @@ drake_cc_package_library(
         ":reset_on_copy",
         ":scope_exit",
         ":scoped_singleton",
+        ":sha256",
         ":sorted_pair",
         ":temp_directory",
         ":timer",
@@ -83,6 +86,7 @@ drake_cc_library(
     name = "essential",
     srcs = [
         "drake_assert_and_throw.cc",
+        "drake_deprecated.cc",
         "text_logging.cc",
     ],
     hdrs = [
@@ -395,6 +399,20 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "overloaded",
+    hdrs = ["overloaded.h"],
+)
+
+drake_cc_library(
+    name = "parallelism",
+    srcs = ["parallelism.cc"],
+    hdrs = ["parallelism.h"],
+    deps = [
+        ":essential",
+    ],
+)
+
+drake_cc_library(
     name = "is_cloneable",
     hdrs = ["is_cloneable.h"],
 )
@@ -427,6 +445,18 @@ drake_cc_library(
 drake_cc_library(
     name = "reset_on_copy",
     hdrs = ["reset_on_copy.h"],
+)
+
+drake_cc_library(
+    name = "sha256",
+    srcs = ["sha256.cc"],
+    hdrs = ["sha256.h"],
+    interface_deps = [
+        ":essential",
+    ],
+    deps = [
+        "@picosha2_internal//:picosha2",
+    ],
 )
 
 drake_cc_library(
@@ -665,6 +695,14 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "sha256_test",
+    deps = [
+        ":sha256",
+        ":temp_directory",
+    ],
+)
+
+drake_cc_googletest(
     name = "pointer_cast_test",
     deps = [
         ":pointer_cast",
@@ -795,6 +833,7 @@ drake_cc_googletest(
     copts = ["-Wno-deprecated-declarations"],
     deps = [
         ":essential",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 
@@ -880,6 +919,7 @@ drake_cc_googletest(
         ":drake_path",
         ":find_resource",
         "//common/test_utilities:expect_no_throw",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 
@@ -1006,6 +1046,21 @@ drake_cc_googletest(
     num_threads = 2,
     deps = [
         "//common:essential",
+    ],
+)
+
+drake_cc_googletest(
+    name = "overloaded_test",
+    deps = [
+        "//common:overloaded",
+    ],
+)
+
+drake_cc_googletest(
+    name = "parallelism_test",
+    num_threads = 2,
+    deps = [
+        ":parallelism",
     ],
 )
 
@@ -1178,6 +1233,7 @@ drake_cc_googletest(
 )
 
 add_lint_tests(
+    enable_clang_format_lint = False,
     python_lint_extra_srcs = [
         ":test/resource_tool_installed_test.py",
     ],

@@ -1,9 +1,0 @@
-# -*- bazel -*-
-
-package(default_visibility = ["//visibility:public"])
-
-# On macOS, no targets should depend on @x11.
-cc_library(
-    name = "x11",
-    srcs = ["missing-macos.cc"],
-)

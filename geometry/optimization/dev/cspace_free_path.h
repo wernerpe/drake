@@ -15,7 +15,7 @@
 #include "drake/common/polynomial.h"
 #include "drake/geometry/optimization/c_iris_collision_geometry.h"
 #include "drake/geometry/optimization/cspace_free_structs.h"
-#include "drake/geometry/optimization/dev/cspace_free_path_separating_plane.h"
+#include "drake/geometry/optimization/cspace_separating_plane.h"
 #include "drake/geometry/optimization/dev/polynomial_positive_on_path.h"
 
 namespace drake {
@@ -73,14 +73,14 @@ class CspaceFreePath {
    @param maximum_path_degree Paths will be univariate polynomials in a single
    indeterminate μ ∈ [0,1]. This is the maximum degree of the polynomial paths
    in  μ this CspaceFreePath will certify.
-   @param plane_order The certificate will be in terms of a polynomial,
+   @param plane_degree The certificate will be in terms of a polynomial,
    parametric hyperplane in the single indeterminate μ ∈ [0,1]. This is the
    degree of the planes used.
    */
   CspaceFreePath(const multibody::MultibodyPlant<double>* plant,
                  const geometry::SceneGraph<double>* scene_graph,
                  const Eigen::Ref<const Eigen::VectorXd>& q_star,
-                 int maximum_path_degree, int plane_order);
+                 int maximum_path_degree, int plane_degree);
 
   ~CspaceFreePath() {}
 
@@ -88,7 +88,12 @@ class CspaceFreePath {
    A certificate of safety that the pair of geometries are separated by a plane
    along the whole trajectory.
    */
-  struct SeparationCertificateResult : SeparationCertificateResultBase {};
+  struct SeparationCertificateResult final : SeparationCertificateResultBase {
+    DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(SeparationCertificateResult)
+
+    SeparationCertificateResult() {}
+    ~SeparationCertificateResult() override = default;
+  };
 
   /**
    A SeparationCertificateProgram which allows stores the path that this
@@ -98,7 +103,8 @@ class CspaceFreePath {
    taken by that configuration space variable. The path must be given
    i.e. no polynomials in the path may contain decision variables.
    */
-  struct SeparationCertificateProgram : SeparationCertificateProgramBase {
+  struct SeparationCertificateProgram final : SeparationCertificateProgramBase {
+    DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(SeparationCertificateProgram)
     SeparationCertificateProgram(
         const std::unordered_map<symbolic::Variable, symbolic::Polynomial>
             m_path,
@@ -109,7 +115,10 @@ class CspaceFreePath {
         DRAKE_DEMAND(item.second.decision_variables().empty());
       }
     }
-    const std::unordered_map<symbolic::Variable, symbolic::Polynomial> path;
+
+    ~SeparationCertificateProgram() override = default;
+
+    std::unordered_map<symbolic::Variable, symbolic::Polynomial> path;
   };
 
   [[nodiscard]] const symbolic::Variable& mu() const { return mu_; }
@@ -120,7 +129,7 @@ class CspaceFreePath {
 
   [[nodiscard]] int max_degree() const { return max_degree_; }
 
-  [[nodiscard]] int plane_order() const { return plane_order_; }
+  [[nodiscard]] int plane_degree() const { return plane_degree_; }
 
   /**
    separating_planes()[map_geometries_to_separating_planes.at(geometry1_id,
@@ -133,7 +142,7 @@ class CspaceFreePath {
   }
 
   [[nodiscard]] const std::vector<
-      CSpacePathSeparatingPlane<symbolic::Variable>>&
+      CSpaceSeparatingPlane<symbolic::Variable>>&
   separating_planes() const {
     return separating_planes_;
   }
@@ -185,7 +194,7 @@ class CspaceFreePath {
       link_geometries_;
 
   // The degree of the separating planes.
-  const int plane_order_;
+  const int plane_degree_;
 
   // The path parametrization variable going between 0 and 1.
   const symbolic::Variable mu_;
@@ -200,7 +209,7 @@ class CspaceFreePath {
   // We have the invariant plane_geometries_on_path_[i].plane_index == i.
   std::vector<PlaneSeparatesGeometriesOnPath> plane_geometries_on_path_;
 
-  std::vector<CSpacePathSeparatingPlane<symbolic::Variable>> separating_planes_;
+  std::vector<CSpaceSeparatingPlane<symbolic::Variable>> separating_planes_;
   std::unordered_map<SortedPair<geometry::GeometryId>, int>
       map_geometries_to_separating_planes_;
 

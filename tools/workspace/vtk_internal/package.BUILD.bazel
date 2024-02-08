@@ -1,0 +1,54 @@
+# -*- bazel -*-
+
+load("@drake//tools/skylark:cc.bzl", "cc_library")
+load("@drake//tools/install:install.bzl", "install")
+load(
+    "@drake//tools/workspace/vtk_internal:rules.bzl",
+    "compile_all_modules",
+    "generate_common_core_sources",
+    "generate_rendering_opengl2_sources",
+    "vtk_cc_module",
+)
+
+config_setting(
+    name = "osx",
+    constraint_values = ["@platforms//os:osx"],
+)
+
+# When the rules.bzl needs to declare an objc_library, it adds this to `deps`
+# to improve the error messages in case of a mis-configured build.
+cc_library(
+    name = "_on_macos_you_must_not_have_forcepic_in_your_bazelrc_file_see_drake_issue_20217",  # noqa
+    linkstatic = True,
+    features = ["-supports_pic"],
+    tags = ["manual"],
+)
+
+# Generate some source files on the fly, using Bazel re-implementations of
+# various CMake scripts.
+
+generate_common_core_sources()
+
+generate_rendering_opengl2_sources()
+
+# Add a cc_library rule for all modules in settings.bzl that are marked with
+# non-default visibility, and also add private cc_library rules for all of
+# their required transitive dependency modules (per the vtk.module metadata).
+
+compile_all_modules()
+
+# Install any license notices.
+
+install(
+    name = "install",
+    docs = [
+        "Copyright.txt",
+        "ThirdParty/doubleconversion/vtkdoubleconversion/COPYING",
+        "ThirdParty/fast_float/vtkfast_float/LICENSE-MIT",
+        "ThirdParty/glew/vtkglew/LICENSE.txt",
+        "ThirdParty/pugixml/vtkpugixml/LICENSE.md",
+        "ThirdParty/token/vtktoken/license.md",
+        "ThirdParty/utf8/vtkutf8/LICENSE",
+    ],
+    visibility = ["//visibility:public"],
+)

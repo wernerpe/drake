@@ -1,13 +1,11 @@
 # -*- bazel -*-
 
+load("@drake//tools/skylark:cc.bzl", "cc_library")
 load(
     "@drake//tools/workspace:cmake_configure_file.bzl",
     "cmake_configure_file",
 )
-load(
-    "@drake//tools/install:install.bzl",
-    "install",
-)
+load("@drake//tools/install:install.bzl", "install")
 
 licenses(["notice"])  # Apache-2.0
 
@@ -58,6 +56,7 @@ cc_library(
         "include/scaling.h",
         "include/types.h",
         "include/util.h",
+        "include/version.h",
         # These headers are enabled in CMakeLists only when building in normal
         # mode.
         "include/kkt.h",

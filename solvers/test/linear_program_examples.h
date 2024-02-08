@@ -79,7 +79,7 @@ class LinearProgram1 : public OptimizationProgram {
 };
 
 // Test a simple linear programming problem
-// Adapted from https://docs.mosek.com/10.0/capi/tutorial-lo-shared.html
+// Adapted from https://docs.mosek.com/10.1/capi/tutorial-lo-shared.html
 // min -3x0 - x1 - 5x2 - x3
 // s.t     3x0 +  x1 + 2x2        = 30
 //   15 <= 2x0 +  x1 + 3x2 +  x3 <= inf
@@ -257,6 +257,10 @@ void TestLPDualSolution3(const SolverInterface& solver, double tol = 1e-6);
 
 /** This LP has only linear equality constraints. */
 void TestLPDualSolution4(const SolverInterface& solver, double tol = 1E-6);
+
+/** Test LP with BoundingBoxConstraint, with some lower bounds equal to the
+ * upper bounds. */
+void TestLPDualSolution5(const SolverInterface& solver, double tol = 1E-6);
 
 /** This test confirms that the solver can solve problems with poorly scaled
  * data. See github issue https://github.com/RobotLocomotion/drake/issues/15341

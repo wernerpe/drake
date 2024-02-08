@@ -33,10 +33,9 @@ void FreeRotatingBodyPlant<T>::BuildMultibodyTreeModel() {
   const double kMass = 1.0;
   SpatialInertia<double> M_Bcm(kMass, Vector3<double>::Zero(), G_Bcm);
 
-  body_ = &this->mutable_tree().template AddBody<RigidBody>("B", M_Bcm);
-  mobilizer_ = &this->mutable_tree().template AddMobilizer<
-      internal::SpaceXYZMobilizer>(
-          tree().world_frame(), body_->body_frame());
+  body_ = &this->mutable_tree().AddRigidBody("B", M_Bcm);
+  joint_ = &this->mutable_tree().template AddJoint<BallRpyJoint>(
+          "ball_rpy_joint", tree().world_body(), {}, *body_, {});
 
   internal::MultibodyTreeSystem<T>::Finalize();
 }
@@ -47,40 +46,45 @@ FreeRotatingBodyPlant<T>::get_default_initial_angular_velocity() const {
   return Vector3d::UnitX() + Vector3d::UnitY() + Vector3d::UnitZ();
 }
 
-template<typename T>
+template <typename T>
 void FreeRotatingBodyPlant<T>::SetDefaultState(
     const systems::Context<T>& context, systems::State<T>* state) const {
   DRAKE_DEMAND(state != nullptr);
   internal::MultibodyTreeSystem<T>::SetDefaultState(context, state);
 
-  mobilizer_->set_angular_velocity(
+  const internal::Mobilizer<T>& mobilizer = joint_->GetMobilizerInUse();
+  const auto* xyz_mobilizer =
+      dynamic_cast<const internal::RpyBallMobilizer<T>*>(&mobilizer);
+  DRAKE_DEMAND(xyz_mobilizer != nullptr);
+
+  xyz_mobilizer->set_angular_velocity(
       context, get_default_initial_angular_velocity(), state);
 }
 
 template<typename T>
 Vector3<T> FreeRotatingBodyPlant<T>::get_angular_velocity(
     const systems::Context<T>& context) const {
-  return mobilizer_->get_angular_velocity(context);
+  return joint_->get_angular_velocity(context);
 }
 
 template<typename T>
 void FreeRotatingBodyPlant<T>::set_angular_velocity(
     systems::Context<T>* context, const Vector3<T>& w_WB) const {
-  mobilizer_->set_angular_velocity(context, w_WB);
+  joint_->set_angular_velocity(context, w_WB);
 }
 
 template<typename T>
 math::RigidTransform<T> FreeRotatingBodyPlant<T>::CalcPoseInWorldFrame(
     const systems::Context<T>& context) const {
   auto& pc = this->EvalPositionKinematics(context);
-  return math::RigidTransform<T>(pc.get_X_WB(body_->node_index()));
+  return math::RigidTransform<T>(pc.get_X_WB(body_->mobod_index()));
 }
 
 template<typename T>
 SpatialVelocity<T> FreeRotatingBodyPlant<T>::CalcSpatialVelocityInWorldFrame(
     const systems::Context<T>& context) const {
   auto& vc = this->EvalVelocityKinematics(context);
-  return vc.get_V_WB(body_->node_index());
+  return vc.get_V_WB(body_->mobod_index());
 }
 
 }  // namespace test

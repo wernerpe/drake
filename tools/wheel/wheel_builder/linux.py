@@ -48,6 +48,12 @@ targets = (
         test_platform=Platform('ubuntu', '22.04', 'jammy'),
         python_version_tuple=(3, 11, 1),
         python_sha='85879192f2cffd56cb16c092905949ebf3e5e394b7f764723529637901dfb58f'),  # noqa
+    Target(
+        build_platform=Platform('ubuntu', '20.04', 'focal'),
+        # TODO(jwnimmer-tri) Switch the test to 24.04 once that's available.
+        test_platform=Platform('ubuntu', '23.10', 'mantic'),
+        python_version_tuple=(3, 12, 0),
+        python_sha='795c34f44df45a0e9b9710c8c71c15c671871524cd412ca14def212e8ccb155d'),  # noqa
 )
 glibc_versions = {
     'focal': '2_31',
@@ -62,24 +68,17 @@ def _path_depth(path):
     return len(pathlib.Path(path).parts[offset:])
 
 
-def _docker(*args, pipe=False):
+def _docker(*args, stdout=None):
     """
     Runs a docker command.
-
-    If `pipe` is False, blocks until completion and returns a
-    CompletedProcess instance; raises an exception on failure.
-
-    If `pipe` is True, returns the process instance with its stdout captured.
+    The value of `stdout` is passed through to the subprocess module.
+    Blocks until completion and returns a CompletedProcess instance.
     """
     command = ['docker'] + list(args)
     environment = os.environ.copy()
     environment['DOCKER_BUILDKIT'] = '1'
-    if pipe:
-        return subprocess.Popen(command, stdout=subprocess.PIPE,
-                                cwd=resource_root, env=environment)
-    else:
-        return subprocess.run(command, check=True,
-                              cwd=resource_root, env=environment)
+    return subprocess.run(command, check=True, stdout=stdout,
+                          cwd=resource_root, env=environment)
 
 
 @atexit.register
@@ -140,17 +139,7 @@ def _create_source_tar(path):
     Creates a tarball of the repository working tree.
     """
     print('[-] Creating source archive', end='', flush=True)
-    out = tarfile.open(path, 'w:xz')
-
-    # Add an rcfile that's compatible with our Dockerfile base.
-    rc_lines = [
-        'import %workspace%/tools/ubuntu.bazelrc',
-        'import %workspace%/tools/ubuntu-focal.bazelrc',
-    ]
-    rc_bytes = '\n'.join(rc_lines).encode('utf-8')
-    tarinfo = tarfile.TarInfo('gen/environment.bazelrc')
-    tarinfo.size = len(rc_bytes)
-    out.addfile(tarinfo, io.BytesIO(rc_bytes))
+    out = tarfile.open(path, 'w')
 
     # Walk the git root and archive almost every file we find.
     repo_dir = _git_root(resource_root)
@@ -159,9 +148,12 @@ def _create_source_tar(path):
         if f == '.git' or f == 'user.bazelrc' or f.startswith('bazel-'):
             continue
 
-        # Exclude host-generated setup files; we want the container-relevant
-        # setup file (already added atop this function).
+        # Exclude host-generated setup files.
         if f == 'gen':
+            continue
+
+        # Never add our output (wheel files) back in as input.
+        if f.endswith(".whl"):
             continue
 
         print('.', end='', flush=True)
@@ -249,21 +241,19 @@ def _build_image(target, identifier, options):
     # Extract the wheel (if requested).
     if options.extract:
         print('[-] Extracting wheel(s) from', tag)
-
-        wheelhouse_parts = _path_depth(wheelhouse)
-        wheel_glob = os.path.join(wheelhouse, '*.whl')
-
-        command = f'tar -cf - {wheel_glob}'
-        extractor = _docker(
-            'run', '--rm', tag, 'bash', '-c', command, pipe=True)
-        subprocess.check_call(
-            ['tar', f'--strip-components={wheelhouse_parts}', '-xvf', '-'],
-            stdin=extractor.stdout, cwd=options.output_dir)
-
-        extractor_result = extractor.wait()
-        if extractor_result:
-            raise subprocess.CalledProcessError(extractor_result,
-                                                extractor.args, None, None)
+        container_name = f'{tag}.extract'.replace(':', '.')
+        completed_process = _docker('run', f'--name={container_name}', tag,
+                                    'bash', '-c', f'ls {wheelhouse}/*.whl',
+                                    stdout=subprocess.PIPE)
+        try:
+            wheel_paths = completed_process.stdout.decode('utf-8').splitlines()
+            assert len(wheel_paths) > 0
+            for container_path in wheel_paths:
+                wheel_basename = os.path.basename(container_path)
+                _docker('cp', f'{container_name}:{container_path}',
+                        os.path.join(options.output_dir, wheel_basename))
+        finally:
+            _docker('rm', container_name)
 
 
 def _test_wheel(target, identifier, options):
@@ -336,7 +326,7 @@ def build(options):
     identifier = f'{time}-{salt}'
 
     # Generate the repository source archive.
-    source_tar = os.path.join(resource_root, 'image', 'drake-src.tar.xz')
+    source_tar = os.path.join(resource_root, 'image', 'drake-src.tar')
     _files_to_remove.append(source_tar)
     _create_source_tar(source_tar)
 

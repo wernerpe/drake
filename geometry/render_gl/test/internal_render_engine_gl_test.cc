@@ -2,12 +2,16 @@
 
 #include <array>
 #include <cstring>
+#include <optional>
 #include <unordered_map>
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <vtkImageData.h>
-#include <vtkNew.h>
-#include <vtkPNGReader.h>
+
+// To ease build system upkeep, we annotate VTK includes with their deps.
+#include <vtkImageData.h>  // vtkCommonDataModel
+#include <vtkNew.h>        // vtkCommonCore
+#include <vtkPNGReader.h>  // vtkIOImage
 
 #include "drake/common/find_resource.h"
 #include "drake/common/fmt_eigen.h"
@@ -18,8 +22,9 @@
 #include "drake/geometry/render/render_label.h"
 #include "drake/math/rigid_transform.h"
 #include "drake/math/rotation_matrix.h"
-#include "drake/systems/sensors/color_palette.h"
 #include "drake/systems/sensors/image.h"
+
+DEFINE_bool(show_window, false, "Display render windows locally for debugging");
 
 namespace drake {
 namespace geometry {
@@ -28,6 +33,7 @@ namespace internal {
 
 using render::ColorRenderCamera;
 using render::DepthRenderCamera;
+using render::LightParameter;
 using render::RenderCameraCore;
 using render::RenderEngine;
 using render::RenderLabel;
@@ -47,8 +53,26 @@ class RenderEngineGlTester {
     return *engine_.opengl_context_;
   }
 
-  const internal::OpenGlGeometry GetMesh(const std::string& filename) const {
-    return const_cast<RenderEngineGl&>(engine_).GetMesh(filename);
+  // We assume that filename produces a single render mesh, return the geometry
+  // for that mesh.
+  const internal::OpenGlGeometry GetSingleMesh(
+      const std::string& filename) const {
+    // A dummy registration data; we'll learn if the filename was accepted
+    // by examining the data.
+    RenderEngineGl::RegistrationData data{GeometryId::get_new_id(), {}, {}};
+    const std::vector<int> indices =
+        const_cast<RenderEngineGl&>(engine_).GetMeshes(filename, &data);
+    if (indices.size() != 1) {
+      throw std::runtime_error(
+          "GetSingleMesh() used with a file that doesn't return a single "
+          "mesh.");
+    }
+    if (!data.accepted) {
+      throw std::runtime_error(
+          "GetSingleMesh() returned a mesh index, but claims it's not "
+          "accepted.");
+    }
+    return engine_.geometries_[indices.front()];
   }
 
  private:
@@ -62,14 +86,13 @@ using Eigen::Translation3d;
 using Eigen::Vector2d;
 using Eigen::Vector3d;
 using Eigen::Vector4d;
+using Eigen::VectorXd;
 using math::RigidTransformd;
 using math::RotationMatrixd;
 using std::make_unique;
 using std::unique_ptr;
 using std::unordered_map;
 using systems::sensors::CameraInfo;
-using systems::sensors::ColorD;
-using systems::sensors::ColorI;
 using systems::sensors::ImageDepth32F;
 using systems::sensors::ImageLabel16I;
 using systems::sensors::ImageRgba8U;
@@ -84,7 +107,6 @@ const double kClipFar = 100.0;
 const double kZNear = 0.1;
 const double kZFar = 5.;
 const double kFovY = M_PI_4;
-const bool kShowWindow = false;
 
 // Each channel of the color image must be within the expected color +/- 1
 // (where each channel is in the range [0, 255]).
@@ -108,14 +130,15 @@ const double kDepthTolerance = 1e-3;  // meters.
 
 // Background (sky) and terrain colors.
 const Rgba kBgColor{254 / 255.0, 127 / 255.0, 0.0, 1.0};
-const Rgba kTerrainColor{0, 0, 0, 1};
+// We need a color that we can see the effects of illumination on.
+const Rgba kTerrainColor{0.5, 0.5, 0.6, 1};
 // box.png contains a single pixel with the color (4, 241, 33). If the image
 // changes, the expected color would likewise have to change.
 const Rgba kTextureColor{4 / 255.0, 241 / 255.0, 33 / 255.0, 1.0};
 
 // Provide a default visual color for this tests -- it is intended to be
 // different from the default color of the OpenGL render engine.
-const Rgba kDefaultVisualColor{229 / 255.0, 229 / 255.0, 229/ 255.0, 1.0};
+const Rgba kDefaultVisualColor{229 / 255.0, 229 / 255.0, 229 / 255.0, 1.0};
 const float kDefaultDistance{3.f};
 
 const RenderLabel kDefaultLabel{13531};
@@ -140,12 +163,12 @@ std::ostream& operator<<(std::ostream& out, const ScreenCoord& c) {
 
 // Utility struct for doing color testing; provides three mechanisms for
 // creating a common rgba color. We get colors from images (as a pointer to
-// unsigned bytes, as a (ColorI, alpha) pair, and from a normalized color. It's
+// unsigned bytes, as four separate ints, and from a normalized color. It's
 // nice to articulate tests without having to worry about those details.
 struct RgbaColor {
-  RgbaColor(const ColorI& c, int alpha)
-      : r(c.r), g(c.g), b(c.b), a(alpha) {}
   explicit RgbaColor(const uint8_t* p) : r(p[0]), g(p[1]), b(p[2]), a(p[3]) {}
+  RgbaColor(int r_in, int g_in, int b_in, int a_in)
+      : r(r_in), g(g_in), b(b_in), a(a_in) {}
   // We'll allow *implicit* conversion from Rgba to RgbaColor to increase the
   // utility of IsColorNear(), but only in the scope of this test.
   // NOLINTNEXTLINE(runtime/explicit)
@@ -154,10 +177,17 @@ struct RgbaColor {
         g(static_cast<int>(rgba.g() * 255)),
         b(static_cast<int>(rgba.b() * 255)),
         a(static_cast<int>(rgba.a() * 255)) {}
-  int r;
-  int g;
-  int b;
-  int a;
+
+  bool operator==(const RgbaColor& c) const {
+    return r == c.r && g == c.g && b == c.b && a == c.a;
+  }
+
+  bool operator!=(const RgbaColor& c) const { return !(*this == c); }
+
+  int r{};
+  int g{};
+  int b{};
+  int a{};
 };
 
 std::ostream& operator<<(std::ostream& out, const RgbaColor& c) {
@@ -166,14 +196,13 @@ std::ostream& operator<<(std::ostream& out, const RgbaColor& c) {
 }
 
 // Tests color within tolerance.
-bool IsColorNear(
-    const RgbaColor& expected, const RgbaColor& tested,
-    double tolerance = kColorPixelTolerance) {
+bool IsColorNear(const RgbaColor& expected, const RgbaColor& tested,
+                 double tolerance = kColorPixelTolerance) {
   using std::abs;
   return (abs(expected.r - tested.r) <= tolerance &&
-      abs(expected.g - tested.g) <= tolerance &&
-      abs(expected.b - tested.b) <= tolerance &&
-      abs(expected.a - tested.a) <= tolerance);
+          abs(expected.g - tested.g) <= tolerance &&
+          abs(expected.b - tested.b) <= tolerance &&
+          abs(expected.a - tested.a) <= tolerance);
 }
 
 // Tests that the color in the given `image` located at screen coordinate `p`
@@ -199,8 +228,7 @@ class RenderEngineGlTest : public ::testing::Test {
         // Looking straight down from 3m above the ground.
         X_WR_(RotationMatrixd{AngleAxisd(M_PI, Vector3d::UnitY()) *
                               AngleAxisd(-M_PI_2, Vector3d::UnitZ())},
-              {0, 0, kDefaultDistance}),
-        geometry_id_(GeometryId::get_new_id()) {}
+              {0, 0, kDefaultDistance}) {}
 
  protected:
   // Method to allow the normal case (render with the built-in renderer against
@@ -215,7 +243,8 @@ class RenderEngineGlTest : public ::testing::Test {
     if (!renderer) renderer = renderer_.get();
     const DepthRenderCamera& depth_camera =
         camera_in ? *camera_in : depth_camera_;
-    const ColorRenderCamera color_camera(depth_camera.core(), kShowWindow);
+    const ColorRenderCamera color_camera(depth_camera.core(),
+                                         FLAGS_show_window);
     ImageLabel16I* label = label_in ? label_in : &label_;
     ImageDepth32F* depth = depth_in ? depth_in : &depth_;
     ImageRgba8U* color = color_out ? color_out : &color_;
@@ -315,8 +344,7 @@ class RenderEngineGlTest : public ::testing::Test {
   // Verifies the "outlier" pixels for the given camera belong to the terrain.
   // If images are provided, the given images will be tested, otherwise the
   // member images will be tested.
-  void VerifyOutliers(const RenderEngineGl& renderer,
-                      const DepthRenderCamera& camera,
+  void VerifyOutliers(const DepthRenderCamera& camera,
                       const ImageRgba8U* color_in = nullptr,
                       const ImageDepth32F* depth_in = nullptr,
                       const ImageLabel16I* label_in = nullptr) const {
@@ -335,17 +363,11 @@ class RenderEngineGlTest : public ::testing::Test {
     }
   }
 
-  void SetUp() override {
-    ResetExpectations();
-  }
+  void SetUp() override { ResetExpectations(); }
 
   // Tests that don't instantiate their own renderers should invoke this.
   void Init(const RigidTransformd& X_WR, bool add_terrain = false) {
-    // TODO(SeanCurtis-TRI): When GCC supports non-trivial designated
-    //  initialization turn this back into:
-    //  const RenderEngineGlParams params{.default_clear_color = kBgColor};
-    RenderEngineGlParams params;
-    params.default_clear_color = kBgColor;
+    const RenderEngineGlParams params{.default_clear_color = kBgColor};
     renderer_ = make_unique<RenderEngineGl>(params);
     InitializeRenderer(X_WR, add_terrain, renderer_.get());
     // Ensure that we the test default visual color is different from the
@@ -375,13 +397,20 @@ class RenderEngineGlTest : public ::testing::Test {
   // this method.
   PerceptionProperties simple_material(bool use_texture = false) const {
     PerceptionProperties material;
-    material.AddProperty("phong", "diffuse", default_color_);
     material.AddProperty("label", "id", expected_label_);
     if (use_texture) {
+      // The simple material's texture should always reproduce the texture
+      // perfectly -- so the diffuse color must be opaque white.
+      material.AddProperty("phong", "diffuse", Rgba(1, 1, 1));
+
       material.AddProperty(
           "phong", "diffuse_map",
-          FindResourceOrThrow(
-              "drake/geometry/render/test/meshes/box.png"));
+          FindResourceOrThrow("drake/geometry/render/test/meshes/box.png"));
+    } else {
+      const Rgba default_color(
+          default_color_.r / 255.0, default_color_.g / 255.0,
+          default_color_.b / 255.0, default_color_.a / 255.0);
+      material.AddProperty("phong", "diffuse", default_color);
     }
     return material;
   }
@@ -403,12 +432,13 @@ class RenderEngineGlTest : public ::testing::Test {
     const double r = 0.5;
     Sphere sphere{r};
     expected_label_ = RenderLabel(12345);  // an arbitrary value.
-    renderer->RegisterVisual(geometry_id_, sphere, simple_material(use_texture),
+    sphere_id_ = GeometryId::get_new_id();
+    renderer->RegisterVisual(sphere_id_, sphere, simple_material(use_texture),
                              RigidTransformd::Identity(),
                              true /* needs update */);
     RigidTransformd X_WV{Vector3d{0, 0, r}};
     X_WV_.clear();
-    X_WV_.insert({geometry_id_, X_WV});
+    X_WV_.insert({sphere_id_, X_WV});
     renderer->UpdatePoses(X_WV_);
   }
 
@@ -432,9 +462,9 @@ class RenderEngineGlTest : public ::testing::Test {
     expected_color_ = RgbaColor{default_color_};
   }
 
-  // Performs the work to test the rendering with a sphere centered in the
+  // Performs the work to test the rendering with a shape centered in the
   // image. To pass, the renderer will have to have been populated with a
-  // compliant sphere and camera configuration (e.g., PopulateSphereTest()).
+  // compliant shape and camera configuration (e.g., PopulateSphereTest()).
   void PerformCenterShapeTest(RenderEngineGl* renderer,
                               const DepthRenderCamera* camera = nullptr) {
     const DepthRenderCamera& cam = camera ? *camera : depth_camera_;
@@ -447,21 +477,20 @@ class RenderEngineGlTest : public ::testing::Test {
     ImageLabel16I label(w, h);
     Render(renderer, &cam, &color, &depth, &label);
 
-    VerifyCenterShapeTest(*renderer, cam, color, depth, label);
+    VerifyCenterShapeTest(cam, color, depth, label);
   }
 
-  void VerifyCenterShapeTest(const RenderEngineGl& renderer,
-                             const DepthRenderCamera& camera,
+  void VerifyCenterShapeTest(const DepthRenderCamera& camera,
                              const ImageRgba8U& color,
                              const ImageDepth32F& depth,
                              const ImageLabel16I& label) const {
-    VerifyOutliers(renderer, camera, &color, &depth, &label);
+    VerifyOutliers(camera, &color, &depth, &label);
 
     // Verifies inside the sphere.
     const ScreenCoord inlier = GetInlier(camera.core().intrinsics());
 
     EXPECT_TRUE(CompareColor(expected_color_, color, inlier))
-              << "Color at: " << inlier;
+        << "Color at: " << inlier;
     EXPECT_TRUE(
         IsExpectedDepth(depth, inlier, expected_object_depth_, kDepthTolerance))
         << "Depth at: " << inlier;
@@ -476,10 +505,11 @@ class RenderEngineGlTest : public ::testing::Test {
   float expected_object_depth_{2.f};
   RenderLabel expected_label_;
   RenderLabel expected_outlier_label_{RenderLabel::kDontCare};
-  Rgba default_color_{kDefaultVisualColor};
+  RgbaColor default_color_{kDefaultVisualColor};
 
   // We store a reference depth camera; we can always derive a color camera
-  // from it; they have the same intrinsics and we grab the global kShowWindow.
+  // from it; they have the same intrinsics and we grab the global
+  // FLAGS_show_window.
   const DepthRenderCamera depth_camera_{
       {"unused", {kWidth, kHeight, kFovY}, {kClipNear, kClipFar}, {}},
       {kZNear, kZFar}};
@@ -488,7 +518,7 @@ class RenderEngineGlTest : public ::testing::Test {
   ImageDepth32F depth_;
   ImageLabel16I label_;
   RigidTransformd X_WR_;
-  GeometryId geometry_id_;
+  GeometryId sphere_id_;
 
   // The pose of the sphere created in PopulateSphereTest().
   unordered_map<GeometryId, RigidTransformd> X_WV_;
@@ -514,11 +544,7 @@ TEST_F(RenderEngineGlTest, ControlBackgroundColor) {
                                 Rgba{0.5, 0.6, 0.7, 1.0},
                                 Rgba{1.0, 0.1, 0.4, 0.5}};
   for (const auto& bg : backgrounds) {
-    // TODO(SeanCurtis-TRI): When GCC supports non-trivial designated
-    //  initialization turn this back into:
-    //  const RenderEngineGlParams params{.default_clear_color = bg};
-    RenderEngineGlParams params;
-    params.default_clear_color = bg;
+    const RenderEngineGlParams params{.default_clear_color = bg};
     RenderEngineGl engine(params);
     Render(&engine);
     VerifyUniformColor(bg, 0u);
@@ -569,10 +595,10 @@ TEST_F(RenderEngineGlTest, TerrainTest) {
 TEST_F(RenderEngineGlTest, HorizonTest) {
   // Camera at the origin, pointing in a direction parallel to the ground.
   RigidTransformd X_WR{RotationMatrixd{AngleAxisd(-M_PI_2, Vector3d::UnitX()) *
-      AngleAxisd(M_PI_2, Vector3d::UnitY())}};
+                                       AngleAxisd(M_PI_2, Vector3d::UnitY())}};
   Init(X_WR, true);
 
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   // Returns y in [0, camera.height), index of horizon location in image
   // coordinate system under several assumptions:
@@ -645,19 +671,18 @@ TEST_F(RenderEngineGlTest, BoxTest) {
       // tiling. The default VTK cube source tiles the texture based on the
       // size of the box. We confirm that doesn't actually happen. We test both
       // the un-tiled default behavior and the ability to scale the texture.
-      PerceptionProperties props = simple_material(false);
+      PerceptionProperties props = simple_material();
       if (use_texture) {
-        props.AddProperty(
-            "phong", "diffuse_map",
-            FindResourceOrThrow(
-                "drake/geometry/render/test/diag_gradient.png"));
+        props.AddProperty("phong", "diffuse_map",
+                          FindResourceOrThrow(
+                              "drake/geometry/render/test/diag_gradient.png"));
+        props.UpdateProperty("phong", "diffuse", Rgba(1, 1, 1));
         if (texture_scaled) {
-          props.AddProperty(
-              "phong", "diffuse_scale", Vector2d{texture_scale, texture_scale});
+          props.AddProperty("phong", "diffuse_scale",
+                            Vector2d{texture_scale, texture_scale});
         }
       }
-      renderer_->RegisterVisual(id, box, props,
-                                RigidTransformd::Identity(),
+      renderer_->RegisterVisual(id, box, props, RigidTransformd::Identity(),
                                 true /* needs update */);
       // We want to position the box so that one corner of the box exactly
       // covers the pixel used for the "inlier test" (w/2, h/2). We can't put
@@ -697,7 +722,7 @@ TEST_F(RenderEngineGlTest, BoxTest) {
         //  within 1/255 on each channel). However, as I increase the scale
         //  factor from 1.5 to 3.5 to 10.5, the observed color stretches further
         //  into the red. This is clearly not an overly precise test.
-        expected_color_ = RgbaColor(ColorI{135, 116, 15}, 255);
+        expected_color_ = RgbaColor(135, 116, 15, 255);
         // Quick proof that we're testing for a different color -- we're drawing
         // the red channel from our expected color.
         ASSERT_NE(kTextureColor.r(), expected_color_.r);
@@ -707,10 +732,9 @@ TEST_F(RenderEngineGlTest, BoxTest) {
             RgbaColor(use_texture ? kTextureColor : default_color_);
       }
 
-      SCOPED_TRACE(fmt::format(
-          "Box test - {} - scale {}",
-          use_texture ? "texture" : "diffuse color",
-          texture_scale));
+      SCOPED_TRACE(fmt::format("Box test - {} - scale {}",
+                               use_texture ? "texture" : "diffuse color",
+                               texture_scale));
       PerformCenterShapeTest(renderer_.get());
     }
   }
@@ -732,14 +756,19 @@ TEST_F(RenderEngineGlTest, SphereTest) {
 
 // Performs the shape-centered-in-the-image test with a transparent sphere.
 TEST_F(RenderEngineGlTest, TransparentSphereTest) {
-  RenderEngineGl renderer;
+  RenderEngineGlParams params;
+  RenderEngineGl renderer{params};
+  // TODO(20206): This test depends on the terrain having a *smaller* geometry
+  // id than the sphere, so that it gets rendered first and is visible through
+  // the sphere. Once transparency is handled better, we should confirm we get
+  // the right result, regardless of registration order.
   InitializeRenderer(X_WR_, true /* add terrain */, &renderer);
   const int int_alpha = 128;
   // Sets the color of the sphere that will be created in PopulateSphereTest.
   default_color_ = Rgba(kDefaultVisualColor.r(), kDefaultVisualColor.g(),
                         kDefaultVisualColor.b(), int_alpha / 255.0);
   PopulateSphereTest(&renderer);
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   ImageRgba8U color(intrinsics.width(), intrinsics.height());
   renderer.RenderColorImage(camera, &color);
@@ -775,6 +804,136 @@ TEST_F(RenderEngineGlTest, TransparentSphereTest) {
       << "Expected one of two colors:"
       << "\n  " << expect_linear << " or " << expect_quad << "."
       << "\n  Found " << at_pixel;
+}
+
+// Performs the shape-centered-in-the-image test with a deformable mesh. In
+// particular, we register a deformable geometry with a single mesh (with or
+// without texture) and update the vertex positions and normals with some
+// curated values. We then render color, depth, and label images to verify they
+// match our expectations at certain pixel locations. Though this doesn't
+// explicitly confirm the vertex positions and normals of all vertices are
+// correctly updated, it proves some updates happened and provides strong
+// indications that the updates are as expected. Note that this only tests a
+// deformable geometry with a single render mesh, and we use the success of that
+// test to indicate vertices are correctly updated for all meshes.
+TEST_F(RenderEngineGlTest, DeformableTest) {
+  for (const bool use_texture : {false, true}) {
+    Init(X_WR_, true);
+    ResetExpectations();
+
+    // N.B. box_no_mtl.obj doesn't exist in the source tree and is generated
+    // from box.obj by stripping out material data in the build system.
+    auto filename =
+        use_texture
+            ? FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj")
+            : FindResourceOrThrow(
+                  "drake/geometry/render/test/meshes/box_no_mtl.obj");
+
+    RenderLabel deformable_label(847);
+    expected_label_ = deformable_label;
+    PerceptionProperties material = simple_material(use_texture);
+    // This is a dummy placeholder to allow invoking LoadRenderMeshesFromObj(),
+    // the actual diffuse color either comes from the mtl file or the
+    Rgba unused_diffuse_color(1, 1, 1, 1);
+    std::vector<geometry::internal::RenderMesh> render_meshes =
+        geometry::internal::LoadRenderMeshesFromObj(filename, material,
+                                                    unused_diffuse_color);
+    ASSERT_EQ(render_meshes.size(), 1);
+
+    const GeometryId id = GeometryId::get_new_id();
+    renderer_->RegisterDeformableVisual(id, render_meshes, material);
+
+    expected_color_ = use_texture ? RgbaColor(kTextureColor) : default_color_;
+
+    SCOPED_TRACE(
+        fmt::format("Deformable test -- has texture: {}", use_texture));
+
+    PerformCenterShapeTest(renderer_.get());
+
+    const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>&
+        initial_q_WG = render_meshes[0].positions;
+    const Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>&
+        initial_nhat_W = render_meshes[0].normals;
+    // Helper lambda to translate all vertex positions by the same vector.
+    auto translate_all_vertices = [&initial_q_WG](const Vector3d& t_W) {
+      auto result = initial_q_WG;
+      for (int i = 0; i < result.rows(); ++i) {
+        result.row(i) += t_W;
+      }
+      return result;
+    };
+    // Helper lambda to reshape an Nx3 matrix to a flat vector with 3N entries.
+    auto flatten = [](const Eigen::Matrix<double, Eigen::Dynamic, 3,
+                                          Eigen::RowMajor>& input) {
+      return VectorXd(Eigen::Map<const VectorXd>(input.data(), input.size()));
+    };
+
+    // The box has half edge length 1.0 and has its center and the center of the
+    // image. Assuming infinite resolution, when the box is translated by (t_x,
+    // 0, 0), we expect the center of the image to be part of the box if t_x is
+    // in the interval (-1, 1) and part of the terrain if t_x < -1 or if
+    // t_x > 1. With finite resolution, the boundary is somewhat "blurred".
+
+    // Pixel at center renders box.
+    renderer_->UpdateDeformableConfigurations(
+        id,
+        std::vector<VectorXd>{
+            flatten(translate_all_vertices(Vector3d(0.99, 0, 0)))},
+        std::vector<VectorXd>{flatten(initial_nhat_W)});
+    PerformCenterShapeTest(renderer_.get());
+
+    // Pixel at center renders the terrain.
+    expected_color_ = expected_outlier_color_;
+    expected_object_depth_ = expected_outlier_depth_;
+    expected_label_ = expected_outlier_label_;
+    renderer_->UpdateDeformableConfigurations(
+        id,
+        std::vector<VectorXd>{
+            flatten(translate_all_vertices(Vector3d(1.01, 0, 0.0)))},
+        std::vector<VectorXd>{flatten(initial_nhat_W)});
+    PerformCenterShapeTest(renderer_.get());
+
+    // Test normals are updated by making all vertex normals point along the
+    // direction of (1, 0, 1) in the world frame. As a result, angle between the
+    // normal and the light direction is 45 degrees.
+    auto new_nhat_W = initial_nhat_W;
+    for (int r = 0; r < new_nhat_W.rows(); ++r) {
+      new_nhat_W.row(r) = Vector3d(1, 0, 1).normalized();
+    }
+
+    // With the prescribed normals, we expect to see rgb values scaled by
+    // cos(π/4). We also expect the object depth to increase by 0.5 as we
+    // translate all vertices in the -z direction by 0.5.
+    ResetExpectations();
+    RgbaColor original_color =
+        use_texture ? RgbaColor(kTextureColor) : default_color_;
+    const Vector3d original_rgb(original_color.r, original_color.g,
+                                original_color.b);
+    const Vector3d expected_rgb = original_rgb * std::cos(M_PI / 4.0);
+    expected_color_ = RgbaColor(static_cast<int>(expected_rgb[0]),
+                                static_cast<int>(expected_rgb[1]),
+                                static_cast<int>(expected_rgb[2]), 255);
+    expected_label_ = deformable_label;
+    expected_object_depth_ += 0.5;
+
+    renderer_->UpdateDeformableConfigurations(
+        id,
+        std::vector<VectorXd>{
+            flatten(translate_all_vertices(Vector3d(0, 0, -0.5)))},
+        std::vector<VectorXd>{flatten(new_nhat_W)});
+    PerformCenterShapeTest(renderer_.get());
+
+    // Now we remove the geometry, and the center pixel should again render the
+    // terrain.
+    renderer_->RemoveGeometry(id);
+    expected_color_ = expected_outlier_color_;
+    expected_object_depth_ = expected_outlier_depth_;
+    expected_label_ = expected_outlier_label_;
+    PerformCenterShapeTest(renderer_.get());
+
+    // Confirm that we can still add the geometry back.
+    renderer_->RegisterDeformableVisual(id, render_meshes, material);
+  }
 }
 
 // Performs the shape-centered-in-the-image test with a capsule.
@@ -839,7 +998,7 @@ TEST_F(RenderEngineGlTest, CapsuleRotatedTest) {
   Render(renderer_.get());
 
   SCOPED_TRACE("Capsule rotated test");
-  VerifyOutliers(*renderer_, depth_camera_);
+  VerifyOutliers(depth_camera_);
 
   // Verifies the inliers towards the ends of the capsule and ensures its
   // length attribute is respected as opposed to just its radius. This
@@ -939,116 +1098,196 @@ TEST_F(RenderEngineGlTest, EllipsoidTest) {
 }
 
 // Performs the shape centered in the image with a mesh (which happens to be a
-// box). This simultaneously confirms that if a diffuse_map is specified but it
-// doesn't refer to a file that can be read, that the appearance defaults to
-// the diffuse rgba value.
+// box). The textured box will be one that is textured via its mtl library. We
+// use it to confirm that the render engine is properly _invoking_ the obj
+// material handling; the _correctness_ of the material handling is tested in
+// render_mesh_test.cc. For the non-textured, we make sure we use a mesh without
+// material file or matching foo.png to preclude it being textured.
 TEST_F(RenderEngineGlTest, MeshTest) {
-  Init(X_WR_, true);
+  for (const bool use_texture : {false, true}) {
+    Init(X_WR_, true);
 
-  auto filename =
-      FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj");
-  Mesh mesh(filename);
-  expected_label_ = RenderLabel(3);
-  PerceptionProperties material = simple_material();
-  // NOTE: Specifying a diffuse map with a known bad path, will force the box
-  // to get the diffuse RGBA value (otherwise it would pick up the `box.png`
-  // texture).
-  material.AddProperty("phong", "diffuse_map", "bad_path");
-  const GeometryId id = GeometryId::get_new_id();
-  renderer_->RegisterVisual(id, mesh, material, RigidTransformd::Identity(),
-                            true /* needs update */);
-  renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
-      {id, RigidTransformd::Identity()}});
+    // N.B. box_no_mtl.obj doesn't exist in the source tree and is generated
+    // from box.obj by stripping out material data by the build system.
+    auto filename =
+        use_texture
+            ? FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj")
+            : FindResourceOrThrow(
+                  "drake/geometry/render/test/meshes/box_no_mtl.obj");
 
-  SCOPED_TRACE("Mesh test");
-  PerformCenterShapeTest(renderer_.get());
+    Mesh mesh(filename);
+    expected_label_ = RenderLabel(3);
+
+    // We do *not* pass use_texture = true to simple_material(), because we want
+    // to see that the texture comes through the natural processing.
+    PerceptionProperties material = simple_material();
+    const GeometryId id = GeometryId::get_new_id();
+    renderer_->RegisterVisual(id, mesh, material, RigidTransformd::Identity(),
+                              true /* needs update */);
+    renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
+        {id, RigidTransformd::Identity()}});
+
+    expected_color_ = use_texture ? RgbaColor(kTextureColor) : default_color_;
+    SCOPED_TRACE("Mesh test");
+    PerformCenterShapeTest(renderer_.get());
+
+    // For the textured mesh, we also confirm that the texture survives cloning.
+    if (use_texture) {
+      SCOPED_TRACE("Clone textured mesh test");
+      unique_ptr<RenderEngine> clone = renderer_->Clone();
+      RenderEngineGl* gl_engine = dynamic_cast<RenderEngineGl*>(clone.get());
+      EXPECT_NE(gl_engine, nullptr);
+      PerformCenterShapeTest(gl_engine);
+    }
+  }
 }
 
-// Performs the shape-centered-in-the-image test with a *textured* mesh (which
-// happens to be a box).
-TEST_F(RenderEngineGlTest, TextureMeshTest) {
+// A variant of MeshTest. Confirms the support for mesh files which contain
+// multiple materials/parts. Conceptually, the mesh file is a cube with
+// different colors on each side. We'll render the cube six times with different
+// orientations to confirm that each face renders as expected. The *structure*
+// of the mesh file tests various aspects:
+//
+//  1. Multiple objects.
+//  2. Multiple materials.
+//  3. Some materials use diffuse color, some use map.
+//  4. The texture is not vertically symmetric. So, if there's an inversion
+//     problem, we'll get a bad face.
+//
+// If all of that is processed correctly, we should get a cube with a different
+// color on each face. We'll test for those colors.
+TEST_F(RenderEngineGlTest, MultiMaterialObj) {
+  struct Face {
+    // The expected *illuminated* material color. The simple illumination model
+    // guarantees that the rendered color should be that of the material --
+    // either the given Kd value *or* the map color at the test location.
+    // TODO(20234): this will change to product of diffuse color and texture.
+    Rgba rendered_color;
+    RotationMatrixd rotation;
+    std::string name;
+  };
   Init(X_WR_, true);
 
-  auto filename =
-      FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj");
+  const std::string filename =
+      FindResourceOrThrow("drake/geometry/render/test/meshes/rainbow_box.obj");
+
   Mesh mesh(filename);
-  expected_label_ = RenderLabel(4);
-  PerceptionProperties material = simple_material();
-  material.AddProperty(
-      "phong", "diffuse_map",
-      FindResourceOrThrow("drake/geometry/render/test/meshes/box.png"));
+  expected_label_ = RenderLabel(3);
+  // Note: Passing diffuse color or texture to mesh with materials spawns a
+  // warning.
+  PerceptionProperties material;
+  material.AddProperty("label", "id", expected_label_);
   const GeometryId id = GeometryId::get_new_id();
   renderer_->RegisterVisual(id, mesh, material, RigidTransformd::Identity(),
                             true /* needs update */);
-  renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
-      {id, RigidTransformd::Identity()}});
 
-  {
-    SCOPED_TRACE("Textured mesh test");
-    expected_color_ = RgbaColor(kTextureColor);
+  const std::vector<Face> faces{
+      {.rendered_color = Rgba(0.016, 0.945, 0.129),
+       .rotation = RotationMatrixd(),
+       .name = "green"},
+      {.rendered_color = Rgba(0.8, 0.359, 0.023),
+       .rotation = RotationMatrixd::MakeXRotation(M_PI / 2),
+       .name = "orange"},
+      {.rendered_color = Rgba(0.945, 0.016, 0.016),
+       .rotation = RotationMatrixd::MakeXRotation(M_PI),
+       .name = "red"},
+      {.rendered_color = Rgba(0.098, 0.016, 0.945),
+       .rotation = RotationMatrixd::MakeXRotation(-M_PI / 2),
+       .name = "blue"},
+      {.rendered_color = Rgba(0.799, 0.8, 0),
+       .rotation = RotationMatrixd::MakeYRotation(-M_PI / 2),
+       .name = "yellow"},
+      {.rendered_color = Rgba(0.436, 0, 0.8),
+       .rotation = RotationMatrixd::MakeYRotation(M_PI / 2),
+       .name = "purple"},
+  };
+
+  // Render from the original to make sure it's complete and correct.
+  for (const auto& face : faces) {
+    SCOPED_TRACE(
+        fmt::format("multi-material test on {} face - original", face.name));
+    expected_color_ = face.rendered_color;
+
+    renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
+        {id, RigidTransformd(face.rotation)}});
     PerformCenterShapeTest(renderer_.get());
   }
 
-  {
-    SCOPED_TRACE("Clone textured mesh test");
-    // Now confirm that the texture survives cloning.
-    unique_ptr<RenderEngine> clone = renderer_->Clone();
-    RenderEngineGl* gl_engine = dynamic_cast<RenderEngineGl*>(clone.get());
-    EXPECT_NE(gl_engine, nullptr);
-    PerformCenterShapeTest(gl_engine);
+  // Repeat that from a clone to confirm that the artifacts survived cloning.
+  std::unique_ptr<RenderEngine> clone = renderer_->Clone();
+  auto* gl_clone = dynamic_cast<RenderEngineGl*>(clone.get());
+  for (const auto& face : faces) {
+    SCOPED_TRACE(
+        fmt::format("multi-material test on {} face - clone", face.name));
+    expected_color_ = face.rendered_color;
+
+    gl_clone->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
+        {id, RigidTransformd(face.rotation)}});
+    PerformCenterShapeTest(gl_clone);
+  }
+
+  // Confirm all parts get removed when removing the geometry.
+  gl_clone->RemoveGeometry(id);
+  expected_color_ = kTerrainColor;
+  expected_object_depth_ = expected_outlier_depth_;
+  expected_label_ = expected_outlier_label_;
+  for (const auto& face : faces) {
+    SCOPED_TRACE(fmt::format("multi-material test on {} face - after removal",
+                             face.name));
+
+    gl_clone->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
+        {id, RigidTransformd(face.rotation)}});
+    PerformCenterShapeTest(gl_clone);
   }
 }
 
-// TODO(SeanCurtis-TRI) Enable this test when I support the default logic for
-//  mapping mesh.obj --> mesh.png.
+// Mostly identical as `MeshTest` except for the geometry type being Convex.
+TEST_F(RenderEngineGlTest, ConvexTest) {
+  for (const bool use_texture : {false, true}) {
+    Init(X_WR_, true);
 
-// Repeat the texture test but with an *implied* texture map. In other words,
-// registering a mesh "foo.obj" will look for a "foo.png" in the same folder as
-// a fall back and use it if found. But *only* as a back up. This is a
-// SHORT TERM hack to get textures in.
-TEST_F(RenderEngineGlTest, ImpliedTextureMeshTest) {
-  Init(X_WR_, true);
+    // N.B. box_no_mtl.obj doesn't exist in the source tree and is generated
+    // from box.obj by stripping out material data by the build system.
+    auto filename =
+        use_texture
+            ? FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj")
+            : FindResourceOrThrow(
+                  "drake/geometry/render/test/meshes/box_no_mtl.obj");
 
-  auto filename =
-      FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj");
-  Mesh mesh(filename);
-  expected_label_ = RenderLabel(4);
-  PerceptionProperties material = simple_material();
-  const GeometryId id = GeometryId::get_new_id();
-  renderer_->RegisterVisual(id, mesh, material, RigidTransformd::Identity(),
-                            true /* needs update */);
-  renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
-      {id, RigidTransformd::Identity()}});
+    Convex convex(filename);
+    expected_label_ = RenderLabel(4);
 
-  expected_color_ = RgbaColor(kTextureColor);
-  SCOPED_TRACE("Implied textured mesh test");
-  PerformCenterShapeTest(renderer_.get());
+    // We do *not* pass use_texture = true to simple_material(), because we want
+    // to see that the texture comes through the natural processing.
+    PerceptionProperties material = simple_material();
+    const GeometryId id = GeometryId::get_new_id();
+    renderer_->RegisterVisual(id, convex, material, RigidTransformd::Identity(),
+                              true /* needs update */);
+    renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
+        {id, RigidTransformd::Identity()}});
+
+    expected_color_ = use_texture ? RgbaColor(kTextureColor) : default_color_;
+    SCOPED_TRACE("Convex test");
+    PerformCenterShapeTest(renderer_.get());
+  }
 }
 
-// Performs the shape centered in the image with a convex mesh (which happens to
-// be a  box). This simultaneously confirms that if a diffuse_map is specified
-// but it doesn't refer to a file that can be read, that the appearance defaults
-// to the diffuse rgba value.
-TEST_F(RenderEngineGlTest, ConvexTest) {
-  Init(X_WR_, true);
-
-  auto filename = FindResourceOrThrow(
-      "drake/geometry/render/test/meshes/box.obj");
-  Convex convex(filename);
-  expected_label_ = RenderLabel(4);
-  PerceptionProperties material = simple_material();
-  // NOTE: Specifying a diffuse map with a known bad path, will force the box
-  // to get the diffuse RGBA value (otherwise it would pick up the `box.png`
-  // texture.
-  material.AddProperty("phong", "diffuse_map", "bad_path");
+// Confirms that meshes/convex referencing a file with an unsupported extension
+// are ignored. (There's also an untested one-time warning.)
+TEST_F(RenderEngineGlTest, UnsupportedMeshConvex) {
+  Init(X_WR_, false);
+  const PerceptionProperties material = simple_material();
   const GeometryId id = GeometryId::get_new_id();
-  renderer_->RegisterVisual(id, convex, material, RigidTransformd::Identity(),
-                            true /* needs update */);
-  renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
-      {id, RigidTransformd::Identity()}});
 
-  SCOPED_TRACE("Mesh test");
-  PerformCenterShapeTest(renderer_.get());
+  const Mesh mesh("invalid.fbx");
+  EXPECT_FALSE(renderer_->RegisterVisual(id, mesh, material,
+                                         RigidTransformd::Identity(),
+                                         false /* needs update */));
+
+  const Convex convex("invalid.fbx");
+  EXPECT_FALSE(renderer_->RegisterVisual(id, convex, material,
+                                         RigidTransformd::Identity(),
+                                         false /* needs update */));
 }
 
 // Performs the test to cast textures to uchar channels. It depends on the image
@@ -1056,7 +1295,7 @@ TEST_F(RenderEngineGlTest, ConvexTest) {
 // uint16 image is loaded to prove the existence of the conversion, but this
 // test doesn't guarantee universal conversion success.
 TEST_F(RenderEngineGlTest, NonUcharChannelTextures) {
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   const Box box(1.999, 0.55, 0.75);
   expected_label_ = RenderLabel(1);
@@ -1088,8 +1327,8 @@ TEST_F(RenderEngineGlTest, NonUcharChannelTextures) {
     InitializeRenderer(X_WR_, false /* add terrain */, &renderer);
 
     const GeometryId id = GeometryId::get_new_id();
-    PerceptionProperties props = simple_material(false);
-    props.AddProperty("phong", "diffuse_map", file_path);
+    PerceptionProperties props = simple_material(true);
+    props.UpdateProperty("phong", "diffuse_map", file_path);
     renderer.RegisterVisual(id, box, props, RigidTransformd::Identity(), true);
     renderer.RenderColorImage(camera, &color_uint16_texture);
   }
@@ -1252,7 +1491,7 @@ TEST_F(RenderEngineGlTest, CloneIndependence) {
   RigidTransformd X_WT_new{Translation3d{0, 0, 10}};
   // This assumes that the terrain is zero-indexed.
   renderer_->UpdatePoses(
-      unordered_map<GeometryId, RigidTransformd>{{geometry_id_, X_WT_new}});
+      unordered_map<GeometryId, RigidTransformd>{{sphere_id_, X_WT_new}});
   SCOPED_TRACE("Clone independence");
   PerformCenterShapeTest(dynamic_cast<RenderEngineGl*>(clone.get()));
 }
@@ -1340,8 +1579,8 @@ TEST_F(RenderEngineGlTest, DifferentCameras) {
 
     {
       const DepthRenderCamera clipping_near_plane{
-        depth_camera_.core(),
-        {expected_object_depth_ + 0.1, depth_range.max_depth()}};
+          depth_camera_.core(),
+          {expected_object_depth_ + 0.1, depth_range.max_depth()}};
       const float old_object_depth = expected_object_depth_;
       expected_object_depth_ = 0;
       SCOPED_TRACE("Camera change - z near clips mesh");
@@ -1374,10 +1613,6 @@ TEST_F(RenderEngineGlTest, DefaultProperties) {
   // Sets up a box.
   Box box(1, 1, 1);
   const GeometryId id = GeometryId::get_new_id();
-  DRAKE_EXPECT_THROWS_MESSAGE(
-      renderer_->RegisterVisual(id, box, PerceptionProperties(),
-                                RigidTransformd::Identity(), true),
-      ".* geometry with the 'unspecified' or 'empty' render labels.*");
   PerceptionProperties material;
   material.AddProperty("label", "id", RenderLabel::kDontCare);
   renderer_->RegisterVisual(id, box, material, RigidTransformd::Identity(),
@@ -1389,7 +1624,7 @@ TEST_F(RenderEngineGlTest, DefaultProperties) {
   EXPECT_NO_THROW(Render());
 }
 
-// Tests the ability to configure the RenderEngineGl's default render label.
+// Tests that RenderEngineGl's default render label is kDontCare.
 TEST_F(RenderEngineGlTest, DefaultProperties_RenderLabel) {
   // A variation of PopulateSphereTest(), but uses an empty set of properties.
   // The result should be compatible with the running the sphere test.
@@ -1403,51 +1638,15 @@ TEST_F(RenderEngineGlTest, DefaultProperties_RenderLabel) {
     engine->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{{id, X_WV}});
   };
 
-  // Case: No change to render engine's default must throw.
-  {
-    RenderEngineGl renderer;
-    InitializeRenderer(X_WR_, false /* no terrain */, &renderer);
+  // The engine's default is "don't care".
+  RenderEngineGl renderer;
+  InitializeRenderer(X_WR_, true /* add terrain */, &renderer);
 
-    DRAKE_EXPECT_THROWS_MESSAGE(
-        populate_default_sphere(&renderer),
-        ".* geometry with the 'unspecified' or 'empty' render labels.*");
-  }
+  DRAKE_EXPECT_NO_THROW(populate_default_sphere(&renderer));
+  expected_label_ = RenderLabel::kDontCare;
+  expected_color_ = RgbaColor(renderer.parameters().default_diffuse);
 
-  // Case: Change render engine's default to explicitly be unspecified; must
-  // throw.
-  {
-    RenderEngineGl renderer{{.default_label = RenderLabel::kUnspecified}};
-    InitializeRenderer(X_WR_, false /* no terrain */, &renderer);
-
-    DRAKE_EXPECT_THROWS_MESSAGE(
-        populate_default_sphere(&renderer),
-        ".* geometry with the 'unspecified' or 'empty' render labels.*");
-  }
-
-  // Case: Change render engine's default to don't care. Label image should
-  // report don't care.
-  {
-    ResetExpectations();
-    RenderEngineGl renderer{{.default_label = RenderLabel::kDontCare}};
-    InitializeRenderer(X_WR_, true /* no terrain */, &renderer);
-
-    DRAKE_EXPECT_NO_THROW(populate_default_sphere(&renderer));
-    expected_label_ = RenderLabel::kDontCare;
-    expected_color_ = RgbaColor(renderer.parameters().default_diffuse);
-
-    SCOPED_TRACE("Default properties; don't care label");
-    PerformCenterShapeTest(&renderer);
-  }
-
-  // Case: Change render engine's default to invalid default value; must throw.
-  {
-    for (RenderLabel label :
-        {RenderLabel::kEmpty, RenderLabel(1), RenderLabel::kDoNotRender}) {
-      DRAKE_EXPECT_THROWS_MESSAGE(
-          RenderEngineGl({.default_label = label}),
-          ".* default render label .* either 'kUnspecified' or 'kDontCare'.*");
-    }
-  }
+  PerformCenterShapeTest(&renderer);
 }
 
 // Tests to see if the two images are *exactly* equal - down to the last bit.
@@ -1554,16 +1753,300 @@ TEST_F(RenderEngineGlTest, MeshGeometryReuse) {
   RenderEngineGl engine;
   RenderEngineGlTester tester(&engine);
 
-  auto filename = FindResourceOrThrow(
-      "drake/geometry/render/test/meshes/box.obj");
-  const internal::OpenGlGeometry& initial_geometry = tester.GetMesh(filename);
-  const internal::OpenGlGeometry& second_geometry = tester.GetMesh(filename);
+  auto filename =
+      FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj");
+  const internal::OpenGlGeometry& initial_geometry =
+      tester.GetSingleMesh(filename);
+  const internal::OpenGlGeometry& second_geometry =
+      tester.GetSingleMesh(filename);
 
   EXPECT_EQ(initial_geometry.vertex_array, second_geometry.vertex_array);
   EXPECT_EQ(initial_geometry.vertex_buffer, second_geometry.vertex_buffer);
   EXPECT_EQ(initial_geometry.index_buffer, second_geometry.index_buffer);
   EXPECT_EQ(initial_geometry.index_buffer_size,
             second_geometry.index_buffer_size);
+}
+
+// Confirm the properties of the fallback camera using the following
+// methodology:
+//
+// Create a scene with a box above a ground plane. The box is parallel with the
+// plane. Place the camera in two configurations:
+//
+//                       A       B
+//                       ╱╲    ─┐
+//                              │
+//                      ┌─┐
+//                      │ │                      z
+//                      └─┘                    x │
+//                                              ╲│
+//             ────────────────────────    y ────┘
+//
+//  A: Box and plane are visible, filling the whole screen (plane behind box);
+//     every pixel has the full diffuse color.
+//  B: The camera is 45° up from the x-axis, so the normals of the visible faces
+//     of box 1 are both 45° away from the camera's view direction. Every pixel
+//     will have the same value (√2/2 of the full diffuse value).
+//
+// These camera angles will allow us to test the following properties:
+//
+//  1. directional light
+//     - All pixels from the same faces share the same normal, therefore the
+//       same level of "exposure" (percentage of available light).
+//  2. affixed to the camera.
+//     - The illumination follows the camera. Exposure dropping from 100% to
+//       ~70% from A to B shows this.
+//  3. facing in the camera's direction
+//     - face normals pointing at the camera will have 100% exposure. Those
+//       45° away will have ~70% exposure.
+//  4. white light (at normal intensity)
+//     - Diffuse color is modulated by the expected light exposure levels.
+//  5. no attenuation
+//     - the near box and far plane have have the same exposure from view A
+//       because it only depends on direction and not distance.
+TEST_F(RenderEngineGlTest, FallbackLight) {
+  const RenderEngineGlParams params{.default_clear_color = kBgColor};
+  RenderEngineGl renderer(params);
+
+  // Load the box.
+  const Box box(1, 0.25, 1);
+  const render::RenderLabel dummy_label(1);
+  PerceptionProperties props;
+  const Rgba test_color(0.25, 0.3, 1.0);
+  // If there's any doubt that the box is visible, the simplest solution is
+  // to change the (phong, diffuse) color for the terrain to something else.
+  // The box should then be obviously visible.
+  props.AddProperty("phong", "diffuse", test_color);  // match the plane.
+  props.AddProperty("label", "id", dummy_label);
+  const RigidTransformd X_WB(Vector3d(0, 0, 3));
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+  ImageRgba8U image(camera.core().intrinsics().width(),
+                    camera.core().intrinsics().height());
+  renderer.RegisterVisual(GeometryId::get_new_id(), box, props, X_WB,
+                          false /* needs update */);
+  renderer.RegisterVisual(GeometryId::get_new_id(), HalfSpace(), props,
+                          RigidTransformd::Identity(),
+                          false /* needs update */);
+
+  // The reduced exposure due to the 45-degree angle between all visible face
+  // normals and the light direction.
+  const double half_sqrt2 = std::sqrt(2.0) / 2;
+  const Rgba reduced_color(test_color.r() * half_sqrt2,
+                           test_color.g() * half_sqrt2,
+                           test_color.b() * half_sqrt2);
+
+  struct Config {
+    RigidTransformd X_WR;
+    RgbaColor expected_color;
+    std::string description;
+  };
+  const std::vector<Config> configs{
+      {.X_WR = RigidTransformd(RotationMatrixd::MakeXRotation(M_PI),
+                               X_WB.translation() + Vector3d(0, 0, 1.1)),
+       .expected_color = test_color,
+       .description = "View A"},
+      {.X_WR = RigidTransformd(RotationMatrixd::MakeXRotation(-3 * M_PI / 4),
+                               X_WB.translation() + Vector3d(0, -2, 2)),
+       .expected_color = reduced_color,
+       .description = "View B"}};
+  for (const auto& config : configs) {
+    SCOPED_TRACE(config.description);
+    renderer.UpdateViewpoint(config.X_WR);
+
+    EXPECT_NO_THROW(renderer.RenderColorImage(camera, &image));
+
+    // We test the images by looking at the colors along a row on the bottom of
+    // the image and near the middle of the image. We won't do the top because
+    // in view B, the clipped plane reveals the background color.
+    //
+    // Typically, if one pixel is wrong, many pixels are wrong. So, we use this
+    // atypical test spelling to prevent pixel spam for failure. One bad pixel
+    // is enough.
+    const int mid_height = image.height() / 2;
+    for (int c = 0; c < image.width(); ++c) {
+      for (int r : {0, mid_height}) {
+        RgbaColor dut(image.at(c, r));
+        if (!IsColorNear(dut, config.expected_color)) {
+          EXPECT_EQ(dut, config.expected_color)
+              << "image color: " << dut << "\n"
+              << "expected color: " << config.expected_color << "\n"
+              << "at pixel (" << c << ", " << r << ")";
+          break;
+        }
+      }
+    }
+  }
+}
+
+// This test covers the wiring of the various light parameters. It samples each
+// parameter across each light making assertion of what color pixel should be
+// found in the center of the image. It confirms that changes to the parameters
+// have the expected impact on the color.
+//
+// This test does *not* test the subtle distinctions between the lights such as
+// point light and spotlight have intensity fall off as the normal no longer
+// points toward the light. These gross lighting properties should be
+// immediately apparent in any rendering.
+TEST_F(RenderEngineGlTest, SingleLight) {
+  struct Config {
+    LightParameter light;
+    RgbaColor expected_color;
+    std::string description;
+    std::string target_type;
+  };
+
+  // 45-degree vertical field of view.
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+  // The camera's position is p_WC = [0, 0, 3]. The ground plane lies on the
+  // world's x-y plane. So, the ground is 3.0 meters away from the camera. This
+  // will inform attenuation calculations.
+  const double dist = 3.0;
+  // Camera above the origin, looking down with Wy pointing to the top of the
+  // image and Wx to the right.
+  const RigidTransformd X_WR(RotationMatrixd::MakeXRotation(M_PI),
+                             Vector3d(0, 0, dist));
+  ImageRgba8U image(camera.core().intrinsics().width(),
+                    camera.core().intrinsics().height());
+  const int cx = image.width() / 2;
+  const int cy = image.height() / 2;
+
+  const Rgba light_color(0.25, 0.5, 0.75);
+  const Rgba modulated_color = kTerrainColor * light_color;
+  const Rgba low_intensity_color(kTerrainColor.r() * 0.1,
+                                 kTerrainColor.g() * 0.1,
+                                 kTerrainColor.b() * 0.1);  // Alpha = 1.0.
+
+  // We'll omit the light type to save space, setting it once in the test loop.
+
+  // The baseline configuration implicitly tests white light, intensity = 1,
+  // no attenuation (1, 0, 0), and transformation from camera to world frame of
+  // both position and direction of the light.
+  const std::vector<Config> configs{
+      {.light = {.color = Rgba(1, 1, 1),
+                 .attenuation_values = {1, 0, 0},
+                 .position = {0, 0, 0},
+                 .frame = "camera",
+                 .intensity = 1.0,
+                 .direction = {0, 0, 1},
+                 // If you show the window for spotlight images, the spotlight
+                 // circle will exactly fit from image top to bottom.
+                 .cone_angle = 22.5},
+       .expected_color = kTerrainColor,
+       .description = "Baseline posed in camera"},
+      {.light = {.color = Rgba(1, 1, 1),
+                 .attenuation_values = {1, 0, 0},
+                 .position = {0, 0, dist},
+                 .frame = "world",
+                 .intensity = 1.0,
+                 .direction = {0, 0, -1},
+                 .cone_angle = 22.5},
+       .expected_color = kTerrainColor,
+       // Should be identical to the baseline image.
+       .description = "Baseline posed in camera"},
+      {.light = {.color = Rgba(1, 1, 1),
+                 .attenuation_values = {1, 0, 0},
+                 .position = {0, 0, dist},
+                 .frame = "camera",
+                 .intensity = 1.0,
+                 .direction = {0, 0, -1},
+                 .cone_angle = 22.5},
+       .expected_color = Rgba(0, 0, 0),
+       // The lights are positioned badly to illuminate anything.
+       .description = "Camera coordinates in the world frame - nothing lit!"},
+      {.light = {.color = light_color, .cone_angle = 22.5},
+       .expected_color = modulated_color,
+       .description = "Non-white light color"},
+      {.light = {.intensity = 0.1, .cone_angle = 22.5},
+       .expected_color = kTerrainColor.scale_rgb(0.1),
+       .description = "Low intensity"},
+      {.light = {.intensity = 3.0, .cone_angle = 22.5},
+       .expected_color = kTerrainColor.scale_rgb(3),
+       .description = "High intensity"},
+      {.light = {.attenuation_values = {2, 0, 0}, .cone_angle = 22.5},
+       .expected_color = kTerrainColor.scale_rgb(0.5),
+       .description = "Non-unit constant attenuation"},
+      {.light = {.attenuation_values = {0, 1, 0}, .cone_angle = 22.5},
+       .expected_color = kTerrainColor.scale_rgb(1 / dist),
+       .description = "Linear attenuation"},
+      {.light = {.attenuation_values = {0, 0, 1}, .cone_angle = 22.5},
+       .expected_color = kTerrainColor.scale_rgb(1 / (dist * dist)),
+       .description = "Quadratic attenuation"},
+      {.light = {.cone_angle = 0},
+       .expected_color = Rgba(0, 0, 0),
+       .description = "Zero cone angle",
+       .target_type = "spot"}};
+
+  for (const auto& config : configs) {
+    for (const auto& l_type : {"point", "spot", "directional"}) {
+      if (!config.target_type.empty() && l_type != config.target_type) {
+        continue;
+      }
+      SCOPED_TRACE(
+          fmt::format("{} - {}", fmt_streamed(l_type), config.description));
+      LightParameter test_light = config.light;
+      test_light.type = l_type;
+      const RenderEngineGlParams params{.lights = {test_light}};
+      RenderEngineGl renderer(params);
+
+      InitializeRenderer(X_WR, true /* add terrain */, &renderer);
+
+      EXPECT_NO_THROW(renderer.RenderColorImage(camera, &image));
+
+      const RgbaColor test_color(image.at(cx, cy));
+      EXPECT_TRUE(IsColorNear(test_color, config.expected_color))
+          << "  test color: " << test_color << "\n"
+          << "  expected color: " << config.expected_color;
+    }
+  }
+}
+
+// Quick test to make sure that lights combine. Also, confirm that too many
+// lights throw.
+TEST_F(RenderEngineGlTest, MultiLights) {
+  // Too many lights throw.
+  {
+    const RenderEngineGlParams params{.lights = {
+                                          {.position = {0, 0, 0}},
+                                          {.position = {1, 0, 0}},
+                                          {.position = {2, 0, 0}},
+                                          {.position = {3, 0, 0}},
+                                          {.position = {4, 0, 0}},
+                                          {.position = {5, 0, 0}},
+                                      }};
+    auto make_renderer = [](const RenderEngineGlParams& p) {
+      return RenderEngineGl(p);
+    };
+    EXPECT_THROW(make_renderer(params), std::exception);
+  }
+
+  // Lights combine.
+  {
+    const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+    const RigidTransformd X_WR(RotationMatrixd::MakeXRotation(M_PI),
+                               Vector3d(0, 0, 3));
+    ImageRgba8U image(camera.core().intrinsics().width(),
+                      camera.core().intrinsics().height());
+    const int cx = image.width() / 2;
+    const int cy = image.height() / 2;
+
+    // The lights are pointing directly at the image center, but their total
+    // intensity is 0.75. So, we should get 75% of the diffuse color.
+    const RenderEngineGlParams params{
+        .lights = {{.type = "point", .intensity = 0.25},
+                   {.type = "spot", .intensity = 0.25, .cone_angle = 45},
+                   {.type = "directional", .intensity = 0.25}}};
+    RenderEngineGl renderer(params);
+
+    InitializeRenderer(X_WR, true /* add terrain */, &renderer);
+
+    EXPECT_NO_THROW(renderer.RenderColorImage(camera, &image));
+
+    const RgbaColor test_color(image.at(cx, cy));
+    const RgbaColor expected_color = kTerrainColor.scale_rgb(0.75);
+    EXPECT_TRUE(IsColorNear(test_color, expected_color))
+        << "  test color: " << test_color << "\n"
+        << "  expected color: " << expected_color;
+  }
 }
 
 namespace {
@@ -1589,10 +2072,8 @@ AdjacentPixel Compare(const typename ImageRgba8U::T* curr_pixel,
   const RgbaColor curr(curr_pixel);
   const RgbaColor next(next_pixel);
 
-  const bool curr_is_ground =
-      curr.r == ground.r && curr.g == ground.g && curr.b == ground.b;
-  const bool next_is_ground =
-      next.r == ground.r && next.g == ground.g && next.b == ground.b;
+  const bool curr_is_ground = IsColorNear(curr, ground);
+  const bool next_is_ground = IsColorNear(next, ground);
   if (!curr_is_ground && next_is_ground) return BoxToGround;
   if (curr_is_ground && !next_is_ground) return GroundToBox;
   return Same;
@@ -1626,8 +2107,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
 
       // Look for edge between current pixel and pixel below.
       const T* bottom_pixel = image.at(x, y + 1);
-      const AdjacentPixel bottom_result =
-          Compare(curr_pixel, bottom_pixel);
+      const AdjacentPixel bottom_result = Compare(curr_pixel, bottom_pixel);
       if (bottom_result == GroundToBox) {
         // Current lies on the ground, next lies on the box; bottom edge.
         DRAKE_DEMAND(edges(3) == -1 || edges(3) == y + 1);
@@ -1640,8 +2120,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
 
       // Look for edge between current pixel and pixel to the right.
       const T* right_pixel = image.at(x + 1, y);
-      const AdjacentPixel right_result =
-          Compare(curr_pixel, right_pixel);
+      const AdjacentPixel right_result = Compare(curr_pixel, right_pixel);
       if (right_result == GroundToBox) {
         // Current lies on the ground, next lies on the box; left edge.
         DRAKE_DEMAND(edges(0) == -1 || edges(0) == x + 1);
@@ -1655,7 +2134,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
   }
 
   return edges;
-  }
+}
 
 }  // namespace
 
@@ -1691,7 +2170,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
 
   const CameraInfo ref_intrinsics{w, h, fx, fy, cx, cy};
   const ColorRenderCamera ref_color_camera{
-      {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, kShowWindow};
+      {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, FLAGS_show_window};
   const DepthRenderCamera ref_depth_camera{
       {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, {min_depth, max_depth}};
 
@@ -1739,7 +2218,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     const double cy2 = h2 / 2.0 + 0.5 + offset_y;
     const CameraInfo intrinsics{w2, h2, fx2, fy2, cx2, cy2};
     const ColorRenderCamera color_camera{
-        {"n/a", intrinsics, {clip_n, clip_f}, {}}, kShowWindow};
+        {"n/a", intrinsics, {clip_n, clip_f}, {}}, FLAGS_show_window};
     const DepthRenderCamera depth_camera{
         {"n/a", intrinsics, {clip_n, clip_f}, {}}, {min_depth, max_depth}};
 
@@ -1798,7 +2277,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     const double n_alt = expected_object_depth_ * 0.1;
     const double f_alt = expected_object_depth_ * 0.9;
     const ColorRenderCamera color_camera{
-        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, kShowWindow};
+        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, FLAGS_show_window};
     // Set depth range to clipping range so we don't take a chance with the
     // depth range lying outside the clipping range.
     const DepthRenderCamera depth_camera{
@@ -1822,7 +2301,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     const double n_alt = expected_object_depth_ + 2.1;
     const double f_alt = expected_object_depth_ + 4.1;
     const ColorRenderCamera color_camera{
-        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, kShowWindow};
+        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, FLAGS_show_window};
     // Set depth range to clipping range so we don't take a chance with the
     // depth range lying outside the clipping range.
     const DepthRenderCamera depth_camera{
@@ -1852,12 +2331,12 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
   }
 
   {
@@ -1871,12 +2350,12 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
   }
 
   {
@@ -1893,12 +2372,12 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
   }
 }
 

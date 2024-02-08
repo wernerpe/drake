@@ -5,17 +5,19 @@
 #include <vector>
 
 #include <fmt/format.h>
-#include <vtkCapsuleSource.h>
-#include <vtkCellArray.h>
-#include <vtkFloatArray.h>
-#include <vtkInformation.h>
-#include <vtkInformationVector.h>
-#include <vtkObjectFactory.h>
-#include <vtkPointData.h>
-#include <vtkPoints.h>
-#include <vtkPolyData.h>
-#include <vtkPolyDataAlgorithm.h>
-#include <vtkStreamingDemandDrivenPipeline.h>
+
+// To ease build system upkeep, we annotate VTK includes with their deps.
+#include <vtkCapsuleSource.h>                  // vtkFiltersSources
+#include <vtkCellArray.h>                      // vtkCommonDataModel
+#include <vtkFloatArray.h>                     // vtkCommonCore
+#include <vtkInformation.h>                    // vtkCommonCore
+#include <vtkInformationVector.h>              // vtkCommonCore
+#include <vtkObjectFactory.h>                  // vtkCommonCore
+#include <vtkPointData.h>                      // vtkCommonDataModel
+#include <vtkPoints.h>                         // vtkCommonCore
+#include <vtkPolyData.h>                       // vtkCommonDataModel
+#include <vtkPolyDataAlgorithm.h>              // vtkCommonExecutionModel
+#include <vtkStreamingDemandDrivenPipeline.h>  // vtkCommonExecutionModel
 
 #include "drake/common/fmt_eigen.h"
 #include "drake/common/scope_exit.h"
@@ -27,9 +29,9 @@ namespace render_vtk {
 namespace internal {
 namespace {
 
-using geometry::internal::RenderMesh;
 using Eigen::Vector2d;
 using Eigen::Vector3d;
+using geometry::internal::RenderMesh;
 
 // TODO(SeanCurtis-TRI): The semantics of this textured box needs to be
 //  explained *somewhere* in the documentation. The layout of the texture on the
@@ -104,7 +106,7 @@ class DrakeCubeSource : public vtkPolyDataAlgorithm {
     vtkFloatArray* newTCoords = vtkFloatArray::New();
     vtkCellArray* newPolys = vtkCellArray::New();
 
-    ScopeExit guard([newPoints, newNormals, newTCoords, newPolys](){
+    ScopeExit guard([newPoints, newNormals, newTCoords, newPolys]() {
       newPoints->Delete();
       newNormals->Delete();
       newTCoords->Delete();
@@ -286,8 +288,7 @@ class DrakeObjSource : public vtkPolyDataAlgorithm {
     newPolys->Allocate(newPolys->EstimateSize(num_tris, 3));
 
     for (int p = 0; p < num_points; ++p) {
-      newPoints->InsertNextPoint(mesh_.positions(p, 0),
-                                 mesh_.positions(p, 1),
+      newPoints->InsertNextPoint(mesh_.positions(p, 0), mesh_.positions(p, 1),
                                  mesh_.positions(p, 2));
       const double n[] = {mesh_.normals(p, 0), mesh_.normals(p, 1),
                           mesh_.normals(p, 2)};
@@ -323,22 +324,13 @@ class DrakeObjSource : public vtkPolyDataAlgorithm {
 }  // namespace
 
 vtkSmartPointer<vtkPolyDataAlgorithm> CreateVtkCapsule(const Capsule& capsule) {
-  vtkNew<vtkCapsuleSource> vtk_capsule;
-  vtk_capsule->SetCylinderLength(capsule.length());
-  vtk_capsule->SetRadius(capsule.radius());
-  // TODO(SeanCurtis-TRI): Provide control for smoothness/tessellation.
-  vtk_capsule->SetThetaResolution(50);
-  vtk_capsule->SetPhiResolution(50);
-  // Since the cylinder in vtkCylinderSource is y-axis aligned, we need
-  // to rotate it to be z-axis aligned because that is what Drake uses.
-  vtkNew<vtkTransform> transform;
-  transform->RotateX(90);
-  vtkSmartPointer<vtkTransformPolyDataFilter> transform_filter =
-      vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-  transform_filter->SetInputConnection(vtk_capsule->GetOutputPort());
-  transform_filter->SetTransform(transform);
-  transform_filter->Update();
-  return transform_filter;
+  // Note: VTK uses cylinder sources as capsules by turning on the caps and
+  // making them spherical.
+  vtkNew<vtkCylinderSource> vtk_capsule;
+  vtk_capsule->CappingOn();
+  vtk_capsule->CapsuleCapOn();
+  SetCylinderOptions(vtk_capsule, capsule.length(), capsule.radius());
+  return TransformToDrakeCylinder(vtk_capsule);
 }
 
 vtkSmartPointer<vtkPolyDataAlgorithm> CreateVtkBox(
@@ -346,8 +338,8 @@ vtkSmartPointer<vtkPolyDataAlgorithm> CreateVtkBox(
   vtkSmartPointer<DrakeCubeSource> vtk_box =
       vtkSmartPointer<DrakeCubeSource>::New();
   vtk_box->set_size({box.width(), box.depth(), box.height()});
-  const Vector2d& uv_scale = properties.GetPropertyOrDefault(
-      "phong", "diffuse_scale", Vector2d{1, 1});
+  const Vector2d& uv_scale =
+      properties.GetPropertyOrDefault("phong", "diffuse_scale", Vector2d{1, 1});
   vtk_box->set_uv_scale(uv_scale);
   return vtk_box;
 }
@@ -394,13 +386,23 @@ void SetCylinderOptions(vtkCylinderSource* vtk_cylinder, double height,
   vtk_cylinder->SetResolution(50);
 }
 
-void TransformToDrakeCylinder(vtkTransform* transform,
-                              vtkTransformPolyDataFilter* transform_filter,
-                              vtkCylinderSource* vtk_cylinder) {
-  transform->RotateX(90);
+vtkSmartPointer<vtkPolyDataAlgorithm> TransformToDrakeCylinder(
+    vtkCylinderSource* vtk_cylinder) {
+  // We rotate around the x-axis to get the cylinder to be vertical along the
+  // z-axis.
+  vtkNew<vtkTransform> rotate;
+  rotate->RotateX(-90);
+  // The "prime meridian" on the cylinder is 90 degrees off of the sphere's. So,
+  // we'll rotate once more so that they have the same sense of "front".
+  vtkNew<vtkTransform> rotate_around_Z;
+  rotate_around_Z->RotateY(90);
+  rotate->Concatenate(rotate_around_Z);
+
+  vtkNew<vtkTransformPolyDataFilter> transform_filter;
   transform_filter->SetInputConnection(vtk_cylinder->GetOutputPort());
-  transform_filter->SetTransform(transform);
+  transform_filter->SetTransform(rotate);
   transform_filter->Update();
+  return transform_filter;
 }
 
 }  // namespace internal

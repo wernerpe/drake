@@ -18,7 +18,13 @@
 #include "drake/multibody/tree/prismatic_joint.h"
 #include "drake/multibody/tree/revolute_joint.h"
 
-/* @file This file tests SapDriver's support for joint limits. */
+/* @file This file tests SapDriver's support for joint limits.
+
+  Constraints are only supported by the SAP solver. Therefore, to exercise the
+  relevant code paths, we arbitrarily choose one contact approximation that uses
+  the SAP solver. More precisely, in the unit tests below we call
+  set_discrete_contact_approximation(DiscreteContactApproximation::kSap) on the
+  MultibodyPlant used for testing, before constraints are added. */
 
 using drake::multibody::contact_solvers::internal::ContactSolverResults;
 using drake::multibody::contact_solvers::internal::SapContactProblem;
@@ -87,7 +93,8 @@ class KukaIiwaArmTests : public ::testing::Test {
   // arbitrary non-zero values.
   void SetSingleRobotModel() {
     // Only SAP supports the modeling of constraints.
-    plant_.set_discrete_contact_solver(DiscreteContactSolver::kSap);
+    plant_.set_discrete_contact_approximation(
+        DiscreteContactApproximation::kSap);
 
     // Load robot model from files.
     const std::vector<ModelInstanceIndex> models = SetUpArmModel(&plant_);
@@ -126,11 +133,9 @@ class KukaIiwaArmTests : public ::testing::Test {
     // offset is zero, here we use an arbitrary set of values to verify later on
     // in the test that the manager created a constraint consistent with these
     // numbers.
-    const ConstraintIndex next_constraint_index(plant->num_constraints());
-    ConstraintIndex constraint_index =
-        plant->AddCouplerConstraint(left_finger_slider, right_finger_slider,
-                                    kCouplerGearRatio, kCouplerOffset);
-    EXPECT_EQ(constraint_index, next_constraint_index);
+    plant->AddCouplerConstraint(left_finger_slider, right_finger_slider,
+                                kCouplerGearRatio, kCouplerOffset);
+
     return models;
   }
 
@@ -353,7 +358,7 @@ TEST_F(KukaIiwaArmTests, CalcLinearDynamicsMatrix) {
   const MultibodyTreeTopology& topology =
       CompliantContactManagerTester::topology(*manager_);
   for (TreeIndex t(0); t < topology.num_trees(); ++t) {
-    const int tree_start = topology.tree_velocities_start(t);
+    const int tree_start = topology.tree_velocities_start_in_v(t);
     const int tree_nv = topology.num_tree_velocities(t);
     Adense.block(tree_start, tree_start, tree_nv, tree_nv) = A[t];
   }
@@ -409,7 +414,7 @@ TEST_F(KukaIiwaArmTests, CalcAccelerationKinematicsCache) {
   EXPECT_TRUE(CompareMatrices(ac.get_vdot(), a_expected));
   for (BodyIndex b(0); b < plant_.num_bodies(); ++b) {
     const auto& body = plant_.get_body(b);
-    EXPECT_TRUE(ac.get_A_WB(body.node_index()).IsApprox(A_WB_expected[b]));
+    EXPECT_TRUE(ac.get_A_WB(body.mobod_index()).IsApprox(A_WB_expected[b]));
   }
 }
 
@@ -436,7 +441,7 @@ TEST_F(KukaIiwaArmTests, LimitConstraints) {
   SetArbitraryStateWithLimitsSpecification(plant_, limits_specification,
                                            context_.get());
 
-  const std::vector<DiscreteContactPair<double>>& discrete_pairs =
+  const DiscreteContactData<DiscreteContactPair<double>>& discrete_pairs =
       CompliantContactManagerTester::EvalDiscreteContactPairs(*manager_,
                                                               *context_);
   const int num_contacts = discrete_pairs.size();
@@ -535,7 +540,7 @@ TEST_F(KukaIiwaArmTests, LimitConstraints) {
 // the coupler constraints specified in the MultibodyPlant model.
 TEST_F(KukaIiwaArmTests, CouplerConstraints) {
   // Only SAP supports the modeling of constraints.
-  plant_.set_discrete_contact_solver(DiscreteContactSolver::kSap);
+  plant_.set_discrete_contact_approximation(DiscreteContactApproximation::kSap);
 
   // Load two robot models.
   std::vector<ModelInstanceIndex> arm_gripper1 = SetUpArmModel(&plant_);
@@ -547,9 +552,8 @@ TEST_F(KukaIiwaArmTests, CouplerConstraints) {
       plant_.GetJointByName("iiwa_joint_3", arm_gripper1[0]);
   const Joint<double>& arm2_joint6 =
       plant_.GetJointByName("iiwa_joint_6", arm_gripper2[0]);
-  ConstraintIndex constraint_index = plant_.AddCouplerConstraint(
-      arm1_joint3, arm2_joint6, kCouplerGearRatio, kCouplerOffset);
-  EXPECT_EQ(constraint_index, ConstraintIndex(2));
+  plant_.AddCouplerConstraint(arm1_joint3, arm2_joint6, kCouplerGearRatio,
+                              kCouplerOffset);
 
   plant_.Finalize();
 
@@ -577,7 +581,7 @@ TEST_F(KukaIiwaArmTests, CouplerConstraints) {
                                            context_.get());
 
   // We are assuming there is no contact. Assert this.
-  const std::vector<DiscreteContactPair<double>>& discrete_pairs =
+  const DiscreteContactData<DiscreteContactPair<double>>& discrete_pairs =
       CompliantContactManagerTester::EvalDiscreteContactPairs(*manager_,
                                                               *context_);
   const int num_contacts = discrete_pairs.size();
@@ -677,8 +681,7 @@ TEST_F(KukaIiwaArmTests, CouplerConstraints) {
     EXPECT_EQ(params.impulse_lower_limits(), -kInfinity);
     EXPECT_EQ(params.impulse_upper_limits(), kInfinity);
     EXPECT_EQ(params.stiffnesses(), kInfinity);
-    EXPECT_EQ(params.relaxation_times(),
-              Vector1d::Constant(plant_.time_step()));
+    EXPECT_EQ(params.relaxation_times(), Vector1d::Zero());
     EXPECT_EQ(params.beta(), 0.1);
   }
 }

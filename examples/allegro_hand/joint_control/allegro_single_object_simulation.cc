@@ -12,7 +12,6 @@
 #include "drake/common/drake_assert.h"
 #include "drake/examples/allegro_hand/allegro_common.h"
 #include "drake/examples/allegro_hand/allegro_lcm.h"
-#include "drake/geometry/drake_visualizer.h"
 #include "drake/lcmt_allegro_command.hpp"
 #include "drake/lcmt_allegro_status.hpp"
 #include "drake/math/rotation_matrix.h"
@@ -31,6 +30,7 @@
 #include "drake/systems/lcm/lcm_publisher_system.h"
 #include "drake/systems/lcm/lcm_subscriber_system.h"
 #include "drake/systems/primitives/matrix_gain.h"
+#include "drake/visualization/visualization_config_functions.h"
 
 namespace drake {
 namespace examples {
@@ -182,9 +182,7 @@ void DoMain() {
   plant.Finalize();
 
   // Visualization
-  geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph);
-  multibody::ConnectContactResultsToDrakeVisualizer(
-      &builder, plant, scene_graph, lcm);
+  visualization::AddDefaultVisualization(&builder);
 
   // Estimate rotational inertia for an average finger of mass 0.17/3 kg (0.17
   // is the mass of one finger) and length 5 cm. We estimate it using the
@@ -259,12 +257,12 @@ void DoMain() {
   diagram->SetDefaultContext(diagram_context.get());
 
   // Set the position of object
-  const multibody::Body<double>& hand = plant.GetBodyByName("hand_root");
+  const multibody::RigidBody<double>& hand = plant.GetBodyByName("hand_root");
   systems::Context<double>& plant_context =
       diagram->GetMutableSubsystemContext(plant, diagram_context.get());
 
   // Initialize the mug pose to be right in the middle between the fingers.
-  const multibody::Body<double>& mug = plant.GetBodyByName("simple_mug");
+  const multibody::RigidBody<double>& mug = plant.GetBodyByName("simple_mug");
   const Eigen::Vector3d& p_WHand =
       plant.EvalBodyPoseInWorld(plant_context, hand).translation();
   RigidTransformd X_WM(

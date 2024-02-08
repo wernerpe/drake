@@ -7,7 +7,6 @@
 #include "drake/multibody/tree/multibody_tree_topology.h"
 #include "drake/multibody/tree/prismatic_mobilizer.h"
 #include "drake/multibody/tree/revolute_mobilizer.h"
-#include "drake/multibody/tree/space_xyz_mobilizer.h"
 #include "drake/multibody/tree/weld_mobilizer.h"
 
 namespace drake {
@@ -67,18 +66,16 @@ RationalForwardKinematics::RationalForwardKinematics(
   map_mobilizer_to_s_index_ = std::vector<int>(tree.num_mobilizers(), -1);
   for (BodyIndex body_index(1); body_index < plant_.num_bodies();
        ++body_index) {
-    const internal::BodyTopology& body_topology =
-        tree.get_topology().get_body(body_index);
+    const internal::RigidBodyTopology& body_topology =
+        tree.get_topology().get_rigid_body(body_index);
     const internal::Mobilizer<double>* mobilizer =
         &(tree.get_mobilizer(body_topology.inboard_mobilizer));
     if (IsRevolute(*mobilizer)) {
       const symbolic::Variable s_angle(fmt::format("s[{}]", s_.size()));
       s_.push_back(s_angle);
       s_angles_.push_back(s_angle);
-      cos_delta_.emplace_back(
-          fmt::format("cos_delta[{}]", cos_delta_.size() - 1));
-      sin_delta_.emplace_back(
-          fmt::format("sin_delta[{}]", cos_delta_.size() - 1));
+      cos_delta_.emplace_back(fmt::format("cos_delta[{}]", cos_delta_.size()));
+      sin_delta_.emplace_back(fmt::format("sin_delta[{}]", sin_delta_.size()));
       sin_cos_.emplace_back(sin_delta_.back(), cos_delta_.back());
       sin_cos_set_.insert(sin_delta_.back());
       sin_cos_set_.insert(cos_delta_.back());
@@ -231,10 +228,10 @@ RationalForwardKinematics::CalcChildBodyPoseAsMultilinearPolynomial(
   // X_F'M' = X_FM.inverse()
   // X_M'C' = X_PF.inverse()
   const internal::MultibodyTree<double>& tree = GetInternalTree(plant_);
-  const internal::BodyTopology& parent_topology =
-      tree.get_topology().get_body(parent);
-  const internal::BodyTopology& child_topology =
-      tree.get_topology().get_body(child);
+  const internal::RigidBodyTopology& parent_topology =
+      tree.get_topology().get_rigid_body(parent);
+  const internal::RigidBodyTopology& child_topology =
+      tree.get_topology().get_rigid_body(child);
   internal::MobilizerIndex mobilizer_index;
   bool is_order_reversed;
   if (parent_topology.parent_body.is_valid() &&

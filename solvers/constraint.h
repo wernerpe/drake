@@ -297,6 +297,8 @@ class QuadraticConstraint : public Constraint {
   std::ostream& DoDisplay(std::ostream&,
                           const VectorX<symbolic::Variable>&) const override;
 
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
+
   // Updates hessian_type_ based on Q_;
   void UpdateHessianType(std::optional<HessianType> hessian_type);
 
@@ -400,6 +402,8 @@ class LorentzConeConstraint : public Constraint {
   std::ostream& DoDisplay(std::ostream&,
                           const VectorX<symbolic::Variable>&) const override;
 
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
+
   Eigen::SparseMatrix<double> A_;
   // We need to store a dense matrix of A_, so that we can compute the gradient
   // using AutoDiffXd, and return the gradient as a dense matrix.
@@ -482,6 +486,8 @@ class RotatedLorentzConeConstraint : public Constraint {
   std::ostream& DoDisplay(std::ostream&,
                           const VectorX<symbolic::Variable>&) const override;
 
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
+
   Eigen::SparseMatrix<double> A_;
   // We need to store a dense matrix of A_, so that we can compute the gradient
   // using AutoDiffXd, and return the gradient as a dense matrix.
@@ -543,8 +549,10 @@ class EvaluatorConstraint : public Constraint {
 /**
  * A constraint on the values of multivariate polynomials.
  *
- *  lb[i] <= P[i](x, y...) <= ub[i], where each P[i] is a multivariate
- *  polynomial in x, y...
+ * @verbatim
+ * lb[i] ≤ P[i](x, y...) ≤ ub[i],
+ * @endverbatim
+ * where each P[i] is a multivariate polynomial in x, y...
  *
  * The Polynomial class uses a different variable naming scheme; thus the
  * caller must provide a list of Polynomial::VarType variables that correspond
@@ -657,6 +665,10 @@ class LinearConstraint : public Constraint {
    */
   void RemoveTinyCoefficient(double tol);
 
+  /** Returns true iff this constraint already has a dense representation, i.e,
+   * if GetDenseA() will be cheap. */
+  bool is_dense_A_constructed() const;
+
   using Constraint::set_bounds;
   using Constraint::UpdateLowerBound;
   using Constraint::UpdateUpperBound;
@@ -673,6 +685,8 @@ class LinearConstraint : public Constraint {
 
   std::ostream& DoDisplay(std::ostream&,
                           const VectorX<symbolic::Variable>&) const override;
+
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
 
   internal::SparseAndDenseMatrix A_;
 
@@ -697,7 +711,8 @@ class LinearEqualityConstraint : public LinearConstraint {
    */
   LinearEqualityConstraint(const Eigen::Ref<const Eigen::MatrixXd>& Aeq,
                            const Eigen::Ref<const Eigen::VectorXd>& beq)
-      : LinearConstraint(Aeq, beq, beq) {}
+      : LinearConstraint(Aeq, beq, beq) {
+  }
 
   /**
    * Overloads the constructor with a sparse matrix Aeq.
@@ -705,7 +720,8 @@ class LinearEqualityConstraint : public LinearConstraint {
    */
   LinearEqualityConstraint(const Eigen::SparseMatrix<double>& Aeq,
                            const Eigen::Ref<const Eigen::VectorXd>& beq)
-      : LinearConstraint(Aeq, beq, beq) {}
+      : LinearConstraint(Aeq, beq, beq) {
+  }
 
   /**
    * Constructs the linear equality constraint a.dot(x) = beq
@@ -790,6 +806,8 @@ class BoundingBoxConstraint : public LinearConstraint {
   std::ostream& DoDisplay(std::ostream&,
                           const VectorX<symbolic::Variable>&) const override;
 
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
+
   // This function (inheried from the base LinearConstraint class) should not be
   // called by BoundingBoxConstraint, so we hide it as a private function.
   // TODO(hongkai.dai): BoundingBoxConstraint should derive from Constraint, not
@@ -801,9 +819,13 @@ class BoundingBoxConstraint : public LinearConstraint {
  * Implements a constraint of the form:
  *
  * <pre>
- *   Mx + q >= 0
- *   x >= 0
+ *   Mx + q ≥ 0
+ *   x ≥ 0
  *   x'(Mx + q) == 0
+ * </pre>
+ * Often this is summarized with the short-hand:
+ * <pre>
+ *   0 ≤ z ⊥ Mz+q ≥ 0
  * </pre>
  *
  * An implied slack variable complements any 0 component of x.  To get
@@ -843,6 +865,8 @@ class LinearComplementarityConstraint : public Constraint {
 
   symbolic::Formula DoCheckSatisfied(
       const Eigen::Ref<const VectorX<symbolic::Variable>>& x) const override;
+
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
 
  private:
   // Return Mx + q (the value of the slack variable).
@@ -954,6 +978,8 @@ class PositiveSemidefiniteConstraint : public Constraint {
   void DoEval(const Eigen::Ref<const VectorX<symbolic::Variable>>& x,
               VectorX<symbolic::Expression>* y) const override;
 
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
+
  private:
   int matrix_rows_;  // Number of rows in the symmetric matrix being positive
                      // semi-definite.
@@ -1015,6 +1041,8 @@ class LinearMatrixInequalityConstraint : public Constraint {
   void DoEval(const Eigen::Ref<const VectorX<symbolic::Variable>>& x,
               VectorX<symbolic::Expression>* y) const override;
 
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
+
  private:
   std::vector<Eigen::MatrixXd> F_;
   const int matrix_rows_{};
@@ -1062,6 +1090,8 @@ class ExpressionConstraint : public Constraint {
 
   std::ostream& DoDisplay(std::ostream&,
                           const VectorX<symbolic::Variable>&) const override;
+
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
 
  private:
   VectorX<symbolic::Expression> expressions_{0};
@@ -1130,6 +1160,8 @@ class ExponentialConeConstraint : public Constraint {
 
   void DoEval(const Eigen::Ref<const VectorX<symbolic::Variable>>& x,
               VectorX<symbolic::Expression>* y) const override;
+
+  std::string DoToLatex(const VectorX<symbolic::Variable>&, int) const override;
 
  private:
   Eigen::SparseMatrix<double> A_;

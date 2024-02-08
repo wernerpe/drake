@@ -1,4 +1,4 @@
-load("@drake//tools/workspace:github.bzl", "github_archive")
+load("//tools/workspace:github.bzl", "github_archive")
 
 def mypy_internal_repository(
         name,
@@ -9,10 +9,11 @@ def mypy_internal_repository(
         # drake/tools/workspace/new_release.py.  When practical, all members
         # of this cohort should be updated at the same time.
         repository = "python/mypy",
-        commit = "v1.2.0",
-        sha256 = "a0472f0c4f1f08ce3b53b5d00134f8e63fd78fb4bdfa4b3f74ca78bd792d3fec",  # noqa
+        commit = "v1.8.0",
+        sha256 = "9992b74ec31aa4031baac6bc212799cf47c786005d235bda0b44efacbb89b0c7",  # noqa
         build_file = ":package.BUILD.bazel",
         patches = [
+            ":patches/no_retry.patch",
             ":patches/reject_double_colon.patch",
             ":patches/timeout.patch",
         ],

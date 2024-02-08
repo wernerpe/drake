@@ -18,11 +18,17 @@ void DefineSolversAugmentedLagrangian(py::module m);
 /* Defines bindings per solvers_py_branch_and_bound.cc. */
 void DefineSolversBranchAndBound(py::module m);
 
+/* Defines the Clarabel bindings. See solvers_py_clarabel.cc. */
+void DefineSolversClarabel(py::module m);
+
 /* Defines the CLP bindings. See solvers_py_clp.cc. */
 void DefineSolversClp(py::module m);
 
 /* Defines the CSDP bindings. See solvers_py_csdp.cc. */
 void DefineSolversCsdp(py::module m);
+
+/* Defines the evaluators. See solvers_py_evaluator.cc. */
+void DefineSolversEvaluators(py::module m);
 
 /* Defines the GUROBI bindings. See solvers_py_gurobi.cc. */
 void DefineSolversGurobi(py::module m);
@@ -59,6 +65,9 @@ void DefineSolversScs(py::module m);
 
 /* Defines bindings per solvers_py_sdpa_free_format.cc. */
 void DefineSolversSdpaFreeFormat(py::module m);
+
+/* Defines bindings per solvers_py_semidefinite_relaxation.cc. */
+void DefineSolversSemidefiniteRelaxation(py::module m);
 
 /* Defines the SNOPT bindings. See solvers_py_snopt.cc. */
 void DefineSolversSnopt(py::module m);

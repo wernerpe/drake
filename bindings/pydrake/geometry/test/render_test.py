@@ -22,20 +22,71 @@ from pydrake.systems.sensors import (
 
 
 class TestGeometryRender(unittest.TestCase):
+    def test_light_param(self):
+        # A default constructor exists.
+        mut.LightParameter()
+
+        # The kwarg constructor also works.
+        light = mut.LightParameter(type='spot',
+                                   color=mut.Rgba(0.1, 0.2, 0.3),
+                                   attenuation_values=(1, 2, 3),
+                                   position=(-1, -2, -3),
+                                   frame='camera',
+                                   intensity=0.5,
+                                   direction=(0, 1, 0),
+                                   cone_angle=85)
+        # Attributes are bound explicitly, so we'll test them explicitly.
+        self.assertEqual(light.type, 'spot')
+        self.assertEqual(light.color, mut.Rgba(0.1, 0.2, 0.3))
+        self.assertTupleEqual(tuple(light.attenuation_values), (1, 2, 3))
+        self.assertTupleEqual(tuple(light.position), (-1, -2, -3))
+        self.assertEqual(light.frame, 'camera')
+        self.assertEqual(light.intensity, 0.5)
+        self.assertTupleEqual(tuple(light.direction), (0, 1, 0))
+        self.assertEqual(light.cone_angle, 85)
+
+        self.assertIn("spot", repr(light))
+        copy.copy(light)
+
+    def test_equirectangular_map(self):
+        # A default constructor exists.
+        mut.EquirectangularMap()
+
+        # The kwarg constructor also works.
+        map = mut.EquirectangularMap(path="test.hdr")
+        self.assertEqual(map.path, "test.hdr")
+
+        self.assertIn("path", repr(map))
+        copy.copy(map)
+
+    def test_environment_map(self):
+        # A default constructor exists.
+        mut.EnvironmentMap()
+
+        # The kwarg constructor also works.
+        params = mut.EnvironmentMap(skybox=False)
+        self.assertFalse(params.skybox)
+        self.assertIsInstance(params.texture, mut.NullTexture)
+
+        params = mut.EnvironmentMap(
+            texture=mut.EquirectangularMap(path="test.hdr"))
+        self.assertIn("EquirectangularMap", repr(params))
+        copy.copy(params)
+
     def test_render_engine_vtk_params(self):
         # Confirm default construction of params.
         params = mut.RenderEngineVtkParams()
-        self.assertEqual(params.default_label, None)
         self.assertEqual(params.default_diffuse, None)
 
-        label = mut.RenderLabel(10)
         diffuse = np.array((1.0, 0.0, 0.0, 0.0))
         params = mut.RenderEngineVtkParams(
-            default_label=label, default_diffuse=diffuse)
-        self.assertEqual(params.default_label, label)
+            default_diffuse=diffuse,
+            environment_map=mut.EnvironmentMap(
+                skybox=False,
+                texture=mut.EquirectangularMap(path="local.hdr")))
         self.assertTrue((params.default_diffuse == diffuse).all())
 
-        self.assertIn("default_label", repr(params))
+        self.assertIn("default_diffuse", repr(params))
         copy.copy(params)
 
     def test_render_engine_gl_params(self):
@@ -43,18 +94,15 @@ class TestGeometryRender(unittest.TestCase):
         mut.RenderEngineGlParams()
 
         # The kwarg constructor also works.
-        label = mut.RenderLabel(10)
         diffuse = mut.Rgba(1.0, 0.0, 0.0, 0.0)
         params = mut.RenderEngineGlParams(
             default_clear_color=diffuse,
-            default_label=label,
             default_diffuse=diffuse,
         )
         self.assertEqual(params.default_clear_color, diffuse)
-        self.assertEqual(params.default_label, label)
         self.assertEqual(params.default_diffuse, diffuse)
 
-        self.assertIn("default_label", repr(params))
+        self.assertIn("default_clear_color", repr(params))
         copy.copy(params)
 
     def test_render_engine_gltf_client_params(self):
@@ -62,19 +110,16 @@ class TestGeometryRender(unittest.TestCase):
         mut.RenderEngineGltfClientParams()
 
         # The kwarg constructor also works.
-        label = mut.RenderLabel(10)
         base_url = "http://127.0.0.1:8888"
         render_endpoint = "render"
         params = mut.RenderEngineGltfClientParams(
-            default_label=label,
             base_url=base_url,
             render_endpoint=render_endpoint,
         )
-        self.assertEqual(params.default_label, label)
         self.assertEqual(params.render_endpoint, render_endpoint)
         self.assertEqual(params.base_url, base_url)
 
-        self.assertIn("default_label", repr(params))
+        self.assertIn("render_endpoint", repr(params))
         copy.copy(params)
 
     def test_render_label(self):

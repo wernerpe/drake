@@ -1,13 +1,7 @@
 # -*- bazel -*-
 
-load(
-    "@drake//tools/install:install.bzl",
-    "install",
-)
-load(
-    "@drake//tools/workspace:vendor_cxx.bzl",
-    "cc_library_vendored",
-)
+load("@drake//tools/install:install.bzl", "install")
+load("@drake//tools/workspace:vendor_cxx.bzl", "cc_library_vendored")
 
 licenses(["notice"])  # MIT
 
@@ -33,13 +27,10 @@ cc_library_vendored(
     ],
     hdrs = _HDRS,
     hdrs_vendored = [
-        x.replace("include/yaml-cpp/", "drake_src/drake_vendor/yaml-cpp/")
+        x.replace("include/yaml-cpp/", "drake_hdr/yaml-cpp/")
         for x in _HDRS
     ],
-    edit_include = {
-        "yaml-cpp/": "drake_vendor/yaml-cpp/",
-    },
-    includes = ["drake_src"],
+    includes = ["drake_hdr"],
     linkstatic = 1,
     visibility = ["//visibility:public"],
 )

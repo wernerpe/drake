@@ -7,13 +7,14 @@
 #include "drake/common/test_utilities/eigen_matrix_compare.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/multibody/contact_solvers/block_sparse_matrix.h"
+#include "drake/multibody/contact_solvers/conex_supernodal_solver.h"
 #include "drake/multibody/contact_solvers/contact_solver_utils.h"
 #include "drake/multibody/contact_solvers/sap/sap_friction_cone_constraint.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver_results.h"
-#include "drake/multibody/contact_solvers/supernodal_solver.h"
 #include "drake/systems/framework/context.h"
 
 using drake::systems::Context;
+using Eigen::Matrix2d;
 using Eigen::Matrix3d;
 using Eigen::MatrixXd;
 using Eigen::Vector2d;
@@ -181,21 +182,33 @@ class PizzaSaverProblem {
       double sigma) const {
     std::unique_ptr<SapContactProblem<double>> problem =
         MakeContactProblemWithoutConstraints(q0, v0, tau);
+    // Since contact constraints are involved, there must be at least one object
+    // with a valid index, equal to zero.
+    problem->set_num_objects(1);
 
     // Add contact constraints.
     const double phi0 = q0(2);
     const SapFrictionConeConstraint<double>::Parameters parameters{
         mu_, stiffness_, taud_, beta, 1.0e-3};
+
+    // For these tests, only the signed distance phi is relevant.
+    // Object indices must be valid, even though not used in these tests. Every
+    // other configuration will be left uninitialized.
+    const ContactConfiguration<double> configuration{
+        .objectA = 0 /* valid, though not used */,
+        .objectB = 0 /* valid, though not used */,
+        .phi = phi0};
+
     MatrixXd J;  // Full system Jacobian for the three contacts.
     CalcContactJacobian(q0(3), &J);
     problem->AddConstraint(std::make_unique<SapFrictionConeConstraint<double>>(
-        SapConstraintJacobian<double>{0, J.middleRows(0, 3)}, phi0,
+        configuration, SapConstraintJacobian<double>{0, J.middleRows(0, 3)},
         parameters));
     problem->AddConstraint(std::make_unique<SapFrictionConeConstraint<double>>(
-        SapConstraintJacobian<double>{0, J.middleRows(3, 3)}, phi0,
+        configuration, SapConstraintJacobian<double>{0, J.middleRows(3, 3)},
         parameters));
     problem->AddConstraint(std::make_unique<SapFrictionConeConstraint<double>>(
-        SapConstraintJacobian<double>{0, J.middleRows(6, 3)}, phi0,
+        configuration, SapConstraintJacobian<double>{0, J.middleRows(6, 3)},
         parameters));
 
     return problem;
@@ -682,7 +695,7 @@ class LimitConstraint final : public SapConstraint<T> {
   // limit vu and regularization R.
   LimitConstraint(int clique, const VectorX<T>& vl, const VectorX<T>& vu,
                   VectorX<T> R)
-      : SapConstraint<T>({clique, CalcConstraintJacobian(vl.size())}),
+      : SapConstraint<T>({clique, CalcConstraintJacobian(vl.size())}, {}),
         R_(std::move(R)),
         vhat_(ConcatenateVectors(vl, -vu)) {
     DRAKE_DEMAND(vl.size() == vu.size());
@@ -790,7 +803,6 @@ class SapNewtonIterationTest
  public:
   void SetUp() override {
     const double time_step = 0.01;
-    sap_problem_ = std::make_unique<SapContactProblem<double>>(time_step);
 
     // Arbitrary non-identity SPD matrices to build the dynamics matrix A.
     // clang-format off
@@ -828,7 +840,8 @@ class SapNewtonIterationTest
     v_star_ = v_star;
 
     std::vector<MatrixXd> A = {S22, S33, S44};
-    sap_problem_->Reset(std::move(A), std::move(v_star));
+    sap_problem_ = std::make_unique<SapContactProblem<double>>(
+        time_step, std::move(A), std::move(v_star));
 
     constexpr int num_limit_constraint_equations = 2 * clique1_nv;
     VectorXd R = VectorXd::Constant(num_limit_constraint_equations, 1.0e-3);
@@ -875,7 +888,6 @@ class SapNewtonIterationTest
 
     // Perform computation with supernodal algebra.
     SapSolverParameters params_supernodal;  // Default set of parameters.
-    params_supernodal.use_dense_algebra = false;
     params_supernodal.abs_tolerance = 0;
     params_supernodal.rel_tolerance = relative_tolerance;
     params_supernodal.line_search_type = GetParam();
@@ -883,7 +895,8 @@ class SapNewtonIterationTest
 
     // Perform computation with dense algebra.
     SapSolverParameters params_dense;  // Default set of parameters.
-    params_dense.use_dense_algebra = true;
+    params_dense.linear_solver_type =
+        SapSolverParameters::LinearSolverType::kDense;
     params_dense.abs_tolerance = 0;
     params_dense.rel_tolerance = relative_tolerance;
     params_dense.line_search_type = GetParam();
@@ -1054,6 +1067,105 @@ INSTANTIATE_TEST_SUITE_P(
     TestLineSearchMethods, SapNewtonIterationTest,
     testing::Values(SapSolverParameters::LineSearchType::kBackTracking,
                     SapSolverParameters::LineSearchType::kExact));
+
+// A SAP constraint to model a constant impulse g.
+// The cost is defined as ℓ(vc) = -g⋅vc such that γ = −∂ℓ/∂vc = g is constant.
+class ConstantForceConstraint final : public SapConstraint<double> {
+ public:
+  // Constructs a constraint that produces a constant impulse g.
+  ConstantForceConstraint(SapConstraintJacobian<double> J, VectorXd g)
+      : SapConstraint<double>(std::move(J), {}), g_(std::move(g)) {}
+
+ private:
+  // Copy constructor for cloning.
+  ConstantForceConstraint(const ConstantForceConstraint&) = default;
+
+  std::unique_ptr<AbstractValue> DoMakeData(
+      const double&, const Eigen::Ref<const VectorXd>&) const final {
+    // We'll store the constraint velocity in our data.
+    VectorXd vc(this->num_constraint_equations());
+    return SapConstraint<double>::MoveAndMakeAbstractValue(std::move(vc));
+  }
+  void DoCalcData(const Eigen::Ref<const VectorXd>& vc,
+                  AbstractValue* abstract_data) const final {
+    abstract_data->get_mutable_value<VectorXd>() = vc;
+  }
+  double DoCalcCost(const AbstractValue& abstract_data) const final {
+    const auto& vc = abstract_data.get_value<VectorXd>();
+    return -g_.dot(vc);
+  }
+  void DoCalcImpulse(const AbstractValue&,
+                     EigenPtr<VectorXd> gamma) const final {
+    *gamma = g_;
+  }
+  void DoCalcCostHessian(const AbstractValue&, MatrixXd* G) const final {
+    // The cost is linear, therefore its Hessian is Zero.
+    const int ne = num_constraint_equations();
+    G->setZero(ne, ne);
+  }
+  std::unique_ptr<SapConstraint<double>> DoClone() const final {
+    return std::unique_ptr<ConstantForceConstraint>(
+        new ConstantForceConstraint(*this));
+  }
+
+  const VectorXd g_;  // Constant impulse.
+};
+
+// For as long as they are convex, SAP admits constraints with a generic
+// functional form. Thus costs can become negative and cannot be assumed to be
+// positive. This test verifies that the SAP solver can handle constraints with
+// costs that can be negative. For this test we setup a contact problem with an
+// arbitrary dynamics matrix A, zero v*, and a ConstantForceConstraint with
+// known impulse g with identity Jacobian, so that the optimality conditions
+// simply reads: A⋅v = g.
+GTEST_TEST(SapSolver, ConstraintWithNegativeCost) {
+  // Problem data: time step, matrix A and constant impulse g.
+  const double time_step = 0.1;
+  const Vector2d g(2.0, 5.0);
+  const Matrix2d S22 = 0.1 * (Matrix2d() << 2, 1, 1, 2).finished();
+
+  // Make contact problem.
+  std::vector<MatrixX<double>> A = {S22};
+  SapContactProblem<double> problem(time_step, std::move(A), Vector2d::Zero());
+  SapConstraintJacobian<double> J(0 /* the one clique */, Matrix2d::Identity());
+  problem.AddConstraint(
+      std::make_unique<ConstantForceConstraint>(std::move(J), g));
+
+  // Initial guess that produces a negative cost ℓ = −‖g‖².
+  VectorXd v_guess = g;
+
+  // Solve problem.
+  SapSolver<double> solver;
+  SapSolverResults<double> result;
+  const SapSolverStatus status =
+      solver.SolveWithGuess(problem, v_guess, &result);
+  EXPECT_EQ(status, SapSolverStatus::kSuccess);
+
+  // Since the cost is a combination of a quadratic term (from A) and a linear
+  // term (from the constant impulse constraint), we expect the solver to
+  // achieve convergence in a single Newton iteration.
+  const SapSolver<double>::SolverStats& stats = solver.get_statistics();
+  EXPECT_EQ(stats.num_iters, 1);
+
+  // The whole purpose of this test is to verify the behavior of SAP when the
+  // cost becomes negative. Here we verify this indeed happened.
+  EXPECT_EQ(stats.cost.size(), 2);  // Initial cost and final cost.
+  const double ell0 = stats.cost[0];
+  EXPECT_LT(ell0, 0.0);
+
+  // Since the problem is quadratic, we expect the exact line search to
+  // take only one iteration.
+  EXPECT_EQ(stats.num_line_search_iters, 1);
+  // This problem is very well conditioned, we expect convergence on the
+  // optimality condition.
+  EXPECT_TRUE(stats.optimality_criterion_reached);
+
+  // The momentum equation (the optimality condition) for this case is simply
+  // A⋅v = g, from where we know the solution is:
+  const VectorXd v_expected = S22.llt().solve(g);
+  EXPECT_TRUE(CompareMatrices(result.v, v_expected, 4 * kEps,
+                              MatrixCompareType::relative));
+}
 
 }  // namespace internal
 }  // namespace contact_solvers

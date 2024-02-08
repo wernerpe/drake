@@ -145,7 +145,7 @@ class TestControllers(unittest.TestCase):
                               InputPort)
         self.assertIsInstance(controller.get_input_port_desired_acceleration(),
                               InputPort)
-        self.assertIsInstance(controller.get_output_port_force(),
+        self.assertIsInstance(controller.get_output_port_generalized_force(),
                               OutputPort)
         self.assertFalse(controller.is_pure_gravity_compensation())
 
@@ -154,7 +154,7 @@ class TestControllers(unittest.TestCase):
             mode=InverseDynamics.InverseDynamicsMode.kGravityCompensation)
         self.assertIsInstance(controller.get_input_port_estimated_state(),
                               InputPort)
-        self.assertIsInstance(controller.get_output_port_force(),
+        self.assertIsInstance(controller.get_output_port_generalized_force(),
                               OutputPort)
         self.assertTrue(controller.is_pure_gravity_compensation())
 
@@ -225,8 +225,7 @@ class TestControllers(unittest.TestCase):
 
         # Set the plant's context.
         plant_context = plant.CreateDefaultContext()
-        x_plant = plant.GetMutablePositionsAndVelocities(plant_context)
-        x_plant[:] = x
+        plant.SetPositionsAndVelocities(plant_context, x)
 
         # Compute the expected value of the generalized forces using
         # inverse dynamics.
@@ -385,6 +384,7 @@ class TestControllers(unittest.TestCase):
         options = FiniteHorizonLinearQuadraticRegulatorOptions()
         options.Qf = Q
         options.use_square_root_method = False
+        options.simulator_config.max_step_size = 0.2
         self.assertIsNone(options.N)
         self.assertIsNone(options.x0)
         self.assertIsNone(options.u0)
@@ -399,7 +399,8 @@ class TestControllers(unittest.TestCase):
             r"N=None, ",
             r"input_port_index=",
             r"InputPortSelection.kUseFirstInputIfItExists, ",
-            r"use_square_root_method=False\)"]))
+            r"use_square_root_method=False, ",
+            r"simulator_config=SimulatorConfig\(.*\)\)"]))
 
         context = double_integrator.CreateDefaultContext()
         double_integrator.get_input_port(0).FixValue(context, 0.0)

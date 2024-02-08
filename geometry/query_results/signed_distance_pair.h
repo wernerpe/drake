@@ -3,7 +3,6 @@
 #include <utility>
 
 #include "drake/common/drake_copyable.h"
-#include "drake/common/drake_deprecated.h"
 #include "drake/common/eigen_types.h"
 #include "drake/geometry/geometry_ids.h"
 
@@ -29,10 +28,9 @@ namespace geometry {
  @tparam T The underlying scalar type. Must be a valid Eigen scalar.
  */
 template <typename T>
-struct SignedDistancePair{
+struct SignedDistancePair {
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(SignedDistancePair)
   SignedDistancePair() = default;
-
 
   // TODO(DamrongGuoy): When we have a full implementation of computing
   //  nhat_BA_W in ComputeSignedDistancePairwiseClosestPoints, check a

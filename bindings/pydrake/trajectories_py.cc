@@ -1,9 +1,4 @@
-#include "pybind11/eigen.h"
 #include "pybind11/eval.h"
-#include "pybind11/numpy.h"
-#include "pybind11/operators.h"
-#include "pybind11/pybind11.h"
-#include "pybind11/stl.h"
 
 #include "drake/bindings/pydrake/common/default_scalars_pybind.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
@@ -272,9 +267,13 @@ struct Impl {
               cls_doc.BernsteinBasis.doc)
           .def("control_points", &Class::control_points,
               cls_doc.control_points.doc)
+          .def("AsLinearInControlPoints", &Class::AsLinearInControlPoints,
+              py::arg("derivative_order") = 1,
+              cls_doc.AsLinearInControlPoints.doc)
           .def("GetExpression", &Class::GetExpression,
               py::arg("time") = symbolic::Variable("t"),
-              cls_doc.GetExpression.doc);
+              cls_doc.GetExpression.doc)
+          .def("ElevateOrder", &Class::ElevateOrder, cls_doc.ElevateOrder.doc);
       DefCopyAndDeepCopy(&cls);
     }
 
@@ -555,7 +554,7 @@ struct Impl {
     {
       using Class = CompositeTrajectory<T>;
       constexpr auto& cls_doc = doc.CompositeTrajectory;
-      auto cls = DefineTemplateClassWithDefault<Class, Trajectory<T>>(
+      auto cls = DefineTemplateClassWithDefault<Class, PiecewiseTrajectory<T>>(
           m, "CompositeTrajectory", param, cls_doc.doc);
       cls  // BR
           .def(py::init([](std::vector<const Trajectory<T>*> py_segments) {

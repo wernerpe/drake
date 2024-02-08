@@ -44,7 +44,7 @@ namespace solvers {
  *
  * "GUROBI" -- Parameter name and values as specified in Gurobi Reference
  * Manual, section 10.2 "Parameter Descriptions"
- * https://www.gurobi.com/documentation/9.5/refman/parameters.html
+ * https://www.gurobi.com/documentation/10.0/refman/parameters.html
  *
  * "SCS" -- Parameter name and values as specified in the struct SCS_SETTINGS in
  * SCS header file https://github.com/cvxgrp/scs/blob/master/include/scs.h
@@ -56,6 +56,11 @@ namespace solvers {
  *
  * "OSQP" -- Parameter name and values as specified in OSQP Reference
  * https://osqp.org/docs/interfaces/solver_settings.html#solver-settings
+ *
+ * "Clarabel" -- Parameter name and values as specified in Clarabel
+ * https://oxfordcontrol.github.io/ClarabelDocs/stable/api_settings/
+ * Note that `direct_solve_method` is not supported in Drake yet.
+ * Clarabel's boolean options should be passed as integers (0 or 1).
  */
 class SolverOptions {
  public:

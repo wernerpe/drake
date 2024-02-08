@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include "drake/common/test_utilities/eigen_matrix_compare.h"
+#include "drake/common/test_utilities/expect_throws_message.h"
+#include "drake/common/yaml/yaml_io.h"
 #include "drake/geometry/optimization/cartesian_product.h"
 #include "drake/geometry/optimization/minkowski_sum.h"
 #include "drake/geometry/optimization/vpolytope.h"
@@ -14,6 +16,7 @@ namespace optimization {
 namespace {
 
 using Eigen::Matrix;
+using Eigen::RowVector2d;
 using Eigen::Vector2d;
 using Eigen::Vector3d;
 using Eigen::Vector4d;
@@ -164,6 +167,49 @@ GTEST_TEST(IrisTest, StartingEllipse) {
   EXPECT_FALSE(region.PointInSet(Vector2d(-.99, 0.0)));
 }
 
+GTEST_TEST(IrisTest, BoundingRegion) {
+  ConvexSets obstacles;
+  obstacles.emplace_back(
+      VPolytope::MakeBox(Vector2d(0.1, 0.5), Vector2d(1, 1)));
+  obstacles.emplace_back(
+      VPolytope::MakeBox(Vector2d(-1, -1), Vector2d(-0.1, -0.5)));
+  obstacles.emplace_back(
+      HPolyhedron::MakeBox(Vector2d(.1, -1), Vector2d(1, -0.5)));
+  obstacles.emplace_back(
+      HPolyhedron::MakeBox(Vector2d(-1, 0.5), Vector2d(-0.1, 1)));
+  const HPolyhedron domain = HPolyhedron::MakeUnitBox(2);
+
+  const Vector2d sample{0, 0};  // center of the bounding box.
+  IrisOptions options;
+
+  const HPolyhedron region = Iris(obstacles, sample, domain, options);
+
+  // Use a bounding_region that omits the obstacles to the left of the x-axis.
+  options.bounding_region = HPolyhedron(RowVector2d(-1, 0), Vector1d(0.05));
+
+  const HPolyhedron region_w_bounding =
+      Iris(obstacles, sample, domain, options);
+
+  EXPECT_EQ(region.b().size(), 8);  // 4 from `domain` and 1 from each obstacle.
+  EXPECT_EQ(region_w_bounding.b().size(),
+            7);  // 4 from `domain`, 1 from `options.bounding_region` and 2
+                 // more from the right obstacles.
+
+  // `region_w_bounding` should not contain points of y ≤ -0.05 since they're
+  // outside its bounding region.
+  EXPECT_TRUE(region.PointInSet(Vector2d(-0.1, 0)));
+  EXPECT_FALSE(region_w_bounding.PointInSet(Vector2d(-0.1, 0)));
+
+  // Points inside the bounding region and outside obstacles should be members
+  // of both regions
+  EXPECT_TRUE(region.PointInSet(Vector2d(0.99, 0)));
+  EXPECT_TRUE(region_w_bounding.PointInSet(Vector2d(0.99, 0)));
+
+  // Points inside obstacles should be excluded from both regions.
+  EXPECT_FALSE(region.PointInSet(Vector2d(0.11, 0.51)));
+  EXPECT_FALSE(region_w_bounding.PointInSet(Vector2d(0.11, 0.51)));
+}
+
 GTEST_TEST(IrisTest, TerminationConditions) {
   ConvexSets obstacles;
   obstacles.emplace_back(VPolytope::MakeBox(Vector2d(.1, .5), Vector2d(1, 1)));
@@ -200,6 +246,44 @@ GTEST_TEST(IrisTest, TerminationConditions) {
       Iris(obstacles, sample, domain, options);
   EXPECT_EQ(rel_volume_region.b().size(),
             8);  // 4 from bbox + 1 from each obstacle.
+}
+
+GTEST_TEST(IrisTest, TerminationFunc) {
+  ConvexSets obstacles;
+  obstacles.emplace_back(VPolytope::MakeBox(Vector2d(.1, .5), Vector2d(1, 1)));
+  obstacles.emplace_back(
+      VPolytope::MakeBox(Vector2d(-1, -1), Vector2d(-.1, -.5)));
+  obstacles.emplace_back(
+      HPolyhedron::MakeBox(Vector2d(.1, -1), Vector2d(1, -.5)));
+  obstacles.emplace_back(
+      HPolyhedron::MakeBox(Vector2d(-1, .5), Vector2d(-.1, 1)));
+  const HPolyhedron domain = HPolyhedron::MakeUnitBox(2);
+  const Vector2d sample{0, 0};  // center of the bounding box.
+  const Vector2d q1{0.15, -0.45};
+  const Vector2d q2{-0.05, 0.75};
+  IrisOptions options;
+  options.iteration_limit = 100;
+  options.termination_threshold = -1;
+  SetEdgeContainmentTerminationCondition(&options, q1, q2, 1e-3);
+  EXPECT_FALSE(options.termination_func(domain));
+  const HPolyhedron region = Iris(obstacles, sample, domain, options);
+  EXPECT_EQ(region.b().size(), 8);
+  EXPECT_TRUE(region.PointInSet(q1));
+  EXPECT_TRUE(region.PointInSet(q2));
+  EXPECT_TRUE(region.PointInSet(sample));
+  EXPECT_FALSE(options.termination_func(region));
+  // What if we didn't set the termination condition?
+  options.termination_func = nullptr;
+  const HPolyhedron region_no_termination =
+      Iris(obstacles, sample, domain, options);
+  EXPECT_FALSE(region_no_termination.PointInSet(q1) &&
+               region_no_termination.PointInSet(q2));
+  // failure case when the domain is infeasible.
+  const Vector2d q3{3.0, 0};
+  SetEdgeContainmentTerminationCondition(&options, q1, q3, 1e-3);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      Iris(obstacles, sample, domain, options),
+      ".* Please check the implementation of your termination_func.");
 }
 
 GTEST_TEST(IrisTest, BallInBoxNDims) {
@@ -252,6 +336,58 @@ GTEST_TEST(IrisTest, ClosestPointFailure) {
   for (const auto& o : shrunk_obstacles) {
     EXPECT_FALSE(o->IntersectsWith(region));
   }
+}
+
+GTEST_TEST(IrisOptionsTest, Serialize) {
+  IrisOptions options;
+  options.require_sample_point_is_contained = false;
+  options.iteration_limit = 25;
+  options.termination_threshold = 1e-3;
+  options.relative_termination_threshold = 0.01;
+  options.configuration_space_margin = 0.05;
+  options.num_collision_infeasible_samples = 8;
+  options.num_additional_constraint_infeasible_samples = 3;
+  options.random_seed = 789;
+  const std::string yaml = yaml::SaveYamlString(options);
+  const auto options2 = yaml::LoadYamlString<IrisOptions>(yaml);
+  EXPECT_EQ(options.require_sample_point_is_contained,
+            options2.require_sample_point_is_contained);
+  EXPECT_EQ(options.iteration_limit, options2.iteration_limit);
+  EXPECT_EQ(options.termination_threshold, options2.termination_threshold);
+  EXPECT_EQ(options.relative_termination_threshold,
+            options2.relative_termination_threshold);
+  EXPECT_EQ(options.configuration_space_margin,
+            options2.configuration_space_margin);
+  EXPECT_EQ(options.num_collision_infeasible_samples,
+            options2.num_collision_infeasible_samples);
+  EXPECT_EQ(options.num_additional_constraint_infeasible_samples,
+            options2.num_additional_constraint_infeasible_samples);
+  EXPECT_EQ(options.random_seed, options2.random_seed);
+}
+
+GTEST_TEST(IrisOptionsTest, SetEdgeContainmentTerminationCondition) {
+  IrisOptions options;
+  const Vector2d x_1{0.0, 1.0};
+  const Vector2d x_2{1.0, 3.0};
+  const double epsilon = 1e-3;
+  const double tol = 1e-9;
+  // default options should not have starting_ellipse or termination_func.
+  EXPECT_FALSE(options.starting_ellipse.has_value());
+  EXPECT_FALSE(options.termination_func);
+  SetEdgeContainmentTerminationCondition(&options, x_1, x_2, epsilon, tol);
+  EXPECT_TRUE(options.starting_ellipse.has_value());
+  EXPECT_TRUE(options.termination_func);
+  const Hyperellipsoid& E = options.starting_ellipse.value();
+  // The ellipse should contain both endpoints.
+  EXPECT_TRUE(E.PointInSet(x_1, tol));
+  EXPECT_TRUE(E.PointInSet(x_2, tol));
+  // make a box that only contains up to half of the line segment. Must lead to
+  // termination
+  const auto half_box = HPolyhedron::MakeBox(Vector2d::Zero(), (x_1 + x_2) / 2);
+  EXPECT_TRUE(options.termination_func(half_box));
+  // Make a box that contains the line segment. Must not lead to termination
+  const auto all_box = HPolyhedron::MakeBox(x_1, x_2);
+  EXPECT_FALSE(options.termination_func(all_box));
 }
 
 class SceneGraphTester : public ::testing::Test {

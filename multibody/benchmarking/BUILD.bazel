@@ -1,10 +1,10 @@
 load(
-    "@drake//tools/performance:defs.bzl",
+    "//tools/performance:defs.bzl",
     "drake_cc_googlebench_binary",
     "drake_py_experiment_binary",
 )
 load(
-    "@drake//tools/skylark:test_tags.bzl",
+    "//tools/skylark:test_tags.bzl",
     "gurobi_test_tags",
 )
 load("//tools/lint:lint.bzl", "add_lint_tests")
@@ -122,4 +122,4 @@ drake_py_experiment_binary(
     googlebench_binary = ":position_constraint",
 )
 
-add_lint_tests()
+add_lint_tests(enable_clang_format_lint = False)

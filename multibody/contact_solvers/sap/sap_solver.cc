@@ -9,8 +9,9 @@
 #include "drake/common/default_scalars.h"
 #include "drake/common/extract_double.h"
 #include "drake/math/linear_solve.h"
+#include "drake/multibody/contact_solvers/block_sparse_supernodal_solver.h"
+#include "drake/multibody/contact_solvers/conex_supernodal_solver.h"
 #include "drake/multibody/contact_solvers/newton_with_bisection.h"
-#include "drake/multibody/contact_solvers/supernodal_solver.h"
 
 namespace drake {
 namespace multibody {
@@ -166,7 +167,7 @@ SapSolverStatus SapSolver<double>::SolveWithGuess(
       // N.B. Notice the check for monotonic convergence is placed AFTER the
       // check for convergence. This is done puposedly to avoid round-off errors
       // in the cost near convergence when the gradient is almost zero.
-      const double ell_scale = 0.5 * (ell + ell_previous);
+      const double ell_scale = 0.5 * (abs(ell) + abs(ell_previous));
       const double ell_slop =
           parameters_.relative_slop * std::max(1.0, ell_scale);
       if (ell > ell_previous + ell_slop) {
@@ -180,7 +181,9 @@ SapSolverStatus SapSolver<double>::SolveWithGuess(
               "SapSolver: Non-monotonic convergence detected.");
         }
       }
-      if (!parameters_.use_dense_algebra && supernodal_solver == nullptr) {
+      if (parameters_.linear_solver_type !=
+              SapSolverParameters::LinearSolverType::kDense &&
+          supernodal_solver == nullptr) {
         // Instantiate supernodal solver on the first iteration when needed. If
         // the stopping criteria is satisfied at k = 0 (good guess), then we
         // skip the expensive instantiation of the solver.
@@ -218,7 +221,7 @@ SapSolverStatus SapSolver<double>::SolveWithGuess(
     ell_previous = ell;
     ell = model_->EvalCost(*context);
 
-    const double ell_scale = (ell + ell_previous) / 2.0;
+    const double ell_scale = 0.5 * (abs(ell) + abs(ell_previous));
     // N.B. Even though theoretically we expect ell < ell_previous, round-off
     // errors might make the difference ell_previous - ell negative, within
     // machine epsilon. Therefore we take the absolute value here.
@@ -390,7 +393,7 @@ std::pair<T, int> SapSolver<T>::PerformBackTrackingLineSearch(
   // N.B. ell = 0 implies v = v* and gamma = 0, the solver would've exited
   // trivially and we would've never gotten to this point. Thus we know
   // ell_scale != 0.
-  const double ell_scale = ExtractDoubleOrThrow(0.5 * (ell + ell0));
+  const double ell_scale = ExtractDoubleOrThrow(0.5 * (abs(ell) + abs(ell0)));
 
   // N.B. SAP checks that the cost decreases monotonically using a slop to avoid
   // false negatives due to round-off errors. Therefore if we are going to exit
@@ -611,8 +614,19 @@ template <typename T>
 std::unique_ptr<SuperNodalSolver> SapSolver<T>::MakeSuperNodalSolver() const {
   if constexpr (std::is_same_v<T, double>) {
     const BlockSparseMatrix<T>& J = model_->constraints_bundle().J();
-    return std::make_unique<SuperNodalSolver>(J.block_rows(), J.get_blocks(),
-                                              model_->dynamics_matrix());
+    switch (parameters_.linear_solver_type) {
+      case SapSolverParameters::LinearSolverType::kConex:
+        return std::make_unique<ConexSuperNodalSolver>(
+            J.block_rows(), J.get_blocks(), model_->dynamics_matrix());
+      case SapSolverParameters::LinearSolverType::kBlockSparseCholesky:
+        return std::make_unique<BlockSparseSuperNodalSolver>(
+            J.block_rows(), J.get_blocks(), model_->dynamics_matrix());
+      case SapSolverParameters::LinearSolverType::kDense:
+        throw std::logic_error(
+            "Supernodal solver should only be constructed when the linear "
+            "solver type is not dense.");
+    }
+    DRAKE_UNREACHABLE();
   } else {
     throw std::logic_error(
         "SapSolver::MakeSuperNodalSolver(): SuperNodalSolver only supports T "
@@ -687,9 +701,11 @@ template <typename T>
 void SapSolver<T>::CalcSearchDirectionData(
     const systems::Context<T>& context, SuperNodalSolver* supernodal_solver,
     SapSolver<T>::SearchDirectionData* data) const {
-  DRAKE_DEMAND(parameters_.use_dense_algebra || (supernodal_solver != nullptr));
+  const bool use_dense_algebra = parameters_.linear_solver_type ==
+                                 SapSolverParameters::LinearSolverType::kDense;
+  DRAKE_DEMAND(use_dense_algebra || (supernodal_solver != nullptr));
   // Update search direction dv.
-  if (!parameters_.use_dense_algebra) {
+  if (!use_dense_algebra) {
     CallSuperNodalSolver(context, supernodal_solver, &data->dv);
   } else {
     CallDenseSolver(context, &data->dv);

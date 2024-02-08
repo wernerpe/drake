@@ -28,9 +28,9 @@ GTEST_TEST(JointActuatorTest, JointActuatorLimitTest) {
   const SpatialInertia<double> M_B;  // Default construction is ok for this.
 
   // Add bodies so we can add joints to them.
-  const auto body1 = &tree.AddBody<RigidBody>("body1", M_B);
-  const auto body2 = &tree.AddBody<RigidBody>("body2", M_B);
-  const auto body3 = &tree.AddBody<RigidBody>("body3", M_B);
+  const auto body1 = &tree.AddRigidBody("body1", M_B);
+  const auto body2 = &tree.AddRigidBody("body2", M_B);
+  const auto body3 = &tree.AddRigidBody("body3", M_B);
 
   // Add a prismatic joint between the world and body1:
   const Joint<double>& body1_world =
@@ -42,6 +42,14 @@ GTEST_TEST(JointActuatorTest, JointActuatorLimitTest) {
   // Validate the actuator effort limit has been set up correctly.
   const auto& actuator1 = tree.GetJointActuatorByName("act1");
   EXPECT_EQ(actuator1.effort_limit(), kPositiveEffortLimit);
+
+  // Unit test PD controller APIs.
+  EXPECT_FALSE(actuator1.has_controller());
+  JointActuator<double>& mutable_actuator1 =
+      tree.get_mutable_joint_actuator(actuator1.index());
+  PdControllerGains gains{.p = 1000, .d = 100};
+  mutable_actuator1.set_controller_gains(gains);
+  EXPECT_TRUE(actuator1.has_controller());
 
   // Throw if the effort limit is set to 0.
   const Joint<double>& body2_body1 =
@@ -66,7 +74,7 @@ GTEST_TEST(JointActuatorTest, JointActuatorLimitTest) {
   DRAKE_EXPECT_THROWS_MESSAGE(actuator1.num_inputs(),
                               ".*after the MultibodyPlant is finalized.");
 
-  const auto body4 = &tree.AddBody<RigidBody>("body4", M_B);
+  const auto body4 = &tree.AddRigidBody("body4", M_B);
   const Joint<double>& body4_world =
       tree.AddJoint(std::make_unique<PlanarJoint<double>>(
           "planar4", tree.world_body().body_frame(), body4->body_frame(),
@@ -77,8 +85,15 @@ GTEST_TEST(JointActuatorTest, JointActuatorLimitTest) {
 
   tree.Finalize();
 
-  EXPECT_EQ(tree.num_actuated_dofs(), 6);
-  EXPECT_EQ(actuator4.input_start(), 3);
+  // Tally of *successfully* added actuators:
+  // - act1 has 1 dof
+  // - act2 was an error (never added)
+  // - act3 was an error (never added)
+  // - act4 has 3 dofs
+  EXPECT_EQ(tree.num_actuated_dofs(), 4);
+  EXPECT_EQ(actuator1.input_start(), 0);
+  EXPECT_EQ(actuator1.num_inputs(), 1);
+  EXPECT_EQ(actuator4.input_start(), 1);
   EXPECT_EQ(actuator4.num_inputs(), 3);
 }
 

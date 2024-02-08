@@ -212,10 +212,9 @@ GTEST_TEST(UnitInertia, SolidCylinder) {
   const double I_perp = (3.0 * r * r + L * L) / 12.0;
   const double I_axial = r * r / 2.0;
   const UnitInertia<double> Gz_expected(I_perp, I_perp, I_axial);
-  // Compute the unit inertia for a cylinder oriented along the z-axis
-  // (the default).
+  // Compute the unit inertia for a cylinder oriented along the z-axis.
   UnitInertia<double> Gz =
-      UnitInertia<double>::SolidCylinder(r, L);
+      UnitInertia<double>::SolidCylinder(r, L, Vector3d::UnitZ());
   EXPECT_TRUE(Gz.CopyToFullMatrix3().isApprox(
       Gz_expected.CopyToFullMatrix3(), kEpsilon));
 
@@ -233,9 +232,8 @@ GTEST_TEST(UnitInertia, SolidCylinder) {
   EXPECT_TRUE(Gy.CopyToFullMatrix3().isApprox(
       Gy_expected.CopyToFullMatrix3(), kEpsilon));
 
-  // Compute the unit inertia for a cylinder oriented along a non-unit,
-  // non-axial vector.
-  const Vector3d v(1.0, 2.0, 3.0);
+  // Compute the unit inertia for a cylinder oriented along a non-axial vector.
+  const Vector3d v = Vector3d(1.0, 2.0, 3.0).normalized();
   const UnitInertia<double> Gv =
       UnitInertia<double>::SolidCylinder(r, L, v);
   // Generate a rotation matrix from a Frame V in which Vz = v to frame Z where
@@ -249,17 +247,37 @@ GTEST_TEST(UnitInertia, SolidCylinder) {
       Gv_expected.CopyToFullMatrix3(), kEpsilon));
 }
 
-// Tests the static method to obtain the unit inertia of a solid cylinder
-// computed about a point at the center of its base.
+// Tests the static method to obtain the unit inertia of a solid cylinder B
+// computed about a point Bp at the center of its base.
 GTEST_TEST(UnitInertia, SolidCylinderAboutEnd) {
   const double r = 2.5;
   const double L = 1.5;
   const double I_perp = (3.0 * r * r + L * L) / 12.0 + L * L /4.0;
   const double I_axial = r * r / 2.0;
-  const UnitInertia<double> G_expected(I_perp, I_perp, I_axial);
-  UnitInertia<double> G = UnitInertia<double>::SolidCylinderAboutEnd(r, L);
-  EXPECT_TRUE(G.CopyToFullMatrix3().isApprox(
-      G_expected.CopyToFullMatrix3(), kEpsilon));
+
+  // Create G_BBp_A, body B's unit inertia about point Bp expressed in terms of
+  // a frame A, where unit vector Az is the axial direction.
+  const UnitInertia<double> G_BBp_A(I_perp, I_perp, I_axial);
+  // Create a non-identity rotation matrix.
+  const drake::math::RotationMatrix<double> R_AB(
+      drake::math::RollPitchYaw<double>(0.1, 0.2, 0.3));
+  // Form G_BBp_B (body B's unit inertia about point Bp expressed in terms
+  // of body B) by reexpressing G_BBp_A using the rotation matrix R_BA.
+  const UnitInertia<double> G_BBp_B = G_BBp_A.ReExpress(R_AB.inverse());
+
+  // Create G_BBp_B more directly via SolidCylinderAboutEnd().
+  const Vector3<double> unit_vec_A = Vector3<double>::UnitZ();
+  const Vector3<double> unit_vec_B = R_AB.inverse() * unit_vec_A;
+  UnitInertia<double> G_BBp_B_test =
+      UnitInertia<double>::SolidCylinderAboutEnd(r, L, unit_vec_B);
+  EXPECT_TRUE(G_BBp_B.CopyToFullMatrix3().isApprox(
+      G_BBp_B_test.CopyToFullMatrix3(), kEpsilon));
+
+  // Ensure a bad unit vector throws an exception.
+  const Vector3<double> bad_vec(1, 0.1, 0);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      UnitInertia<double>::SolidCylinderAboutEnd(r, L, bad_vec),
+      "[^]* The unit_vector argument .* is not a unit vector.[^]*");
 }
 
 // Tests the static method to obtain the unit inertia of a solid capsule
@@ -282,7 +300,8 @@ GTEST_TEST(UnitInertia, SolidCapsule) {
 
   // The inertia properties of a capsule is calculated three ways.
   // Calculation 1: Multiply the capsule's mass with its unit inertia.
-  const UnitInertia<double> G_capsule = UnitInertia<double>::SolidCapsule(r, L);
+  const UnitInertia<double> G_capsule =
+      UnitInertia<double>::SolidCapsule(r, L, Vector3d::UnitZ());
   RotationalInertia<double> I_capsule = mass_capsule * G_capsule;
 
   // Calculation 2: Calculate the inertia analytically.
@@ -334,8 +353,8 @@ GTEST_TEST(UnitInertia, SolidCapsule) {
   Ih.ShiftToThenAwayFromCenterOfMassInPlace(mh, p_HoHcm_C, p_HcmCcm_C);
 
   // Form the cylinder's inertia about its center of mass and verify results.
-  const RotationalInertia<double> I_cylinder =
-      mass_cylinder * UnitInertia<double>::SolidCylinder(r, L);
+  const RotationalInertia<double> I_cylinder = mass_cylinder *
+      UnitInertia<double>::SolidCylinder(r, L, Vector3d::UnitZ());
   I_capsule = I_cylinder + 2 * Ih;
   EXPECT_TRUE(CompareMatrices(I_capsule.get_moments(),
                               I_capsule_expected.get_moments(), kEpsilon));
@@ -343,10 +362,10 @@ GTEST_TEST(UnitInertia, SolidCapsule) {
                               I_capsule_expected.get_products(), kEpsilon));
 
   // Ensure a bad unit vector throws an exception.
-  const Vector3<double> bad_vec(1, 0.1, 0);
+  const Vector3<double> bad_uvec(1, 0.1, 0);
   DRAKE_EXPECT_THROWS_MESSAGE(
-      UnitInertia<double>::SolidCapsule(r, L, bad_vec),
-      "[^]* The unit_vector argument .* is not a unit vector.");
+      UnitInertia<double>::SolidCapsule(r, L, bad_uvec),
+      "[^]* The unit_vector argument .* is not a unit vector.[^]*");
 }
 
 // Tests a degenerate capsule (into sphere) has the same unit inertia as a
@@ -355,7 +374,8 @@ GTEST_TEST(UnitInertia, SolidCapsuleDegenerateIntoSolidSphere) {
   const double r = 2.5;
   const double L = 0;
   const UnitInertia<double> G_expected = UnitInertia<double>::SolidSphere(r);
-  const UnitInertia<double> G = UnitInertia<double>::SolidCapsule(r, L);
+  const UnitInertia<double> G =
+      UnitInertia<double>::SolidCapsule(r, L, Vector3d::UnitZ());
   EXPECT_TRUE(CompareMatrices(G.get_moments(), G_expected.get_moments()));
   EXPECT_TRUE(CompareMatrices(G.get_products(), G_expected.get_products()));
 }
@@ -368,7 +388,7 @@ GTEST_TEST(UnitInertia, SolidCapsuleDegenerateIntoThinRod) {
   const UnitInertia<double> G_expected =
       UnitInertia<double>::ThinRod(L, Vector3d::UnitZ());
   const UnitInertia<double> G_degenerate =
-      UnitInertia<double>::SolidCapsule(r, L);
+      UnitInertia<double>::SolidCapsule(r, L, Vector3d::UnitZ());
   EXPECT_TRUE(
       CompareMatrices(G_degenerate.get_moments(), G_expected.get_moments()));
   EXPECT_TRUE(
@@ -376,7 +396,7 @@ GTEST_TEST(UnitInertia, SolidCapsuleDegenerateIntoThinRod) {
   // The unit inertia of the capsule should be close to that of a thin rod when
   // the radius is vanishingly small.
   const UnitInertia<double> G_close_to_degenerate =
-      UnitInertia<double>::SolidCapsule(kEpsilon, L);
+      UnitInertia<double>::SolidCapsule(kEpsilon, L, Vector3d::UnitZ());
   EXPECT_TRUE(CompareMatrices(G_close_to_degenerate.get_moments(),
                               G_expected.get_moments(), kEpsilon));
   EXPECT_TRUE(CompareMatrices(G_close_to_degenerate.get_products(),
@@ -404,8 +424,7 @@ GTEST_TEST(UnitInertia, AxiallySymmetric) {
   const double I_axial = r * r / 2.0;
 
   // Cylinder's axis. A vector on the y-z plane, at -pi/4 from the z axis.
-  // The vector doesn't need to be normalized.
-  const Vector3d b_E = Vector3d::UnitY() + Vector3d::UnitZ();
+  const Vector3d b_E = (Vector3d::UnitY() + Vector3d::UnitZ()).normalized();
 
   // Rotation of -pi/4 about the x axis, from a Z frame having its z axis
   // aligned with the z-axis of the cylinder to the expressed-in frame E.
@@ -418,7 +437,8 @@ GTEST_TEST(UnitInertia, AxiallySymmetric) {
 
   // The expected inertia is that of a cylinder of radius r and height L with
   // its longitudinal axis aligned with b.
-  UnitInertia<double> G_Z = UnitInertia<double>::SolidCylinder(r, L);
+  UnitInertia<double> G_Z =
+      UnitInertia<double>::SolidCylinder(r, L, Vector3d::UnitZ());
   UnitInertia<double> G_E_expected = G_Z.ReExpress(R_EZ);
 
   // Verify the computed values.
@@ -453,8 +473,7 @@ GTEST_TEST(UnitInertia, ThinRod) {
   const double I_rod = L * L / 12.0;
 
   // Rod's axis. A vector on the y-z plane, at -pi/4 from the z axis.
-  // The vector doesn't need to be normalized.
-  const Vector3d b_E = Vector3d::UnitY() + Vector3d::UnitZ();
+  const Vector3d b_E = (Vector3d::UnitY() + Vector3d::UnitZ()).normalized();
 
   // Rotation of -pi/4 about the x axis, from a Z frame having its z-axis
   // aligned with the rod to the expressed-in frame E.
@@ -467,7 +486,8 @@ GTEST_TEST(UnitInertia, ThinRod) {
 
   // The expected inertia is that of a cylinder of zero radius and height L with
   // its longitudinal axis aligned with b.
-  UnitInertia<double> G_Z = UnitInertia<double>::SolidCylinder(0.0, L);
+  UnitInertia<double> G_Z =
+      UnitInertia<double>::SolidCylinder(0, L, Vector3d::UnitZ());
   UnitInertia<double> G_E_expected = G_Z.ReExpress(R_EZ);
 
   // Verify the computed values.
@@ -594,8 +614,10 @@ GTEST_TEST(UnitInertia, ShiftFromCenterOfMassInPlace) {
   const double r = 2.5;
   const double L = 1.5;
   const UnitInertia<double> G_expected =
-      UnitInertia<double>::SolidCylinderAboutEnd(r, L);
-  UnitInertia<double> G = UnitInertia<double>::SolidCylinder(r, L);
+      UnitInertia<double>::SolidCylinderAboutEnd(r, L,
+                                                 Vector3<double>::UnitZ());
+  UnitInertia<double> G =
+      UnitInertia<double>::SolidCylinder(r, L, Vector3<double>::UnitZ());
   EXPECT_FALSE(G.CopyToFullMatrix3().isApprox(
       G_expected.CopyToFullMatrix3(), kEpsilon));  // Not equal yet.
   G.ShiftFromCenterOfMassInPlace({0.0, 0.0, L / 2.0});
@@ -606,21 +628,166 @@ GTEST_TEST(UnitInertia, ShiftFromCenterOfMassInPlace) {
   // Now test that we can perform the inverse operation and obtain the original
   // unit inertia.
   // As a shift into a new object:
-  UnitInertia<double> G2 = G.ShiftToCenterOfMass({0.0, 0.0, -L / 2.0});
+  const UnitInertia<double> G2 = G.ShiftToCenterOfMass({0.0, 0.0, -L / 2.0});
   // As a shift in place:
   G.ShiftToCenterOfMassInPlace({0.0, 0.0, -L / 2.0});
+  const UnitInertia<double> G_cylinder =
+      UnitInertia<double>::SolidCylinder(r, L, Vector3<double>::UnitZ());
   EXPECT_TRUE(G.CopyToFullMatrix3().isApprox(
-      UnitInertia<double>::SolidCylinder(r, L).CopyToFullMatrix3(), kEpsilon));
+      G_cylinder.CopyToFullMatrix3(), kEpsilon));
   EXPECT_TRUE(G2.CopyToFullMatrix3().isApprox(
-      UnitInertia<double>::SolidCylinder(r, L).CopyToFullMatrix3(), kEpsilon));
+      G_cylinder.CopyToFullMatrix3(), kEpsilon));
 
   // Create a new object.
-  UnitInertia<double> G3 =
-      UnitInertia<double>::
-      SolidCylinder(r, L).ShiftFromCenterOfMass({0.0, 0.0, L / 2.0});
+  const UnitInertia<double> G3 =
+      G_cylinder.ShiftFromCenterOfMass({0.0, 0.0, L / 2.0});
   EXPECT_TRUE(G3.CopyToFullMatrix3().isApprox(
       G_expected.CopyToFullMatrix3(), kEpsilon));
   EXPECT_TRUE(G3.CouldBePhysicallyValid());
+}
+
+// Test the UnitInertia function that determines an inertia-equivalent shape.
+GTEST_TEST(UnitInertia, CalcPrincipalHalfLengthsAndAxesForEquivalentShape) {
+  // Consider a body B whose shape (e.g., an ellipsoid or box) is defined by
+  // semi-diameters (half-lengths) a, b, c.
+  const double a = 5.0, b = 4.0, c = 3.0;
+  constexpr double kTolerance = 64 * std::numeric_limits<double>::epsilon();
+  const drake::math::RotationMatrix R_identity =
+      drake::math::RotationMatrix<double>::Identity();
+
+  // Form the unit inertia G_BBcm_B for a solid ellipsoid B. Verify the function
+  // under test reproduces semi-diameters lmax = a, lmed = b, lmin = c.
+  // Verify principal directions Ax, Ay, Az (R_BA is an identity matrix).
+  const double shape_factor_solid_ellipsoid = 0.2;  // Inertia shape factor.
+  double Gmin = shape_factor_solid_ellipsoid * (b*b + c*c);  // 1/5 (b² + c²)
+  double Gmed = shape_factor_solid_ellipsoid * (a*a + c*c);  // 1/5 (a² + c²)
+  double Gmax = shape_factor_solid_ellipsoid * (a*a + b*b);  // 1/5 (a² + b²)
+  UnitInertia<double> G_BBcm_B = UnitInertia<double>(Gmin, Gmed, Gmax);
+  auto [abc, R_BA] =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_solid_ellipsoid);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(a, b, c), abc, kTolerance));
+  EXPECT_TRUE(R_BA.IsExactlyEqualTo(R_identity));
+
+  // Form the unit inertia G_BBcm_B for a solid box B. Verify the function
+  // under test reproduces half-lengths lmax = a, lmed = b, lmin = c.
+  // Verify principal directions Ax, Ay, Az (R_BA is an identity matrix).
+  const double shape_factor_solid_box = 1.0 / 3.0;  // Inertia shape factor.
+  Gmin = shape_factor_solid_box * (b*b + c*c);  // Gxx = 1/3 (b² + c²)  small
+  Gmed = shape_factor_solid_box * (a*a + c*c);  // Gyy = 1/3 (a² + c²)  medium
+  Gmax = shape_factor_solid_box * (a*a + b*b);  // Gzz = 1/3 (a² + b²)  large
+  G_BBcm_B = UnitInertia<double>(Gmin, Gmed, Gmax);
+  std::tie(abc, R_BA) =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_solid_box);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(a, b, c), abc, kTolerance));
+  EXPECT_TRUE(R_BA.IsExactlyEqualTo(R_identity));
+
+  // For a solid box B with principal moments of inertia Gmed < Gmin
+  // (not Gmin < Gmed < Gmax), verify the function under test produces
+  // lmax = a, lmed = b, lmin = c (unchanged order).
+  // Verify reordered principal directions (R_BA is not an identity matrix).
+  G_BBcm_B = UnitInertia<double>(Gmed, Gmin, Gmax);
+  std::tie(abc, R_BA) =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_solid_box);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(a, b, c), abc, kTolerance));
+  Vector3<double> col_min(0.0, 1.0, 0.0);  // Direction for minimum axis.
+  Vector3<double> col_med(1.0, 0.0, 0.0);  // Direction for intermediate axis.
+  Vector3<double> col_max(0.0, 0.0, 1.0);  // Direction for maximum axis.
+  drake::math::RotationMatrix<double> R_BA_expected =
+      drake::math::RotationMatrix<double>::MakeFromOrthonormalColumns(
+          col_min, col_med, -col_max);
+  EXPECT_TRUE(R_BA.IsNearlyEqualTo(R_BA_expected, kTolerance));
+
+  // For a solid box B, verify the function under test with argument
+  // shape_factor_solid_ellipsoid produces properly scaled semi-diameters
+  // (half-lengths) [a, b, c], i.e., a solid box reshaped as an ellipsoid.
+  // Verify principal directions Ax, Ay, Az (R_BA is an identity matrix).
+  std::tie(abc, R_BA) =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_solid_ellipsoid);
+  const double ratio =
+      std::sqrt(shape_factor_solid_box / shape_factor_solid_ellipsoid);
+  EXPECT_NEAR(std::abs(ratio), std::sqrt(1.0/0.6), kTolerance);
+  EXPECT_TRUE(CompareMatrices(ratio * Vector3<double>(a, b, c),
+                              abc, kTolerance));
+
+  // For a hollow sphere B, verify the function under test produces
+  // semi-diameters lmax = a, lmed = a, lmin = a.
+  // Verify principal directions Ax, Ay, Az (R_BA is an identity matrix).
+  // For a hollow sphere with radius a, Gmin = Gmed = Gmax = 2/3 a².
+  const double shape_factor_hollow_ellipsoid = 1.0 /3.0;
+  const double G_hollow_sphere = 2.0 / 3.0 * a * a;
+  G_BBcm_B =
+      UnitInertia<double>(G_hollow_sphere, G_hollow_sphere, G_hollow_sphere);
+  std::tie(abc, R_BA) =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_hollow_ellipsoid);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(a, a, a), abc, kTolerance));
+  EXPECT_TRUE(R_BA.IsExactlyEqualTo(R_identity));
+
+  // For a particle B, verify the function under test produces
+  // lmax = lmed = lmin = 0 (the inertia_shape_factor is not relevant).
+  // Verify principal directions Ax, Ay, Az (R_BA is an identity matrix).
+  G_BBcm_B = UnitInertia<double>(0, 0, 0);
+  std::tie(abc, R_BA) =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(0.123);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(0, 0, 0), abc, kTolerance));
+  EXPECT_TRUE(R_BA.IsExactlyEqualTo(R_identity));
+
+  // For a thin solid rod B, verify the function under test produces
+  // lmax = a, lmed = 0, lmin = 0 (rod dimensions).
+  // Verify principal directions Ax, Ay, Az (R_BA is an identity matrix).
+  const double I_rod = 1.0 / 3.0 * a * a;  // Imed = Imax = 1/12 (2*a)².
+  G_BBcm_B = UnitInertia<double>(0, I_rod, I_rod);
+  std::tie(abc, R_BA) =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_solid_box);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(a, 0, 0), abc, kTolerance));
+  EXPECT_TRUE(R_BA.IsExactlyEqualTo(R_identity));
+
+  // For a thin solid flat plate B, verify the function under test produces
+  // lmax = a, lmed = b, lmin = 0 (plate dimensions).
+  // Verify principal directions Ax, Ay, Az (R_BA is an identity matrix).
+  const double Imin_plate = 1.0 / 3.0 * b*b;          // Gxx = 1/12 (2*b)²
+  const double Imed_plate = 1.0 / 3.0 * a*a;          // Gyy = 1/12 (2*a)²
+  const double Imax_plate = Imin_plate + Imed_plate;  // Gzz = 1/3 (a² + b²)
+  G_BBcm_B = UnitInertia<double>(Imin_plate, Imed_plate, Imax_plate);
+  std::tie(abc, R_BA) =
+      G_BBcm_B.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_solid_box);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(a, b, 0), abc, kTolerance));
+  EXPECT_TRUE(R_BA.IsExactlyEqualTo(R_identity));
+
+  // For a solid box B whose principal inertia axes are rotated 30 degrees from
+  // frame B, verify the function under test produces
+  // lmax = a, lmed = b, lmin = c (unchanged order).
+  // Verify principal directions Ax, Ay, Az (R_BA is not an identity matrix).
+  // Note: This tests a unit inertia with non-zero products of inertia.
+  G_BBcm_B = UnitInertia<double>(Gmin, Gmed, Gmax);
+  drake::math::RotationMatrix<double> R_BC =
+      drake::math::RotationMatrix<double>::MakeZRotation(M_PI / 6.0);
+  UnitInertia<double> G_BBcm_C = G_BBcm_B.ReExpress(R_BC);
+  std::tie(abc, R_BA) =
+      G_BBcm_C.CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+          shape_factor_solid_box);
+  EXPECT_TRUE(CompareMatrices(Vector3<double>(a, b, c), abc, kTolerance));
+
+  // The orthogonal unit length eigenvectors Ax_B, Ay_B, Az_B stored in the
+  // columns of R_BA are parallel to the principal axes (lines). Since lines
+  // do not have a fully-qualified direction (they lack sense), all we can check
+  // is whether these principal axes (represented by Ax_B, Ay_B, Az_B) are
+  // parallel to the right-handed unit vectors Cx_B, Cy_B, Cz_B stored in the
+  // columns of R_BC and whether they form a right-handed set.
+  const Vector3<double> Ax_B = R_BA.col(0), Cx_B = R_BC.col(0);
+  const Vector3<double> Ay_B = R_BA.col(1), Cy_B = R_BC.col(1);
+  const Vector3<double> Az_B = R_BA.col(2), Cz_B = R_BC.col(2);
+  EXPECT_NEAR(std::abs(Az_B(2)), 1.0, kTolerance);  // Az = [0 0 1] or [0 0 -1]
+  EXPECT_NEAR(std::abs(Ax_B.dot(Cx_B)), 1.0, kTolerance);  // Ax parallel to Cx.
+  EXPECT_NEAR(std::abs(Ay_B.dot(Cy_B)), 1.0, kTolerance);  // Ay parallel to Cy.
+  EXPECT_NEAR(std::abs(Az_B.dot(Cz_B)), 1.0, kTolerance);  // Az parallel to Cz.
+  EXPECT_NEAR(Ax_B.cross(Ay_B).dot(Az_B), 1.0, kTolerance);  // Right-handed.
 }
 
 // Tests that we can correctly cast a UnitInertia<double> to a UnitInertia
@@ -807,7 +974,8 @@ GTEST_TEST(UnitInertia, CompatibleWithSymbolicExpression) {
   const Variable L("L");
   // Compute the unit inertia for a cylinder oriented along the z-axis
   // (the default).
-  UnitInertia<Expression> Gz = UnitInertia<Expression>::SolidCylinder(r, L);
+  UnitInertia<Expression> Gz =
+      UnitInertia<Expression>::SolidCylinder(r, L, Vector3<double>::UnitZ());
 
   // Let's give the variables above some values.
   const double r_value = 0.025;

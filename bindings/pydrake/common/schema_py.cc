@@ -1,10 +1,7 @@
 #include <memory>
 #include <vector>
 
-#include "pybind11/eigen.h"
 #include "pybind11/eval.h"
-#include "pybind11/pybind11.h"
-#include "pybind11/stl.h"
 
 #include "drake/bindings/pydrake/common/cpp_template_pybind.h"
 #include "drake/bindings/pydrake/common/serialize_pybind.h"
@@ -17,16 +14,12 @@
 
 namespace drake {
 namespace pydrake {
+namespace internal {
 
-PYBIND11_MODULE(schema, m) {
+void DefineModuleSchema(py::module m) {
   // NOLINTNEXTLINE(build/namespaces): Emulate placement in namespace.
   using namespace drake::schema;
   constexpr auto& doc = pydrake_doc.drake.schema;
-
-  m.doc() = "Bindings for the common.schema package.";
-
-  py::module::import("pydrake.common");
-  py::module::import("pydrake.math");
 
   // Bindings for stochastic.h.
 
@@ -398,5 +391,6 @@ PYBIND11_MODULE(schema, m) {
   }
 }
 
+}  // namespace internal
 }  // namespace pydrake
 }  // namespace drake

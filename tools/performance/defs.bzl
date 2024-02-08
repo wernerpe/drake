@@ -1,6 +1,6 @@
-load("@drake//tools/skylark:drake_cc.bzl", "drake_cc_binary", "drake_cc_test")
-load("@drake//tools/skylark:py.bzl", "py_binary")
-load("@drake//tools/workspace:generate_file.bzl", "generate_file")
+load("//tools/skylark:drake_cc.bzl", "drake_cc_binary", "drake_cc_test")
+load("//tools/skylark:py.bzl", "py_binary")
+load("//tools/workspace:generate_file.bzl", "generate_file")
 
 # This file provides build system sugar for crafting benchmarking programs.
 
@@ -53,9 +53,9 @@ def drake_cc_googlebench_binary(
                 # When running as a unit test, run each function only once to
                 # save time. (Once should be sufficient to prove the lack of
                 # runtime errors.)
-                "--benchmark_min_time=0",
+                "--benchmark_min_time=0s",
             ] + (test_args or []),
-            tags = test_tags,
+            tags = (test_tags or []) + ["nolint"],
         )
 
 def drake_py_experiment_binary(name, *, googlebench_binary, **kwargs):

@@ -1,5 +1,3 @@
-#include "pybind11/pybind11.h"
-
 #include "drake/bindings/pydrake/common/cpp_template_pybind.h"
 #include "drake/bindings/pydrake/common/default_scalars_pybind.h"
 #include "drake/bindings/pydrake/common/deprecation_pybind.h"
@@ -7,6 +5,7 @@
 #include "drake/bindings/pydrake/common/wrap_pybind.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
 #include "drake/bindings/pydrake/pydrake_pybind.h"
+#include "drake/common/scope_exit.h"
 #include "drake/systems/analysis/integrator_base.h"
 #include "drake/systems/analysis/monte_carlo.h"
 #include "drake/systems/analysis/region_of_attraction.h"
@@ -16,11 +15,25 @@
 #include "drake/systems/analysis/simulator_config.h"
 #include "drake/systems/analysis/simulator_config_functions.h"
 #include "drake/systems/analysis/simulator_print_stats.h"
+#include "drake/systems/analysis/simulator_python_internal.h"
 
 using std::unique_ptr;
 
 namespace drake {
 namespace pydrake {
+
+namespace {
+// Checks for Ctrl-C (and other signals) and invokes the Python handler,
+// but only when called on the main interpreter thread. For details, see:
+// https://docs.python.org/3/c-api/exceptions.html#c.PyErr_CheckSignals
+// https://pybind11.readthedocs.io/en/stable/faq.html#how-can-i-properly-handle-ctrl-c-in-long-running-functions
+void ThrowIfPythonHasPendingSignals() {
+  py::gil_scoped_acquire guard;
+  if (PyErr_CheckSignals() != 0) {
+    throw py::error_already_set();
+  }
+}
+}  // namespace
 
 PYBIND11_MODULE(analysis, m) {
   // NOLINTNEXTLINE(build/namespaces): Emulate placement in namespace.
@@ -29,6 +42,7 @@ PYBIND11_MODULE(analysis, m) {
   m.doc() = "Bindings for the analysis portion of the Systems framework.";
 
   py::module::import("pydrake.systems.framework");
+  py::module::import("pydrake.solvers");
 
   {
     using Class = SimulatorConfig;
@@ -211,8 +225,43 @@ PYBIND11_MODULE(analysis, m) {
         .def("Initialize", &Simulator<T>::Initialize,
             doc.Simulator.Initialize.doc,
             py::arg("params") = InitializeParams{})
-        .def("AdvanceTo", &Simulator<T>::AdvanceTo, py::arg("boundary_time"),
-            doc.Simulator.AdvanceTo.doc)
+        .def(
+            "AdvanceTo",
+            [](Simulator<T>* self, const T& boundary_time, bool interruptible) {
+              if (!interruptible) {
+                return self->AdvanceTo(boundary_time);
+              }
+              // Enable the interrupt monitor.
+              using systems::internal::SimulatorPythonInternal;
+              SimulatorPythonInternal<T>::set_python_monitor(
+                  self, &ThrowIfPythonHasPendingSignals);
+              ScopeExit guard([self]() {
+                SimulatorPythonInternal<T>::set_python_monitor(self, nullptr);
+              });
+              return self->AdvanceTo(boundary_time);
+            },
+            py::arg("boundary_time"), py::arg("interruptible") = true,
+            // This is a long-running function that might sleep; for both
+            // reasons, we must release the GIL.
+            py::call_guard<py::gil_scoped_release>(),
+            // Amend the docstring with the additional parameter.
+            []() {
+              std::string new_doc = doc.Simulator.AdvanceTo.doc;
+              auto found = new_doc.find("\nReturns");
+              DRAKE_DEMAND(found != std::string::npos);
+              new_doc.insert(found + 1, R"""(
+Parameter ``interruptible``:
+    When True, the simulator will check for ``KeyboardInterrupt``
+    signals (Ctrl-C) during the call to AdvanceTo(). When False,
+    the AdvanceTo() may or may not be interruptible, depending on
+    what systems and/or monitors have been added to the simulator.
+    The check has a very minor runtime performance cost, so can be
+    disabled by passing ``False``. This is a Python-only parameter
+    (not available in the C++ API).
+)""");
+              return new_doc;
+            }()
+                .c_str())
         .def("AdvancePendingEvents", &Simulator<T>::AdvancePendingEvents,
             doc.Simulator.AdvancePendingEvents.doc)
         .def("set_monitor",
@@ -346,43 +395,51 @@ PYBIND11_MODULE(analysis, m) {
             &RandomSimulationResult::generator_snapshot,
             doc.RandomSimulationResult.generator_snapshot.doc);
 
-    // Note: parallel simulation must be disabled in the binding via
-    // num_parallel_executions=kNoConcurrency, since parallel execution of
-    // Python systems in multiple threads is not supported.
+    // Note: This hard-codes `parallelism` to be off, since parallel execution
+    // of Python systems on multiple threads was thought to be unsupported. It's
+    // possible that with `py::call_guard<py::gil_scoped_release>` it would
+    // actually be fine, so we could revisit that decision at some point.
     m.def("MonteCarloSimulation",
         WrapCallbacks([](const SimulatorFactory make_simulator,
                           const ScalarSystemFunction& output, double final_time,
                           int num_samples, RandomGenerator* generator)
                           -> std::vector<RandomSimulationResult> {
           return MonteCarloSimulation(make_simulator, output, final_time,
-              num_samples, generator, kNoConcurrency);
+              num_samples, generator, /* parallelism = */ Parallelism::None());
         }),
         py::arg("make_simulator"), py::arg("output"), py::arg("final_time"),
         py::arg("num_samples"), py::arg("generator"),
         doc.MonteCarloSimulation.doc);
 
-    py::class_<RegionOfAttractionOptions>(
-        m, "RegionOfAttractionOptions", doc.RegionOfAttractionOptions.doc)
-        .def(py::init<>(), doc.RegionOfAttractionOptions.ctor.doc)
-        .def_readwrite("lyapunov_candidate",
-            &RegionOfAttractionOptions::lyapunov_candidate,
-            doc.RegionOfAttractionOptions.lyapunov_candidate.doc)
-        .def_readwrite("state_variables",
-            &RegionOfAttractionOptions::state_variables,
-            // dtype = object arrays must be copied, and cannot be referenced.
-            py_rvp::copy, doc.RegionOfAttractionOptions.state_variables.doc)
-        .def_readwrite("use_implicit_dynamics",
-            &RegionOfAttractionOptions::use_implicit_dynamics,
-            doc.RegionOfAttractionOptions.use_implicit_dynamics.doc)
-        .def("__repr__", [](const RegionOfAttractionOptions& self) {
-          return py::str(
-              "RegionOfAttractionOptions("
-              "lyapunov_candidate={}, "
-              "state_variables={}, "
-              "use_implicit_dynamics={})")
-              .format(self.lyapunov_candidate, self.state_variables,
-                  self.use_implicit_dynamics);
-        });
+    {
+      using Class = RegionOfAttractionOptions;
+      constexpr auto& cls_doc = doc.RegionOfAttractionOptions;
+      py::class_<Class, std::shared_ptr<Class>> cls(
+          m, "RegionOfAttractionOptions", cls_doc.doc);
+      cls.def(py::init<>(), cls_doc.ctor.doc)
+          // TODO(jeremy.nimmer): replace the def_readwrite with
+          // DefAttributesUsingSerialize when we fix binding a
+          // VectorX<symbolic::Variable> state_variables to a numpy array of
+          // objects.
+          .def_readwrite("lyapunov_candidate",
+              &RegionOfAttractionOptions::lyapunov_candidate,
+              doc.RegionOfAttractionOptions.lyapunov_candidate.doc)
+          .def_readwrite("state_variables",
+              &RegionOfAttractionOptions::state_variables,
+              // dtype = object arrays must be copied, and cannot be referenced.
+              py_rvp::copy, doc.RegionOfAttractionOptions.state_variables.doc)
+          .def_readwrite("use_implicit_dynamics",
+              &RegionOfAttractionOptions::use_implicit_dynamics,
+              doc.RegionOfAttractionOptions.use_implicit_dynamics.doc)
+          .def_readwrite("solver_id", &RegionOfAttractionOptions::solver_id,
+              doc.RegionOfAttractionOptions.solver_id.doc)
+          .def_readwrite("solver_options",
+              &RegionOfAttractionOptions::solver_options,
+              doc.RegionOfAttractionOptions.solver_options.doc);
+
+      DefReprUsingSerialize(&cls);
+      DefCopyAndDeepCopy(&cls);
+    }
 
     m.def("RegionOfAttraction", &RegionOfAttraction, py::arg("system"),
         py::arg("context"), py::arg("options") = RegionOfAttractionOptions(),

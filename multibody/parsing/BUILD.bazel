@@ -1,18 +1,18 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
 )
 load(
-    "@drake//tools/skylark:drake_py.bzl",
+    "//tools/skylark:drake_py.bzl",
     "drake_py_library",
     "drake_py_unittest",
 )
-load("@drake//tools/install:install.bzl", "install_files")
+load("//tools/install:install.bzl", "install_files")
 load("//tools/lint:lint.bzl", "add_lint_tests")
-load("@drake//tools/workspace:forward_files.bzl", "forward_files")
+load("//tools/workspace:forward_files.bzl", "forward_files")
 load(
     "//tools/workspace/dm_control_internal:files.bzl",
     "dm_control_mujoco_files",
@@ -39,6 +39,7 @@ _DM_CONTROL_MUJOCO_FILES = forward_files(
     srcs = ["@dm_control_internal//:" + x for x in dm_control_mujoco_files()],
     dest_prefix = "",
     strip_prefix = "@dm_control_internal//:",
+    tags = ["manual"],
     visibility = ["//visibility:private"],
 )
 
@@ -84,8 +85,8 @@ drake_cc_library(
         "//common:find_runfiles",
         "//common:network_policy",
         "//common:scope_exit",
+        "//common:sha256",
         "//common/yaml",
-        "@picosha2",
         "@tinyxml2_internal//:tinyxml2",
     ],
 )
@@ -139,7 +140,7 @@ drake_cc_library(
         "//multibody/plant",
         "//multibody/tree:geometry_spatial_inertia",
         "@fmt",
-        "@tinyobjloader",
+        "@tinyobjloader_internal//:tinyobjloader",
     ],
 )
 
@@ -455,11 +456,13 @@ drake_cc_googletest(
     name = "process_model_directives_test",
     data = [
         ":process_model_directives_test_models",
+        "//manipulation/util:panda_arm_and_hand_test_model",
         "//multibody/benchmarks/acrobot:models",
     ],
     deps = [
         ":process_model_directives",
         "//common/test_utilities",
+        "//common/yaml",
     ],
 )
 
@@ -528,6 +531,7 @@ drake_cc_googletest(
         "//multibody/benchmarks/acrobot:models",
     ],
     deps = [
+        ":detail_mujoco_parser",
         ":detail_sdf_parser",
         "//common:find_resource",
         "//common/test_utilities",
@@ -564,6 +568,9 @@ drake_cc_googletest(
         "//common/test_utilities:diagnostic_policy_test_base",
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_throws_message",
+        "//common/test_utilities:maybe_pause_for_user",
+        "//geometry/test_utilities:meshcat_environment",
+        "//visualization",
     ],
 )
 
@@ -635,8 +642,8 @@ drake_cc_googletest(
         "//common:find_cache",
         "//common:find_resource",
         "//common:scope_exit",
+        "//common:sha256",
         "//common/test_utilities:expect_throws_message",
-        "@picosha2",
     ],
 )
 
@@ -698,4 +705,4 @@ install_files(
     visibility = ["//visibility:public"],
 )
 
-add_lint_tests()
+add_lint_tests(enable_clang_format_lint = False)

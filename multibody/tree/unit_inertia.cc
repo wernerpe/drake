@@ -1,63 +1,157 @@
 #include "drake/multibody/tree/unit_inertia.h"
 
 #include "drake/common/fmt_eigen.h"
+#include "drake/common/text_logging.h"
+#include "drake/math/unit_vector.h"
 
 namespace drake {
 namespace multibody {
 
 template <typename T>
+UnitInertia<T>& UnitInertia<T>::SetFromRotationalInertia(
+    const RotationalInertia<T>& I, const T& mass) {
+  DRAKE_THROW_UNLESS(mass > 0);
+  RotationalInertia<T>::operator=(I / mass);
+  return *this;
+}
+
+template <typename T>
+UnitInertia<T> UnitInertia<T>::PointMass(const Vector3<T>& p_FQ) {
+  // Square each coefficient in p_FQ, perhaps better with p_FQ.array().square()?
+  const Vector3<T> p2m = p_FQ.cwiseAbs2();  // [x²  y²  z²].
+  const T mp0 = -p_FQ(0);  // -x
+  const T mp1 = -p_FQ(1);  // -y
+  return UnitInertia<T>(
+      // Gxx = y² + z²,  Gyy = x² + z²,  Gzz = x² + y²
+      p2m[1] + p2m[2], p2m[0] + p2m[2], p2m[0] + p2m[1],
+      // Gxy = -x y,  Gxz = -x z,   Gyz = -y z
+      mp0 * p_FQ[1], mp0 * p_FQ[2], mp1 * p_FQ[2]);
+}
+
+template <typename T>
+UnitInertia<T> UnitInertia<T>::SolidEllipsoid(
+    const T& a, const T& b, const T& c) {
+  const T a2 = a * a;
+  const T b2 = b * b;
+  const T c2 = c * c;
+  return UnitInertia<T>(0.2 * (b2 + c2), 0.2 * (a2 + c2), 0.2 * (a2 + b2));
+}
+
+template <typename T>
+UnitInertia<T> UnitInertia<T>::SolidCylinder(
+    const T& radius, const T& length, const Vector3<T>& unit_vector) {
+  DRAKE_THROW_UNLESS(radius >= 0);
+  DRAKE_THROW_UNLESS(length >= 0);
+  math::internal::ThrowIfNotUnitVector(unit_vector, __func__);
+  const T rsq = radius * radius;
+  const T lsq = length * length;
+  const T J = 0.5 * rsq;                // Axial moment of inertia J = ½ r².
+  const T K = 0.25 * rsq + lsq / 12.0;  // Transverse moment K = ¼ r² + ¹⁄₁₂ l².
+  return AxiallySymmetric(J, K, unit_vector);
+}
+
+template <typename T>
+UnitInertia<T> UnitInertia<T>::SolidCylinderAboutEnd(
+    const T& radius, const T& length, const Vector3<T>& unit_vector) {
+  DRAKE_THROW_UNLESS(radius >= 0);
+  DRAKE_THROW_UNLESS(length >= 0);
+  math::internal::ThrowIfNotUnitVector(unit_vector, __func__);
+  const T rsq = radius * radius;
+  const T lsq = length * length;
+  const T J = 0.5 * rsq;                // Axial moment of inertia J = ½ r².
+  const T K = 0.25 * rsq  + lsq / 3.0;  // Transverse moment K = ¼ r² + ⅓ l².
+  return AxiallySymmetric(J, K, unit_vector);
+}
+
+template <typename T>
+UnitInertia<T> UnitInertia<T>::AxiallySymmetric(const T& moment_parallel,
+    const T& moment_perpendicular, const Vector3<T>& unit_vector) {
+  const T& J = moment_parallel;
+  const T& K = moment_perpendicular;
+  DRAKE_THROW_UNLESS(moment_parallel >= 0.0);       // Ensure J ≥ 0.
+  DRAKE_THROW_UNLESS(moment_perpendicular >= 0.0);  // Ensure K ≥ 0.
+
+  // When the about-point Bp is Bcm, the moment of inertia triangle inequality
+  // simplifies to J ≤ 2 K. If Bp is not Bcm, J ≤ 2 K is worth verifying because
+  // K_Bp (perpendicular moment of inertia about Bp) relates to
+  // K_Bcm (perpendicular moment of inertia about Bcm) as K_Bp = K_Bcm + dist²,
+  // where dist is the distance between points Bp and Bcm.
+  // This test has a tolerance of 5 bits (5 bits = 2^5 * epsilon).
+  constexpr double two_plus_tiny =
+      2.0 + 32 * std::numeric_limits<double>::epsilon();
+  DRAKE_THROW_UNLESS(moment_parallel <= two_plus_tiny * moment_perpendicular);
+
+  // TODO(Mitiguy) Consider a new UnitVector class to ensure the unit_vector
+  //  argument to this function is either already normalized by the calling
+  //  function (so a const reference to a UnitVector is passed) or if the
+  //  calling function passes a Vector3, the Vector3 is automatically converted
+  //  to a UnitVector (throwing an exception if the Vector3 contains NaN or
+  //  infinite elements or its magnitude is incredulously small).
+  math::internal::ThrowIfNotUnitVector(unit_vector, __func__);
+
+  // Form B's unit inertia about a point Bp on B's symmetry axis,
+  // expressed in the same frame E as the unit_vector is expressed.
+  const Matrix3<T> G_BBp_E = K * Matrix3<T>::Identity() +
+                             (J - K) * unit_vector * unit_vector.transpose();
+  return UnitInertia<T>(G_BBp_E(0, 0), G_BBp_E(1, 1), G_BBp_E(2, 2),
+                        G_BBp_E(0, 1), G_BBp_E(0, 2), G_BBp_E(1, 2));
+}
+
+template <typename T>
+UnitInertia<T> UnitInertia<T>::StraightLine(const T& moment_perpendicular,
+    const Vector3<T>& unit_vector) {
+  DRAKE_THROW_UNLESS(moment_perpendicular > 0.0);
+  math::internal::ThrowIfNotUnitVector(unit_vector, __func__);
+  return AxiallySymmetric(0.0, moment_perpendicular, unit_vector);
+}
+
+template <typename T>
+UnitInertia<T> UnitInertia<T>::ThinRod(const T& length,
+    const Vector3<T>& unit_vector) {
+  DRAKE_THROW_UNLESS(length > 0.0);
+  math::internal::ThrowIfNotUnitVector(unit_vector, __func__);
+  return StraightLine(length * length / 12.0, unit_vector);
+}
+
+template <typename T>
 UnitInertia<T> UnitInertia<T>::SolidBox(const T& Lx, const T& Ly, const T& Lz) {
-  if (Lx < T(0) || Ly < T(0) || Lz < T(0)) {
-    const std::string msg =
-        "A length argument to UnitInertia::SolidBox() "
-        "is negative.";
-    throw std::logic_error(msg);
-  }
-  const T one_twelfth = T(1) / T(12);
+  DRAKE_THROW_UNLESS(Lx >= 0);
+  DRAKE_THROW_UNLESS(Ly >= 0);
+  DRAKE_THROW_UNLESS(Lz >= 0);
+  const T one_twelfth = 1.0 / 12.0;
   const T Lx2 = Lx * Lx, Ly2 = Ly * Ly, Lz2 = Lz * Lz;
   return UnitInertia(one_twelfth * (Ly2 + Lz2), one_twelfth * (Lx2 + Lz2),
                      one_twelfth * (Lx2 + Ly2));
 }
 
 template <typename T>
-UnitInertia<T> UnitInertia<T>::SolidCapsule(const T& r, const T& L,
+UnitInertia<T> UnitInertia<T>::SolidCapsule(const T& radius, const T& length,
     const Vector3<T>& unit_vector) {
-  DRAKE_THROW_UNLESS(r >= 0);
-  DRAKE_THROW_UNLESS(L >= 0);
+  DRAKE_THROW_UNLESS(radius >= 0);
+  DRAKE_THROW_UNLESS(length >= 0);
+  math::internal::ThrowIfNotUnitVector(unit_vector, __func__);
 
-  // Ensure ‖unit_vector‖ is within ≈ 5.5 bits of 1.0.
-  // Note: 1E-14 ≈ 2^5.5 * std::numeric_limits<double>::epsilon();
-  using std::abs;
-  constexpr double kTolerance = 1E-14;
-  if (abs(unit_vector.norm() - 1) > kTolerance) {
-    std::string error_message =
-        fmt::format("{}(): The unit_vector argument {} is not a unit vector.",
-                    __func__, fmt_eigen(unit_vector.transpose()));
-    throw std::logic_error(error_message);
+  // A special case is required for radius = 0 because it creates a zero volume
+  // capsule (and we divide by volume later on). No special case for length = 0
+  // is needed because the capsule degenerates into a sphere (non-zero volume).
+  if (radius == 0.0) {
+    return UnitInertia<T>::ThinRod(length, unit_vector);
   }
 
-  // A special case is required for r = 0 because r = 0 creates a zero volume
-  // capsule (and we divide by volume later on). No special case for L = 0 is
-  // needed because the capsule degenerates into a sphere (non-zero volume).
-  if (r == 0.0) {
-    return UnitInertia<T>::ThinRod(L, unit_vector);
-  }
-
-  // The capsule is regarded as a cylinder C of length L and radius r and two
-  // half-spheres (each of radius r). The first half-sphere H is rigidly fixed
-  // to one end of cylinder C so that the intersection between H and C forms
-  // a circle centered at point Ho.  Similarly, the other half-sphere is rigidly
-  // fixed to the other end of cylinder C.
-  // The capsule's unit inertia about its center of mass is calculated using
-  // tabulated analytical expressions from [Kane] "Dynamics: Theory and
+  // The capsule is regarded as a cylinder C (with given length and radius) and
+  // two half-spheres. The first half-sphere H is rigidly fixed to one end of
+  // cylinder C so that the intersection between H and C forms a circle centered
+  // at point Ho. Similarly, the other half-sphere is rigidly fixed to the other
+  // end of cylinder C. The capsule's unit inertia about its center of mass is
+  // calculated using tabulated expressions from [Kane] "Dynamics: Theory and
   // Applications," McGraw-Hill, New York, 1985, by T.R. Kane and D.A. Levinson,
   // available for electronic download from Cornell digital library.
 
   // Calculate vc (the volume of cylinder C) and vh (volume of half-sphere H).
-  const T r2 = r * r;
-  const T r3 = r2 * r;
-  const T vc = M_PI * r2 * L;          // vc = π r² L
-  const T vh = 2.0 / 3.0 * M_PI * r3;  // vh = 2/3 π r³
+  const T rsq = radius * radius;
+  const T rcubed = rsq * radius;
+  const T vc = M_PI * rsq * length;        // vc = π r² L
+  const T vh = 2.0 / 3.0 * M_PI * rcubed;  // vh = 2/3 π r³
 
   // Denoting mc as the mass of cylinder C and mh as the mass of half-sphere H,
   // and knowing the capsule has a uniform density and the capsule's mass is 1
@@ -66,10 +160,10 @@ UnitInertia<T> UnitInertia<T>::SolidCapsule(const T& r, const T& L,
   const T mc = vc / v;        // Mass in the cylinder (relates to volume).
   const T mh = vh / v;        // Mass in each half-sphere (relates to volume).
 
-  // The distance dH between Hcm (the half-sphere H's center of mass) and Ccm
-  // (the cylinder C's center of mass) is from [Kane, Figure A23, pg. 369].
-  // dH = 3.0 / 8.0 * r + L / 2.0;
-  const T dH = 0.375 * r + 0.5 * L;
+  // The distance dH between Hcm (half-sphere H's center of mass) and Ccm
+  // (cylinder C's center of mass) is given in [Kane, Figure A23, pg. 369] as
+  // dH = ⅜ radius + ½ length.
+  const T dH = 0.375 * radius + 0.5 * length;
 
   // The discussion that follows assumes Ic_zz is the axial moment of inertia
   // and Ix_xx = Ic_yy is the transverse moment of inertia.
@@ -92,12 +186,9 @@ UnitInertia<T> UnitInertia<T>::SolidCapsule(const T& r, const T& L,
 
   // The previous algorithm for Ixx and Izz is algebraically manipulated to a
   // more efficient result by factoring on mh and mc and computing numbers as
-  const T Ixx = mc * (L*L/12.0 + 0.25*r2) + mh * (0.51875*r2 + 2*dH*dH);
-  const T Izz = (0.5*mc + 0.8*mh) * r2;  // Axial moment of inertia.
-
-  // Note: Although a check is made that ‖unit_vector‖ ≈ 1, even if imperfect,
-  // UnitInertia::AxiallySymmetric() normalizes unit_vector before use.
-  // TODO(Mitiguy) remove normalization in UnitInertia::AxiallySymmetric().
+  const T lsq = length * length;
+  const T Ixx = mc * (lsq/12.0 + 0.25*rsq) + mh * (0.51875*rsq + 2*dH*dH);
+  const T Izz = (0.5*mc + 0.8*mh) * rsq;  // Axial moment of inertia.
   return UnitInertia<T>::AxiallySymmetric(Izz, Ixx, unit_vector);
 }
 
@@ -175,6 +266,45 @@ UnitInertia<T> UnitInertia<T>::SolidTetrahedronAboutVertex(
   const T Iyz = -0.1 * G(1, 2);
   return UnitInertia(Ixx, Iyy, Izz, Ixy, Ixz, Iyz);
 }
+
+template <typename T>
+std::pair<Vector3<double>, math::RotationMatrix<double>>
+UnitInertia<T>::CalcPrincipalHalfLengthsAndAxesForEquivalentShape(
+    double inertia_shape_factor) const {
+  DRAKE_THROW_UNLESS(inertia_shape_factor > 0 && inertia_shape_factor <= 1);
+  // The formulas below are derived for a shape D whose principal unit moments
+  // of inertia Gmin, Gmed, Gmax about Dcm (D's center of mass) have the form:
+  // Gmin = inertia_shape_factor * (b² + c²)
+  // Gmed = inertia_shape_factor * (a² + c²)
+  // Gmax = inertia_shape_factor * (a² + b²)
+  // Casting these equations into matrix form, gives
+  // ⌈0  1  1⌉ ⌈a²⌉   ⌈Gmin ⌉
+  // |1  0  1⌉ |b²⌉ = |Gmed ⌉ / inertia_shape_factor
+  // ⌊1  1  0⌋ ⌊c²⌋   ⌊Gmax ⌉
+  // Inverting the coefficient matrix and solving for a², b², c² leads to
+  // ⌈a²⌉   ⌈-1  1  1⌉ ⌈Gmin ⌉
+  // |b²⌉ = | 1 -1  1⌉ |Gmed ⌉ * 0.5 / inertia_shape_factor
+  // ⌊c²⌋   ⌊ 1  1 -1⌋ ⌊Gmax ⌉
+  // Since Gmin ≤ Gmed ≤ Gmax, we can deduce a² ≥ b² ≥ c², so we designate
+  // lmax² = a², lmed² = b², lmin² = c².
+
+  // Form principal moments Gmoments and principal axes stored in R_EA.
+  auto [Gmoments, R_EA] = this->CalcPrincipalMomentsAndAxesOfInertia();
+  const double Gmin = Gmoments(0);
+  const double Gmed = Gmoments(1);
+  const double Gmax = Gmoments(2);
+  DRAKE_ASSERT(Gmin <= Gmed && Gmed <= Gmax);
+  const double coef = 0.5 / inertia_shape_factor;
+  using std::max;  // Avoid round-off issues that result in e.g., sqrt(-1E-15).
+  const double lmax_squared = max(coef * (Gmed + Gmax - Gmin), 0.0);
+  const double lmed_squared = max(coef * (Gmin + Gmax - Gmed), 0.0);
+  const double lmin_squared = max(coef * (Gmin + Gmed - Gmax), 0.0);
+  const double lmax = std::sqrt(lmax_squared);
+  const double lmed = std::sqrt(lmed_squared);
+  const double lmin = std::sqrt(lmin_squared);
+  return std::pair(Vector3<double>(lmax, lmed, lmin), R_EA);
+}
+
 
 }  // namespace multibody
 }  // namespace drake

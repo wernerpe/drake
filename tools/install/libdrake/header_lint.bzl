@@ -10,7 +10,6 @@ _ALLOWED_EXTERNALS = [
     "eigen",
     "fmt",
     "lcm",
-    "optitrack",
     "spdlog",
 
     # The entries that follow are defects; we should work to remove them.

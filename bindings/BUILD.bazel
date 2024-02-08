@@ -1,6 +1,6 @@
 load("//tools/lint:lint.bzl", "add_lint_tests")
 load(
-    "@drake//tools/skylark:pybind.bzl",
+    "//tools/skylark:pybind.bzl",
     "drake_pybind_library",
 )
 load(
@@ -24,7 +24,4 @@ drake_pybind_library(
     package_info = get_bazel_workaround_4594_libdrake_package_info(),
 )
 
-add_lint_tests(
-    cpplint_data = ["//bindings/pydrake:.clang-format"],
-    enable_clang_format_lint = True,
-)
+add_lint_tests(cpplint_data = ["//bindings/pydrake:.clang-format"])

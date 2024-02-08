@@ -23,15 +23,15 @@ InverseDynamics<T>::InverseDynamics(
   // Check that only one of owned_plant and plant where set.
   DRAKE_DEMAND(owned_plant_ == nullptr || plant == nullptr);
   DRAKE_DEMAND(plant_ != nullptr);
-  DRAKE_DEMAND(plant_->is_finalized());
+  DRAKE_THROW_UNLESS(plant_->is_finalized());
 
-  input_port_index_state_ =
-      this->DeclareInputPort(kUseDefaultName, kVectorValued, q_dim_ + v_dim_)
+  estimated_state_ =
+      this->DeclareInputPort("estimated_state", kVectorValued, q_dim_ + v_dim_)
           .get_index();
   // We declare the all_input_ports ticket so that GetDirectFeedthrough does
   // not try to cast to Symbolic for feedthrough evaluation.
-  output_port_index_force_ =
-      this->DeclareVectorOutputPort(kUseDefaultName, v_dim_,
+  generalized_force_ =
+      this->DeclareVectorOutputPort("generalized_force", v_dim_,
                                     &InverseDynamics<T>::CalcOutputForce,
                                     {this->all_input_ports_ticket()})
           .get_index();
@@ -48,8 +48,7 @@ InverseDynamics<T>::InverseDynamics(
       this->DeclareCacheEntry(
               "plant_context_cache", *plant_context,
               &InverseDynamics<T>::SetMultibodyContext,
-              {this->input_port_ticket(
-                  get_input_port_estimated_state().get_index())})
+              {this->input_port_ticket(estimated_state_)})
           .cache_index();
 
   // Declare external forces cache entry and desired acceleration input port if
@@ -62,8 +61,8 @@ InverseDynamics<T>::InverseDynamics(
                 {this->cache_entry_ticket(plant_context_cache_index_)})
             .cache_index();
 
-    input_port_index_desired_acceleration_ =
-        this->DeclareInputPort(kUseDefaultName, kVectorValued, v_dim_)
+    desired_acceleration_ =
+        this->DeclareInputPort("desired_acceleration", kVectorValued, v_dim_)
             .get_index();
   }
 }
@@ -131,7 +130,8 @@ void InverseDynamics<T>::CalcOutputForce(const Context<T>& context,
 
     // Compute inverse dynamics.
     const VectorX<T>& desired_vd =
-        get_input_port_desired_acceleration().Eval(context);
+            get_input_port_desired_acceleration().Eval(context);
+
     output->get_mutable_value() =
         plant_->CalcInverseDynamics(plant_context, desired_vd, external_forces);
   }

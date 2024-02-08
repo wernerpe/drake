@@ -54,9 +54,9 @@ so that you can easily refer back to it as you proceed.
   bazel run //tools/workspace:new_release
 ```
 
-For each external in the report, add a commit that upgrades it, as follows:
-
-Run the script to perform one upgrade (for some external "foo"):
+For each external in the report, add a commit that upgrades it.  Typically,
+this can be done by running the script to perform one upgrade (for some
+external "foo"):
 
 ```
   bazel run //tools/workspace:new_release -- --lint --commit foo
@@ -78,7 +78,11 @@ If any edits are needed, stage the changes and amend the commit using
 Repeat this process for all upgrades.  You can re-run the ``new_release``
 report anytime, to get the remaining items that need attention.  You can also
 list several externals to try to update at once, although this will complicate
-making changes to those commits if needed.
+making changes to those commits if needed.  Note that some externals are
+reported as "may need upgrade".  This means that ``new_release`` is not able
+to automatically determine whether an upgrade is needed; therefore, these
+should always be upgraded.  (If no upgrade is needed, the upgrade will do
+nothing and will not create a commit.)
 
 Each external being upgraded should have exactly one commit that does the
 upgrade, and each commit should either a) only impact exactly one external, or
@@ -93,14 +97,10 @@ Once all upgrades are ready, open a Drake pull request and label it
 change the drop-down that says "Combine commits for review" to choose
 "Review each commit separately" instead.
 
-Once the all Jenkins builds of the pull request have passed,
-additionally launch a macOS build, per
-
-https://drake.mit.edu/jenkins.html#scheduling-an-on-demand-build
-
-Once the macOS build passes, assign the pull request for review.  If the pull
-request contains no especially complicated changes, it may be assigned to the
-on-call platform reviewer and labelled ``status: single reviewer ok``.
+Once all of the Jenkins builds of the pull request have passed, assign the
+pull request for review. If the pull request contains no especially complicated
+changes, it may be assigned to the on-call platform reviewer and labelled
+``status: single reviewer ok``.
 
 For any non-trivial changes (i.e., changes that go beyond changing version
 numbers, checksums, or trivial fixups to patch files or code spelling), do not
@@ -183,19 +183,6 @@ and remove its commenting-out.  Then, `bazel build` should succeed.
 Briefly check that `//tools/workspace/foo:package.BUILD.bazel` still seems
 appropriate; for example, if there are hard-coded version numbers that need to
 match the `commit=` tag, they should be updated (this is rare).
-
-Commit and pull-request the changed lines to Drake as usual.  Many changes like
-this will be susceptible to Ubuntu vs macOS differences, so please opt-in to
-the macOS build(s) in Jenkins before merging, using the instructions at
-https://drake.mit.edu/jenkins.html#running-an-on-demand-build.
-
-## Updating pypi_archive software versions
-
-To lock in a new version, change the `version` argument of the `pypi_archive`
-call, comment out the `sha256` argument, and then run `bazel build`.  Bazel's
-fetch step will attempt to download the new version but then complain about a
-checksum mismatch.  Paste the new checksum into the `sha256` argument and
-remove its commenting-out.  Then, `bazel build` should succeed.
 
 Commit and pull-request the changed lines to Drake as usual.  Many changes like
 this will be susceptible to Ubuntu vs macOS differences, so please opt-in to

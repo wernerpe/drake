@@ -1,5 +1,6 @@
 #include "drake/multibody/meshcat/joint_sliders.h"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "drake/common/find_resource.h"
@@ -10,6 +11,7 @@
 #include "drake/multibody/parsing/parser.h"
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/systems/framework/diagram_builder.h"
+#include "drake/systems/framework/test_utilities/initialization_test_system.h"
 
 namespace drake {
 namespace multibody {
@@ -282,12 +284,20 @@ TEST_F(JointSlidersTest, Run) {
   MeshcatVisualizer<double>::AddToBuilder(&builder_, scene_graph_, meshcat_);
   auto* dut = builder_.AddSystem<JointSliders<double>>(meshcat_, &plant_,
                                                        initial_value);
+
+  auto init_system = builder_.AddSystem<systems::InitializationTestSystem>();
+
   auto diagram = builder_.Build();
 
   // Run for a while.
   const double timeout = 1.0;
   Eigen::VectorXd q = dut->Run(*diagram, timeout);
   EXPECT_TRUE(CompareMatrices(q, initial_value));
+
+  // Confirm that initialization events were triggered.
+  EXPECT_TRUE(init_system->get_pub_init());
+  EXPECT_TRUE(init_system->get_dis_update_init());
+  EXPECT_TRUE(init_system->get_unres_update_init());
 
   // Note: the stop button is deleted on timeout, so we cannot easily check
   // that it was created correctly here.
@@ -419,6 +429,13 @@ TEST_F(JointSlidersTest, SetPositionsKukaIiwaRobot) {
   EXPECT_THROW(meshcat_->GetSliderValue(kKukaIiwaJoint5), std::exception);
   EXPECT_THROW(meshcat_->GetSliderValue(kKukaIiwaJoint6), std::exception);
   EXPECT_THROW(meshcat_->GetSliderValue(kKukaIiwaJoint7), std::exception);
+}
+
+TEST_F(JointSlidersTest, Graphviz) {
+  AddAcrobot();
+  const JointSliders<double> dut(meshcat_, &plant_);
+  EXPECT_THAT(dut.GetGraphvizString(),
+              testing::HasSubstr("meshcat_out ->"));
 }
 
 }  // namespace

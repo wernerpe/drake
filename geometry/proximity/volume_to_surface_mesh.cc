@@ -75,10 +75,12 @@ std::vector<std::array<int, 3>> IdentifyBoundaryFaces(
   // v1 v3 v0
   // has its right-handed normal pointing outwards from the tetrahedron.
   const int tetrahedron_faces[4][3] = {
+      // clang-format off
       {1, 2, 3},
       {3, 2, 0},
       {2, 1, 0},
       {1, 3, 0}
+      // clang-format on
   };
   for (const VolumeElement& tetrahedron : tetrahedra) {
     for (const auto& face_vertices : tetrahedron_faces) {
@@ -114,14 +116,13 @@ std::vector<int> CollectUniqueVertices(
   return std::vector<int>(vertex_set.begin(), vertex_set.end());
 }
 
-}  // namespace internal
-
 template <class T>
-TriangleSurfaceMesh<T> ConvertVolumeToSurfaceMesh(const VolumeMesh<T>& volume) {
+TriangleSurfaceMesh<T> ConvertVolumeToSurfaceMeshWithBoundaryVertices(
+    const VolumeMesh<T>& volume, std::vector<int>* boundary_vertices_out) {
   const std::vector<std::array<int, 3>> boundary_faces =
       internal::IdentifyBoundaryFaces(volume.tetrahedra());
 
-  const std::vector<int> boundary_vertices =
+  std::vector<int> boundary_vertices =
       internal::CollectUniqueVertices(boundary_faces);
 
   std::vector<Vector3<T>> surface_vertices;
@@ -143,13 +144,16 @@ TriangleSurfaceMesh<T> ConvertVolumeToSurfaceMesh(const VolumeMesh<T>& volume) {
                                volume_to_surface.at(face_vertices[2]));
   }
 
+  if (boundary_vertices_out != nullptr) {
+    *boundary_vertices_out = std::move(boundary_vertices);
+  }
   return TriangleSurfaceMesh<T>(std::move(surface_faces),
                                 std::move(surface_vertices));
 }
 
-DRAKE_DEFINE_FUNCTION_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_NONSYMBOLIC_SCALARS((
-  &ConvertVolumeToSurfaceMesh<T>
-))
+DRAKE_DEFINE_FUNCTION_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_NONSYMBOLIC_SCALARS(
+    (&ConvertVolumeToSurfaceMeshWithBoundaryVertices<T>))
 
+}  // namespace internal
 }  // namespace geometry
 }  // namespace drake

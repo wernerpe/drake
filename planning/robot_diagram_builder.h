@@ -5,7 +5,6 @@
 #include <utility>
 
 #include "drake/common/default_scalars.h"
-#include "drake/common/drake_deprecated.h"
 #include "drake/geometry/scene_graph.h"
 #include "drake/multibody/parsing/parser.h"
 #include "drake/multibody/plant/multibody_plant.h"
@@ -39,14 +38,14 @@ class RobotDiagramBuilder {
   Do not call Build() on the return value; instead, call Build() on this.
   @throws exception when IsDiagramBuilt() already. */
   systems::DiagramBuilder<T>& builder() {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return *builder_;
   }
 
   /** Gets the contained DiagramBuilder (readonly).
   @throws exception when IsDiagramBuilt() already. */
   const systems::DiagramBuilder<T>& builder() const {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return *builder_;
   }
 
@@ -55,7 +54,7 @@ class RobotDiagramBuilder {
   template <typename T1 = T,
             typename std::enable_if_t<std::is_same_v<T1, double>>* = nullptr>
   multibody::Parser& parser() {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return parser_;
   }
 
@@ -64,35 +63,35 @@ class RobotDiagramBuilder {
   template <typename T1 = T,
             typename std::enable_if_t<std::is_same_v<T1, double>>* = nullptr>
   const multibody::Parser& parser() const {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return parser_;
   }
 
   /** Gets the contained plant (mutable).
   @throws exception when IsDiagramBuilt() already. */
   multibody::MultibodyPlant<T>& plant() {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return plant_;
   }
 
   /** Gets the contained plant (readonly).
   @throws exception when IsDiagramBuilt() already. */
   const multibody::MultibodyPlant<T>& plant() const {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return plant_;
   }
 
   /** Gets the contained scene graph (mutable).
   @throws exception when IsDiagramBuilt() already. */
   geometry::SceneGraph<T>& scene_graph() {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return scene_graph_;
   }
 
   /** Gets the contained scene graph (readonly).
   @throws exception when IsDiagramBuilt() already. */
   const geometry::SceneGraph<T>& scene_graph() const {
-    ThrowIfAlreadyBuilt();
+    ThrowIfAlreadyBuiltOrCorrupted();
     return scene_graph_;
   }
 
@@ -105,42 +104,11 @@ class RobotDiagramBuilder {
   @throws exception when IsDiagramBuilt() already. */
   std::unique_ptr<RobotDiagram<T>> Build();
 
-  DRAKE_DEPRECATED("2023-06-01", "Use Build() instead of BuildDiagram().")
-  std::unique_ptr<RobotDiagram<T>> BuildDiagram() { return Build(); }
-
-  DRAKE_DEPRECATED("2023-06-01", "Use builder() instead of mutable_builder().")
-  systems::DiagramBuilder<T>& mutable_builder() { return builder(); }
-
-  template <typename T1 = T,
-            typename std::enable_if_t<std::is_same_v<T1, double>>* = nullptr>
-  DRAKE_DEPRECATED("2023-06-01", "Use parser() instead of mutable_parser().")
-  multibody::Parser& mutable_parser() {
-    return parser();
-  }
-
-  DRAKE_DEPRECATED("2023-06-01", "Use plant() instead of mutable_plant().")
-  multibody::MultibodyPlant<T>& mutable_plant() { return plant(); }
-
-  DRAKE_DEPRECATED("2023-06-01",
-                   "Use scene_graph() instead of mutable_scene_graph().")
-  geometry::SceneGraph<T>& mutable_scene_graph() { return scene_graph(); }
-
-  DRAKE_DEPRECATED("2023-06-01",
-                   "Use plant().is_finalized() instead of IsPlantFinalized().")
-  bool IsPlantFinalized() const {
-    ThrowIfAlreadyBuilt();
-    return plant_.is_finalized();
-  }
-
-  DRAKE_DEPRECATED("2023-06-01",
-                   "Use plant().Finalize() instead of FinalizePlant().")
-  void FinalizePlant() {
-    ThrowIfAlreadyBuilt();
-    plant_.Finalize();
-  }
-
  private:
-  void ThrowIfAlreadyBuilt() const;
+  void ThrowIfAlreadyBuiltOrCorrupted() const;
+
+  bool ShouldExportDefaultPorts() const;
+  void ExportDefaultPorts() const;
 
   // Storage for the diagram and its plant and scene graph.
   // After Build(), the `builder_` is set to nullptr.

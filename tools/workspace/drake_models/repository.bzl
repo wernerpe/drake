@@ -1,4 +1,4 @@
-load("@drake//tools/workspace:github.bzl", "github_archive")
+load("//tools/workspace:github.bzl", "github_archive")
 
 def drake_models_repository(
         name,
@@ -6,8 +6,8 @@ def drake_models_repository(
     github_archive(
         name = name,
         repository = "RobotLocomotion/models",
-        commit = "611246c443152946e9dcc901b4f956d89a439a61",
-        sha256 = "66ad3b0f85b2aaa823d2e69cdaa980af9c0414cdb829b8224fbaa8a2dc083a7c",  # noqa
+        commit = "8cdc23d313c997d7f317de0c6b36014e2906f3c0",
+        sha256 = "f1b37fb0f82be4b221bac0497d62cc4505afd8ddf9f46062e97f5797b8d73baa",  # noqa
         build_file = ":package.BUILD.bazel",
         mirrors = mirrors,
     )

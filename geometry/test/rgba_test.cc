@@ -65,15 +65,12 @@ GTEST_TEST(RgbaTest, Errors) {
   auto expect_error = [original](double ri, double gi, double bi, double ai) {
     const std::string expected_message = fmt::format(
         "Rgba values must be within the range \\[0, 1\\]. Values provided: "
-        "\\(r={}, g={}, b={}, a={}\\)", ri, gi, bi, ai);
-    DRAKE_EXPECT_THROWS_MESSAGE(
-        Rgba(ri, gi, bi, ai),
-        expected_message);
+        "\\(r={}, g={}, b={}, a={}\\)",
+        ri, gi, bi, ai);
+    DRAKE_EXPECT_THROWS_MESSAGE(Rgba(ri, gi, bi, ai), expected_message);
     // Check for transaction integrity.
     Rgba color = original;
-    DRAKE_EXPECT_THROWS_MESSAGE(
-        color.set(ri, gi, bi, ai),
-        expected_message);
+    DRAKE_EXPECT_THROWS_MESSAGE(color.set(ri, gi, bi, ai), expected_message);
     EXPECT_EQ(color, original);
   };
 
@@ -94,6 +91,19 @@ GTEST_TEST(RgbaTest, Errors) {
   expect_error(r, g, b, bad_high);
 
   expect_error(r, g, b, std::numeric_limits<double>::quiet_NaN());
+}
+
+GTEST_TEST(RgbaTest, Product) {
+  const Rgba a(0.25, 0.5, 0.75, 0.875);
+  const Rgba b(0.75, 0.5, 0.25, 0.875);
+  const Rgba c(a.r() * b.r(), a.g() * b.g(), a.b() * b.b(), a.a() * b.a());
+  EXPECT_EQ(a * b, c);
+
+  const Rgba a_color_scaled(a.r() * 1.1, a.g() * 1.1, a.b() * 1.1, a.a());
+  EXPECT_EQ(a.scale_rgb(1.1), a_color_scaled);
+
+  // Rgba channel values saturate at 1.
+  EXPECT_EQ(a.scale_rgb(10), Rgba(1, 1, 1, a.a()));
 }
 
 /** Confirm that this can be serialized appropriately. */

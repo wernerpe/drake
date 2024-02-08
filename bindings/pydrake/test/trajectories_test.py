@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 from textwrap import dedent
 import unittest
+import scipy.sparse
 
 from pydrake.common import ToleranceType
 from pydrake.common.eigen_geometry import AngleAxis_, Quaternion_
@@ -102,10 +103,17 @@ class TestTrajectories(unittest.TestCase):
         self.assertIsInstance(b, T)
         numpy_compare.assert_float_equal(curve.control_points(), points)
 
+        M = curve.AsLinearInControlPoints(derivative_order=1)
+        self.assertEqual(M.shape, (2, 1))
+        self.assertIsInstance(M, scipy.sparse.csc_matrix)
+
         curve_expression = curve.GetExpression(time=Variable("t"))
         self.assertEqual(curve_expression.shape, (2,))
         for expr in curve_expression:
             self.assertTrue(isinstance(expr, Expression))
+
+        curve.ElevateOrder()
+        self.assertEqual(curve.order(), 2)
 
     @numpy_compare.check_all_types
     def test_bspline_trajectory(self, T):
@@ -473,6 +481,7 @@ class TestTrajectories(unittest.TestCase):
         pp1 = PiecewisePolynomial.FirstOrderHold([0.0, 1.0, 2.0], x)
         pp2 = PiecewisePolynomial.FirstOrderHold([2.0, 3.0, 4.0], x)
         traj = CompositeTrajectory(segments=[pp1, pp2])
+        self.assertEqual(traj.get_number_of_segments(), 2)
         self.assertEqual(traj.rows(), 1)
         self.assertEqual(traj.cols(), 1)
         numpy_compare.assert_float_equal(traj.start_time(), 0.0)

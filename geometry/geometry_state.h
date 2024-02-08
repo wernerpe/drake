@@ -161,11 +161,11 @@ class GeometryState {
   }
 
   /** Implementation of SceneGraphInspector::GetAllGeometryIds().  */
-  std::vector<GeometryId> GetAllGeometryIds() const;
+  std::vector<GeometryId> GetAllGeometryIds(std::optional<Role> role) const;
 
   /** Implementation of SceneGraphInspector::GetGeometryIds().  */
-  std::unordered_set<GeometryId> GetGeometryIds(
-      const GeometrySet& geometry_set, const std::optional<Role>& role) const;
+  std::unordered_set<GeometryId> GetGeometryIds(const GeometrySet& geometry_set,
+                                                std::optional<Role> role) const;
 
   /** Implementation of SceneGraphInspector::NumGeometriesWithRole().  */
   int NumGeometriesWithRole(Role role) const;
@@ -194,6 +194,11 @@ class GeometryState {
 
   /** @name          Sources and source-related data  */
   //@{
+
+  /** Returns all of the source ids in the scene graph. The order is guaranteed
+   to be stable and consistent. The first element is the SceneGraph-internal
+   source.  */
+  std::vector<SourceId> GetAllSourceIds() const;
 
   /** Implementation of SceneGraphInspector::SourceIsRegistered().  */
   bool SourceIsRegistered(SourceId source_id) const;
@@ -341,6 +346,9 @@ class GeometryState {
   /** Implementation of SceneGraph::RegisterFrame().  */
   FrameId RegisterFrame(SourceId source_id, const GeometryFrame& frame);
 
+  /** Implementation of SceneGraph::RenameFrame().  */
+  void RenameFrame(FrameId frame_id, const std::string& name);
+
   /** Implementation of
    @ref SceneGraph::RegisterFrame(SourceId,FrameId,const GeometryFrame&)
    "SceneGraph::RegisterFrame()" with parent FrameId.  */
@@ -365,10 +373,13 @@ class GeometryState {
       SourceId source_id, FrameId frame_id,
       std::unique_ptr<GeometryInstance> geometry, double resolution_hint);
 
+  /** Implementation of SceneGraph::RenameGeometry().  */
+  void RenameGeometry(GeometryId geometry_id, const std::string& name);
+
   /** Implementation of SceneGraph::ChangeShape().  */
-  void ChangeShape(
-      SourceId source_id, GeometryId geometry_id, const Shape& shape,
-      std::optional<math::RigidTransform<double>> X_FG);
+  void ChangeShape(SourceId source_id, GeometryId geometry_id,
+                   const Shape& shape,
+                   std::optional<math::RigidTransform<double>> X_FG);
 
   /** Implementation of SceneGraph::RemoveGeometry().  */
   void RemoveGeometry(SourceId source_id, GeometryId geometry_id);
@@ -510,8 +521,9 @@ class GeometryState {
   CollisionFilterManager collision_filter_manager() {
     geometry_version_.modify_proximity();
     return CollisionFilterManager(
-        &geometry_engine_->collision_filter(), [this](const GeometrySet& set) {
-          return this->CollectIds(set, Role::kProximity);
+        &geometry_engine_->collision_filter(),
+        [this](const GeometrySet& set, CollisionFilterScope scope) {
+          return this->CollectIds(set, Role::kProximity, scope);
         });
   }
 
@@ -552,6 +564,9 @@ class GeometryState {
   /** Implementation of SceneGraph::AddRenderer().  */
   void AddRenderer(std::string name,
                    std::unique_ptr<render::RenderEngine> renderer);
+
+  /** Implementation of SceneGraph::RemoveRenderer(). */
+  void RemoveRenderer(const std::string& name);
 
   /** Implementation of SceneGraph::HasRenderer().  */
   bool HasRenderer(const std::string& name) const {
@@ -627,9 +642,11 @@ class GeometryState {
   // the set that can't be mapped to known geometries or frames will cause an
   // exception to be thrown. The ids can be optionally filtered based on role.
   // If `role` is nullopt, no filtering takes place. Otherwise, just those
-  // geometries with the given role will be returned.
+  // geometries with the given role will be returned. Deformable geometries are
+  // excluded from the results if `scope == kOmitDeformable`.
   std::unordered_set<GeometryId> CollectIds(const GeometrySet& geometry_set,
-                                            std::optional<Role> role) const;
+                                            std::optional<Role> role,
+                                            CollisionFilterScope scope) const;
 
   // Sets the kinematic poses for the frames indicated by the given ids.
   // @param[in]  poses           The frame id and pose values.
@@ -852,7 +869,7 @@ class GeometryState {
   // sources (e.g., frames and geometries). This lives in the state to support
   // runtime topology changes. This data should only change at _discrete_
   // events where frames/geometries are introduced and removed. They do _not_
-  // depend on time-dependent input values (e.g., System::Context).
+  // depend on time-dependent input values (e.g., systems::Context).
 
   // The registered geometry sources and the frame ids that have been registered
   // on them.

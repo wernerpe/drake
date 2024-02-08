@@ -1,6 +1,7 @@
 #pragma once
 
-/* @file A collection of utilities to facilitate proximity query testing. The
+/* @file
+ A collection of utilities to facilitate proximity query testing. The
  functionality specifically targets proximity queries that are signed distance
  (or equivalent to signed distance). It allows for compact representation of
  test scenarios with outcome expectations and provides the common code to
@@ -15,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-#include <drake_vendor/fcl/fcl.h>
+#include <fcl/fcl.h>
 #include <gtest/gtest.h>
 
 #include "drake/common/default_scalars.h"
@@ -44,8 +45,7 @@ class DistanceCallback {
    responsible for calling ClearResults() if it wants the results of this
    invocation to be distinct from other invocations. */
   virtual bool Invoke(
-      fcl::CollisionObjectd*, fcl::CollisionObjectd*,
-      const CollisionFilter*,
+      fcl::CollisionObjectd*, fcl::CollisionObjectd*, const CollisionFilter*,
       const std::unordered_map<GeometryId, math::RigidTransform<T>>*) = 0;
 
   /* Forces all results to be cleared. */
@@ -295,8 +295,7 @@ class CharacterizeResultTest : public ::testing::Test {
    "unsupported operation" type exception message. */
   void RunCallback(
       const QueryInstance& query, fcl::CollisionObjectd* obj_A,
-      fcl::CollisionObjectd* obj_B,
-      const CollisionFilter* collision_filter,
+      fcl::CollisionObjectd* obj_B, const CollisionFilter* collision_filter,
       const std::unordered_map<GeometryId, math::RigidTransform<T>>* X_WGs)
       const;
 
@@ -449,6 +448,6 @@ struct formatter<drake::geometry::internal::GeometryType>
 }  // namespace fmt
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_NONSYMBOLIC_SCALARS(
-  class ::drake::geometry::internal::CharacterizeResultTest)
+    class ::drake::geometry::internal::CharacterizeResultTest)
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_NONSYMBOLIC_SCALARS(
-  class ::drake::geometry::internal::ShapeConfigurations)
+    class ::drake::geometry::internal::ShapeConfigurations)

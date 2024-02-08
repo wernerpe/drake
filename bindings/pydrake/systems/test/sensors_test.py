@@ -2,12 +2,12 @@ import pydrake.systems.sensors as mut
 
 import copy
 import gc
+import tempfile
 import unittest
 
 import numpy as np
 
 from pydrake.common import FindResourceOrThrow
-from pydrake.common.test_utilities.deprecation import catch_drake_warnings
 from pydrake.common.test_utilities.pickle_compare import assert_pickle
 from pydrake.common.value import AbstractValue, Value
 from pydrake.geometry import (
@@ -44,17 +44,25 @@ pf = mut.PixelFormat
 # Available image / pixel types.
 pixel_types = [
     pt.kRgba8U,
+    pt.kRgb8U,
+    pt.kBgra8U,
+    pt.kBgr8U,
     pt.kDepth16U,
     pt.kDepth32F,
     pt.kLabel16I,
+    pt.kGrey8U,
 ]
 
 # Convenience aliases.
 image_type_aliases = [
     mut.ImageRgba8U,
+    mut.ImageRgb8U,
+    mut.ImageBgra8U,
+    mut.ImageBgr8U,
     mut.ImageDepth16U,
     mut.ImageDepth32F,
     mut.ImageLabel16I,
+    mut.ImageGrey8U,
 ]
 
 
@@ -65,7 +73,7 @@ class TestSensors(unittest.TestCase):
         self.assertSetEqual(
             set(pixel_types), set(mut.PixelType.__members__.values()))
 
-        # Test instantiations of ImageTraits<>.
+        # Spot-check specific instantiations of ImageTraits<>.
         t = mut.ImageTraits[pt.kRgba8U]
         self.assertEqual(t.kNumChannels, 4)
         self.assertEqual(t.ChannelType, np.uint8)
@@ -85,6 +93,19 @@ class TestSensors(unittest.TestCase):
         self.assertEqual(t.kNumChannels, 1)
         self.assertEqual(t.ChannelType, np.int16)
         self.assertEqual(t.kPixelFormat, pf.kLabel)
+
+        # Smoke test all instantiations of ImageTraits<>.
+        for pixel_type in pixel_types:
+            t = mut.ImageTraits[pixel_type]
+            self.assertGreaterEqual(t.kNumChannels, 1)
+            self.assertIsNotNone(t.ChannelType)
+            self.assertIn(t.kPixelFormat, mut.PixelFormat.__members__.values())
+
+        # Smoke test the pixel scalars.
+        mut.PixelScalar.k8U
+        mut.PixelScalar.k16I
+        mut.PixelScalar.k16U
+        mut.PixelScalar.k32F
 
     def test_image_types(self):
         # Test instantiations of Image<>.
@@ -335,9 +356,13 @@ class TestSensors(unittest.TestCase):
                 self.assertEqual(image.height, 1)
                 expected_format = {
                     pt.kRgba8U: lcmt_image.PIXEL_FORMAT_RGBA,
+                    pt.kRgb8U: lcmt_image.PIXEL_FORMAT_RGB,
+                    pt.kBgra8U: lcmt_image.PIXEL_FORMAT_BGRA,
+                    pt.kBgr8U: lcmt_image.PIXEL_FORMAT_BGR,
                     pt.kDepth16U: lcmt_image.PIXEL_FORMAT_DEPTH,
                     pt.kDepth32F: lcmt_image.PIXEL_FORMAT_DEPTH,
                     pt.kLabel16I: lcmt_image.PIXEL_FORMAT_LABEL,
+                    pt.kGrey8U: lcmt_image.PIXEL_FORMAT_GRAY,
                 }[pixel_type]
                 self.assertEqual(image.pixel_format, expected_format)
 
@@ -349,7 +374,8 @@ class TestSensors(unittest.TestCase):
             self._check_input(port)
         for port in (
                 dut.color_image_output_port(),
-                dut.depth_image_output_port()):
+                dut.depth_image_output_port(),
+                dut.label_image_output_port()):
             self._check_output(port)
 
         # Create a one-pixel lcmt_image message.
@@ -381,6 +407,14 @@ class TestSensors(unittest.TestCase):
         self.assertEqual(image.width(), 1)
         self.assertEqual(image.height(), 1)
 
+    @staticmethod
+    def _make_render_camera_core(*, width=640, height=480):
+        return RenderCameraCore(
+            "renderer",
+            mut.CameraInfo(width, height, np.pi/6),
+            ClippingRange(0.1, 6.0),
+            RigidTransform())
+
     def test_rgbd_sensor(self):
         def check_ports(system):
             self.assertIsInstance(system.query_object_input_port(), InputPort)
@@ -392,6 +426,7 @@ class TestSensors(unittest.TestCase):
             self.assertIsInstance(system.label_image_output_port(), OutputPort)
             self.assertIsInstance(system.body_pose_in_world_output_port(),
                                   OutputPort)
+            self.assertIsInstance(system.image_time_output_port(), OutputPort)
 
         # Use HDTV size.
         width = 1280
@@ -403,12 +438,8 @@ class TestSensors(unittest.TestCase):
 
         def construct(parent_id, X_PB):
             color_camera = ColorRenderCamera(
-                RenderCameraCore(
-                    "renderer",
-                    mut.CameraInfo(width, height, np.pi/6),
-                    ClippingRange(0.1, 6.0),
-                    RigidTransform()
-                ), False)
+                self._make_render_camera_core(width=width, height=height),
+                False)
             depth_camera = DepthRenderCamera(color_camera.core(),
                                              DepthRange(0.1, 5.5))
             return mut.RgbdSensor(parent_id=parent_id, X_PB=X_PB,
@@ -417,12 +448,7 @@ class TestSensors(unittest.TestCase):
 
         def construct_single(parent_id, X_PB):
             depth_camera = DepthRenderCamera(
-                RenderCameraCore(
-                    "renderer",
-                    mut.CameraInfo(width, height, np.pi/6),
-                    ClippingRange(0.1, 6.0),
-                    RigidTransform()
-                ),
+                self._make_render_camera_core(width=width, height=height),
                 DepthRange(0.1, 5.5))
             return mut.RgbdSensor(parent_id=parent_id, X_PB=X_PB,
                                   depth_camera=depth_camera)
@@ -469,11 +495,81 @@ class TestSensors(unittest.TestCase):
         self.assertIsInstance(values.get_value(3),
                               Value[mut.ImageLabel16I])
 
+    def test_rgbd_sensor_async(self):
+        builder = DiagramBuilder()
+        plant, scene_graph = AddMultibodyPlantSceneGraph(builder, 0.0)
+        camera_core = self._make_render_camera_core()
+        color_camera = ColorRenderCamera(camera_core)
+        depth_camera = DepthRenderCamera(camera_core, DepthRange(0.1, 5.5))
+        dut = mut.RgbdSensorAsync(scene_graph=scene_graph,
+                                  parent_id=FrameId.get_new_id(),
+                                  X_PB=RigidTransform(),
+                                  fps=1.0,
+                                  capture_offset=0.1,
+                                  output_delay=0.01,
+                                  color_camera=color_camera,
+                                  depth_camera=depth_camera,
+                                  render_label_image=True)
+        dut.parent_id()
+        dut.X_PB()
+        dut.fps()
+        dut.capture_offset()
+        dut.output_delay()
+        dut.color_camera()
+        dut.depth_camera()
+        dut.color_image_output_port()
+        dut.depth_image_32F_output_port()
+        dut.depth_image_16U_output_port()
+        dut.label_image_output_port()
+        dut.body_pose_in_world_output_port()
+        dut.image_time_output_port()
+
+    def test_image_file_format(self):
+        mut.ImageFileFormat.kJpeg
+        mut.ImageFileFormat.kPng
+        mut.ImageFileFormat.kTiff
+
+    def test_image_io_metadata(self):
+        dut = mut.ImageIo.Metadata(width=640)
+        self.assertEqual(dut.width, 640)
+        self.assertIn("width=640", repr(dut))
+
+    def test_image_io_using_buffer(self):
+        orig_image = mut.ImageRgba8U(6, 4)
+
+        format = mut.ImageFileFormat.kPng
+        dut = mut.ImageIo()
+        data = dut.Save(image=orig_image, format=format)
+        self.assertIsInstance(data, bytes)
+        self.assertGreater(len(data), 0)
+
+        meta = dut.LoadMetadata(buffer=data)
+        self.assertEqual((meta.width, meta.height), (6, 4))
+
+        new_image = dut.Load(buffer=data, format=format)
+        self.assertEqual((new_image.width(), new_image.height()), (6, 4))
+
+    def test_image_io_using_file(self):
+        orig_image = mut.ImageRgba8U(6, 4)
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = f"{temp}/test_image_io_using_file.png"
+
+            dut = mut.ImageIo()
+            dut.Save(image=orig_image, path=path, format=None)
+
+            meta = dut.LoadMetadata(path=path)
+            self.assertEqual((meta.width, meta.height), (6, 4))
+
+            new_image = dut.Load(path=path, format=mut.ImageFileFormat.kPng)
+            self.assertEqual((new_image.width(), new_image.height()), (6, 4))
+
     def test_image_writer(self):
         writer = mut.ImageWriter()
-        writer.DeclareImageInputPort(
+        input_port = writer.DeclareImageInputPort(
             pixel_type=mut.PixelType.kRgba8U,
             port_name="color",
             file_name_format="/tmp/{port_name}-{time_usec}",
             publish_period=0.125,
             start_time=0.0)
+        self.assertIsNotNone(input_port)

@@ -253,11 +253,7 @@ std::optional<RigidGeometry> MakeRigidRepresentation(
   // Mesh does not use any properties.
   std::unique_ptr<TriangleSurfaceMesh<double>> mesh;
 
-  std::string extension =
-      std::filesystem::path(mesh_spec.filename()).extension();
-  std::transform(extension.begin(), extension.end(), extension.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-
+  const std::string extension = mesh_spec.extension();
   if (extension == ".obj") {
     mesh = make_unique<TriangleSurfaceMesh<double>>(
         ReadObjToTriangleSurfaceMesh(mesh_spec.filename(), mesh_spec.scale()));
@@ -266,7 +262,8 @@ std::optional<RigidGeometry> MakeRigidRepresentation(
         ConvertVolumeToSurfaceMesh(MakeVolumeMeshFromVtk<double>(mesh_spec)));
   } else {
     throw(std::runtime_error(fmt::format(
-        "hydroelastic::MakeRigidRepresentation(): unsupported mesh file: {}",
+        "hydroelastic::MakeRigidRepresentation(): for rigid hydroelastic Mesh "
+        "shapes can only use .obj or .vtk files; given: {}",
         mesh_spec.filename())));
   }
 
@@ -276,9 +273,23 @@ std::optional<RigidGeometry> MakeRigidRepresentation(
 std::optional<RigidGeometry> MakeRigidRepresentation(
     const Convex& convex_spec, const ProximityProperties&) {
   // Convex does not use any properties.
-  auto mesh =
-      make_unique<TriangleSurfaceMesh<double>>(ReadObjToTriangleSurfaceMesh(
-          convex_spec.filename(), convex_spec.scale()));
+  std::unique_ptr<TriangleSurfaceMesh<double>> mesh;
+
+  const std::string extension = convex_spec.extension();
+  if (extension == ".obj") {
+    mesh =
+        make_unique<TriangleSurfaceMesh<double>>(ReadObjToTriangleSurfaceMesh(
+            convex_spec.filename(), convex_spec.scale()));
+  } else if (extension == ".vtk") {
+    mesh = make_unique<TriangleSurfaceMesh<double>>(
+        ConvertVolumeToSurfaceMesh(MakeVolumeMeshFromVtk<double>(convex_spec)));
+  } else {
+    throw(std::runtime_error(
+        fmt::format("hydroelastic::MakeRigidRepresentation(): for rigid "
+                    "hydroelastic Convex "
+                    "shapes can only use .obj or .vtk files; given: {}",
+                    convex_spec.filename())));
+  }
 
   return RigidGeometry(RigidMesh(std::move(mesh)));
 }
@@ -392,6 +403,14 @@ std::optional<SoftGeometry> MakeSoftRepresentation(
     const Convex& convex_spec, const ProximityProperties& props) {
   PositiveDouble validator("Convex", "soft");
 
+  const std::string extension = convex_spec.extension();
+  if (extension != ".obj") {
+    throw(std::runtime_error(
+        fmt::format("hydroelastic::MakeSoftRepresentation(): for compliant "
+                    "hydroelastic Convex "
+                    "shapes can only use .obj files; given: {}",
+                    convex_spec.filename())));
+  }
   auto mesh = make_unique<VolumeMesh<double>>(
       MakeConvexVolumeMesh<double>(convex_spec));
 
@@ -419,7 +438,6 @@ std::optional<SoftGeometry> MakeSoftRepresentation(
 
   return SoftGeometry(SoftMesh(std::move(mesh), std::move(pressure)));
 }
-
 
 }  // namespace hydroelastic
 }  // namespace internal

@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "drake/common/drake_assert.h"
@@ -42,9 +43,19 @@ using ImageLabel16I = Image<PixelType::kLabel16I>;
 /// The type for greyscale image where the channel has the type of uint8_t.
 using ImageGrey8U = Image<PixelType::kGrey8U>;
 
-/// The type for symbolic image where the channel has the type of
-/// symbolic::Expression.
-using ImageExpr = Image<PixelType::kExpr>;
+/// A sum type of all built-in images types.
+using ImageAny = std::variant<
+    // Keep this list alpha-sorted:
+    // clang-format off
+    ImageBgr8U,
+    ImageBgra8U,
+    ImageDepth16U,
+    ImageDepth32F,
+    ImageGrey8U,
+    ImageRgb8U,
+    ImageRgba8U,
+    ImageLabel16I>;
+// clang-format on
 
 /// Simple data format for Image. For the complex calculation with the image,
 /// consider converting this to other libaries' Matrix data format, i.e.,
@@ -149,8 +160,7 @@ class Image {
 
   /// Compares whether two images are exactly the same.
   bool operator==(const Image& other) const {
-    return width_ == other.width_ &&
-           height_ == other.height_ &&
+    return width_ == other.width_ && height_ == other.height_ &&
            data_ == other.data_;
   }
 

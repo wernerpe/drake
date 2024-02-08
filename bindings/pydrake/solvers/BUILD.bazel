@@ -1,26 +1,26 @@
-load("@drake//tools/install:install.bzl", "install")
+load("//tools/install:install.bzl", "install")
 load(
-    "@drake//tools/skylark:test_tags.bzl",
+    "//tools/skylark:test_tags.bzl",
     "gurobi_test_tags",
     "mosek_test_tags",
 )
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_library",
 )
 load(
-    "@drake//tools/skylark:pybind.bzl",
+    "//tools/skylark:pybind.bzl",
     "drake_pybind_library",
     "get_drake_py_installs",
     "get_pybind_package_info",
 )
 load(
-    "@drake//tools/skylark:drake_py.bzl",
+    "//tools/skylark:drake_py.bzl",
     "drake_py_library",
     "drake_py_unittest",
 )
 load(
-    "@drake//tools/skylark:alias.bzl",
+    "//tools/skylark:alias.bzl",
     "drake_py_library_aliases",
 )
 load("//bindings/pydrake:pydrake.bzl", "add_lint_tests_pydrake")
@@ -45,6 +45,7 @@ drake_pybind_library(
         "//bindings/pydrake/common:cpp_template_pybind",
         "//bindings/pydrake/common:deprecation_pybind",
         "//bindings/pydrake/common:eigen_pybind",
+        "//bindings/pydrake/common:serialize_pybind",
         "//bindings/pydrake/common:value_pybind",
     ],
     cc_so_name = "__init__",
@@ -54,8 +55,10 @@ drake_pybind_library(
         "solvers_py.cc",
         "solvers_py_augmented_lagrangian.cc",
         "solvers_py_branch_and_bound.cc",
+        "solvers_py_clarabel.cc",
         "solvers_py_clp.cc",
         "solvers_py_csdp.cc",
+        "solvers_py_evaluators.cc",
         "solvers_py_gurobi.cc",
         "solvers_py_ipopt.cc",
         "solvers_py_mathematicalprogram.cc",
@@ -67,16 +70,13 @@ drake_pybind_library(
         "solvers_py_osqp.cc",
         "solvers_py_scs.cc",
         "solvers_py_sdpa_free_format.cc",
+        "solvers_py_semidefinite_relaxation.cc",
         "solvers_py_snopt.cc",
         "solvers_py_unrevised_lemke.cc",
     ],
     package_info = PACKAGE_INFO,
     py_deps = [
-        "//bindings/pydrake:autodiffutils_py",
-        "//bindings/pydrake:symbolic_py",
-        "//bindings/pydrake/common:cpp_param_py",
-        "//bindings/pydrake/common:cpp_template_py",
-        "//bindings/pydrake/common:value_py",
+        "//bindings/pydrake:module_py",
     ],
     py_srcs = [
         "_extra.py",
@@ -94,7 +94,18 @@ drake_py_unittest(
     name = "augmented_lagrangian_test",
     deps = [
         ":solvers",
-        "//bindings/pydrake:autodiffutils_py",
+        "//bindings/pydrake/common/test_utilities",
+    ],
+)
+
+drake_py_unittest(
+    name = "clarabel_solver_test",
+    args = select({
+        "//tools:no_clarabel": ["TestClarabelSolver.unavailable"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":solvers",
         "//bindings/pydrake/common/test_utilities",
     ],
 )
@@ -102,7 +113,7 @@ drake_py_unittest(
 drake_py_unittest(
     name = "clp_solver_test",
     args = select({
-        "//tools:no_clp": ["TestClptSolver.unavailable"],
+        "//tools:no_clp": ["TestClpSolver.unavailable"],
         "//conditions:default": [],
     }),
     deps = [
@@ -225,7 +236,16 @@ drake_py_unittest(
     tags = gurobi_test_tags(gurobi_required = False),
     deps = [
         ":solvers",
-        "//bindings/pydrake:math_py",
+        "//bindings/pydrake:forwarddiff_py",
+        "//bindings/pydrake/common/test_utilities",
+        "//bindings/pydrake/common/test_utilities:scipy_stub_py",
+    ],
+)
+
+drake_py_unittest(
+    name = "evaluators_test",
+    deps = [
+        ":solvers",
         "//bindings/pydrake/common/test_utilities",
         "//bindings/pydrake/common/test_utilities:scipy_stub_py",
     ],
@@ -235,7 +255,6 @@ drake_py_unittest(
     name = "branch_and_bound_test",
     deps = [
         ":solvers",
-        "//bindings/pydrake:math_py",
         "//bindings/pydrake/common/test_utilities",
     ],
 )
@@ -244,7 +263,6 @@ drake_py_unittest(
     name = "mixed_integer_optimization_util_test",
     deps = [
         ":solvers",
-        "//bindings/pydrake:math_py",
         "//bindings/pydrake/common/test_utilities",
     ],
 )
@@ -253,13 +271,20 @@ drake_py_unittest(
     name = "mixed_integer_rotation_constraint_test",
     deps = [
         ":solvers",
-        "//bindings/pydrake:math_py",
         "//bindings/pydrake/common/test_utilities",
     ],
 )
 
 drake_py_unittest(
     name = "sdpa_free_format_test",
+    deps = [
+        ":solvers",
+        "//bindings/pydrake/common/test_utilities",
+    ],
+)
+
+drake_py_unittest(
+    name = "semidefinite_relaxation_test",
     deps = [
         ":solvers",
         "//bindings/pydrake/common/test_utilities",

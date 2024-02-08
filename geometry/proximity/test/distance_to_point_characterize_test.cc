@@ -72,7 +72,7 @@ class CharacterizePointDistanceResultTest : public CharacterizeResultTest<T> {
       const Shape& shape_A, const Shape& shape_B,
       const vector<double>& signed_distances) const override {
     // For this test, we require shape A to be a zero-radius sphere.
-    DRAKE_DEMAND(ShapeName(shape_A).name() == "Sphere");
+    DRAKE_DEMAND(shape_A.type_name() == "Sphere");
     vector<Configuration<T>> configs;
     // We'll create a tangent plane to the point with an arbitrary normal
     // direction.
@@ -91,9 +91,9 @@ class CharacterizePointDistanceResultTest : public CharacterizeResultTest<T> {
             signed_distance < 0
                 ? " inside near "
                 : (signed_distance > 0 ? " outside near " : " touching at ");
-        configs.push_back(
-            {AlignPlanes(p_WC, a_norm_W, p_WB, b_norm_W), signed_distance,
-             "point" + relates + sample_B.description});
+        configs.push_back({AlignPlanes(p_WC, a_norm_W, p_WB, b_norm_W),
+                           signed_distance,
+                           "point" + relates + sample_B.description});
       }
     }
     return configs;

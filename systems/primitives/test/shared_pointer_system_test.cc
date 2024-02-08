@@ -28,8 +28,8 @@ GTEST_TEST(SharedPointerSystemTest, CtorFromShared) {
 GTEST_TEST(SharedPointerSystemTest, BuilderFromUnique) {
   auto held = std::make_unique<std::string>("held");
   auto builder = std::make_unique<DiagramBuilder<double>>();
-  std::string* gotten = SharedPointerSystem<double>::AddToBuilder(
-      builder.get(), std::move(held));
+  std::string* gotten =
+      SharedPointerSystem<double>::AddToBuilder(builder.get(), std::move(held));
   auto diagram = builder->Build();
   ASSERT_NE(gotten, nullptr);
   EXPECT_EQ(*gotten, "held");
@@ -38,8 +38,8 @@ GTEST_TEST(SharedPointerSystemTest, BuilderFromUnique) {
 GTEST_TEST(SharedPointerSystemTest, BuilderFromShared) {
   auto held = std::make_shared<std::string>("held");
   auto builder = std::make_unique<DiagramBuilder<double>>();
-  std::string* gotten = SharedPointerSystem<double>::AddToBuilder(
-      builder.get(), std::move(held));
+  std::string* gotten =
+      SharedPointerSystem<double>::AddToBuilder(builder.get(), std::move(held));
   auto diagram = builder->Build();
   ASSERT_NE(gotten, nullptr);
   EXPECT_EQ(*gotten, "held");
@@ -70,6 +70,13 @@ GTEST_TEST(SharedPointerSystemTest, Null) {
       builder.get(), std::shared_ptr<std::string>{});
   EXPECT_EQ(nothing, nullptr);
   auto diagram = builder->Build();
+}
+
+// Just make sure nothing crashes.
+GTEST_TEST(SharedPointerSystemTest, Graphviz) {
+  auto held = std::make_shared<std::string>("held");
+  auto dut = std::make_unique<SharedPointerSystem<double>>(std::move(held));
+  EXPECT_NO_THROW(dut->GetGraphvizString());
 }
 
 }  // namespace

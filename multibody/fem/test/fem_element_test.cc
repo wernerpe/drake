@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "drake/multibody/fem/test/dummy_element.h"
+#include "drake/multibody/plant/multibody_plant.h"
 
 namespace drake {
 namespace multibody {
@@ -13,7 +14,7 @@ namespace {
 using Eigen::Vector3d;
 using Eigen::VectorXd;
 
-using DummyElementTraits = FemElementTraits<DummyElement>;
+using DummyElementTraits = FemElementTraits<DummyElement<true>>;
 using T = DummyElementTraits::T;
 using Data = DummyElementTraits::Data;
 constexpr int kNumNodes = DummyElementTraits::num_nodes;
@@ -75,12 +76,13 @@ class FemElementTest : public ::testing::Test {
   std::unique_ptr<internal::FemStateSystem<T>> fem_state_system_;
   std::unique_ptr<FemState<T>> fem_state_;
   /* FemElement under test. */
-  DummyElement element_{kNodeIndices, kConstitutiveModel, kDampingModel};
+  DummyElement<true> element_{kNodeIndices, kConstitutiveModel, kDampingModel};
   systems::CacheIndex cache_index_;
 };
 
 TEST_F(FemElementTest, Constructor) {
   EXPECT_EQ(element_.node_indices(), kNodeIndices);
+  EXPECT_TRUE(element_.is_linear);
 }
 
 /* Tests that the element data logic is correctly executed through
@@ -98,7 +100,7 @@ TEST_F(FemElementTest, ExtractElementDofs) {
   for (int i = 0; i < kNumNodes; ++i) {
     expected_element_q.segment<3>(3 * i) = q().segment<3>(3 * kNodeIndices[i]);
   }
-  EXPECT_EQ(DummyElement::ExtractElementDofs(kNodeIndices, q()),
+  EXPECT_EQ(DummyElement<true>::ExtractElementDofs(kNodeIndices, q()),
             expected_element_q);
 }
 
@@ -156,24 +158,28 @@ TEST_F(FemElementTest, MassMatrix) {
   EXPECT_EQ(M, scale * element_.mass_matrix());
 }
 
-TEST_F(FemElementTest, AddScaledGravityForce) {
-  const Vector3d gravity_vector(1, 2, 3);
-  VectorXd gravity_vector_all_nodes(kNumDofs);
-  for (int i = 0; i < kNumNodes; ++i) {
-    gravity_vector_all_nodes.segment<3>(3 * i) = gravity_vector;
-  }
-  VectorXd scaled_gravity_force = VectorXd::Zero(kNumDofs);
-  const double scale = 2.0;
-  /* The only external force in FemElement is gravity. */
+TEST_F(FemElementTest, ExternalForce) {
+  const T mass_density = 2.7;
+  const Vector3<T> g(0, 0, -9.81);
+  const Vector3<T> f = g * mass_density;
+  GravityForceField<T> gravity_field(g, mass_density);
+  /* The gravity force field doesn't depend on Context, but a Context is
+   required formally. So we create a dummy Context that's unused. */
+  MultibodyPlant<T> plant(0.01);
+  plant.Finalize();
+  auto context = plant.CreateDefaultContext();
+  const FemPlantData<double> plant_data{*context, {&gravity_field}};
+
+  Vector<T, kNumDofs> external_force =
+      VectorX<T>::LinSpaced(kNumDofs, 0.0, 1.0);
+  const Vector<T, kNumDofs> old_external_force = external_force;
+  const T scale = 3.14;
   const Data& data = EvalElementData();
-  /* We explicitly test the gravity force calculation implementation in
-   FemElement (instead of the specific one in DummyElement). */
-  const FemElement<DummyElement>& base_fem_element = element_;
-  base_fem_element.AddScaledGravityForce(data, scale, gravity_vector,
-                                         &scaled_gravity_force);
-  const VectorXd expected_scaled_gravity_force =
-      scale * element_.mass_matrix() * gravity_vector_all_nodes;
-  EXPECT_EQ(expected_scaled_gravity_force, scaled_gravity_force);
+  element_.AddScaledExternalForces(data, plant_data, scale, &external_force);
+  for (int i = 0; i < kNumNodes; ++i) {
+    EXPECT_EQ(external_force.segment<3>(3 * i),
+              old_external_force.segment<3>(3 * i) + scale * f);
+  }
 }
 
 }  // namespace

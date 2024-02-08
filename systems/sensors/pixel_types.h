@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <limits>
+#include <string>
 
+#include "drake/common/fmt.h"
 #include "drake/common/hash.h"
 #include "drake/common/symbolic/expression.h"
 
@@ -20,7 +22,7 @@ namespace sensors {
 /// - F: float
 enum class PixelType {
   /// The pixel format used by ImageRgb8U.
-  kRgb8U = 0,
+  kRgb8U,
   /// The pixel format used by ImageBgr8U.
   kBgr8U,
   /// The pixel format used by ImageRgba8U.
@@ -35,16 +37,16 @@ enum class PixelType {
   kDepth32F,
   /// The pixel format used by ImageLabel16I.
   kLabel16I,
-  /// The pixel format representing symbolic::Expression.
-  kExpr,
 };
+
+std::string to_string(PixelType);
 
 /// The enum class to be used to express semantic meaning of pixels.
 /// This also expresses the order of channels in a pixel if the pixel has
 /// multiple channels.
 enum class PixelFormat {
   /// The pixel format used for all the RGB images.
-  kRgb = 0,
+  kRgb,
   /// The pixel format used for all the BGR images.
   kBgr,
   /// The pixel format used for all the RGBA images.
@@ -57,9 +59,23 @@ enum class PixelFormat {
   kDepth,
   /// The pixel format used for all the labe images.
   kLabel,
-  /// The pixel format used for all the symbolic images.
-  kExpr,
 };
+
+std::string to_string(PixelFormat);
+
+/// The enum class to be used to express channel type.
+enum class PixelScalar {
+  /// uint8_t
+  k8U,
+  /// int16_t
+  k16I,
+  /// uint16_t
+  k16U,
+  /// float (32-bit)
+  k32F,
+};
+
+std::string to_string(PixelScalar);
 
 /// Traits class for Image, specialized by PixelType.
 ///
@@ -85,6 +101,7 @@ template <>
 struct ImageTraits<PixelType::kRgb8U> {
   typedef uint8_t ChannelType;
   static constexpr int kNumChannels = 3;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k8U;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kRgb;
 };
 
@@ -92,6 +109,7 @@ template <>
 struct ImageTraits<PixelType::kBgr8U> {
   typedef uint8_t ChannelType;
   static constexpr int kNumChannels = 3;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k8U;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kBgr;
 };
 
@@ -99,6 +117,7 @@ template <>
 struct ImageTraits<PixelType::kRgba8U> {
   typedef uint8_t ChannelType;
   static constexpr int kNumChannels = 4;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k8U;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kRgba;
 };
 
@@ -106,6 +125,7 @@ template <>
 struct ImageTraits<PixelType::kBgra8U> {
   typedef uint8_t ChannelType;
   static constexpr int kNumChannels = 4;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k8U;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kBgra;
 };
 
@@ -113,6 +133,7 @@ template <>
 struct ImageTraits<PixelType::kDepth32F> {
   typedef float ChannelType;
   static constexpr int kNumChannels = 1;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k32F;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kDepth;
   static constexpr ChannelType kTooClose = 0.0f;
   static constexpr ChannelType kTooFar =
@@ -123,6 +144,7 @@ template <>
 struct ImageTraits<PixelType::kDepth16U> {
   typedef uint16_t ChannelType;
   static constexpr int kNumChannels = 1;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k16U;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kDepth;
   static constexpr ChannelType kTooClose = 0;
   static constexpr ChannelType kTooFar =
@@ -133,6 +155,7 @@ template <>
 struct ImageTraits<PixelType::kLabel16I> {
   typedef int16_t ChannelType;
   static constexpr int kNumChannels = 1;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k16I;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kLabel;
 };
 
@@ -140,14 +163,8 @@ template <>
 struct ImageTraits<PixelType::kGrey8U> {
   typedef uint8_t ChannelType;
   static constexpr int kNumChannels = 1;
+  static constexpr PixelScalar kPixelScalar = PixelScalar::k8U;
   static constexpr PixelFormat kPixelFormat = PixelFormat::kGrey;
-};
-
-template <>
-struct ImageTraits<PixelType::kExpr> {
-  typedef symbolic::Expression ChannelType;
-  static constexpr int kNumChannels = 1;
-  static constexpr PixelFormat kPixelFormat = PixelFormat::kExpr;
 };
 
 }  // namespace sensors
@@ -157,6 +174,12 @@ struct ImageTraits<PixelType::kExpr> {
 // Enable the pixel type enumeration to be used as a map key.
 namespace std {
 template <>
-struct hash<drake::systems::sensors::PixelType>
-    : public drake::DefaultHash {};
+struct hash<drake::systems::sensors::PixelType> : public drake::DefaultHash {};
 }  // namespace std
+
+DRAKE_FORMATTER_AS(, drake::systems::sensors, PixelType, x,
+                   drake::systems::sensors::to_string(x))
+DRAKE_FORMATTER_AS(, drake::systems::sensors, PixelFormat, x,
+                   drake::systems::sensors::to_string(x))
+DRAKE_FORMATTER_AS(, drake::systems::sensors, PixelScalar, x,
+                   drake::systems::sensors::to_string(x))

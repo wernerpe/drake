@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -37,6 +37,7 @@ drake_cc_library(
         ":point_contact_visualizer",
         "//common:essential",
         "//geometry:meshcat",
+        "//geometry:meshcat_graphviz",
         "//math:geometric_transform",
         "//multibody/plant",
         "//systems/framework:context",
@@ -83,8 +84,10 @@ drake_cc_library(
     srcs = ["joint_sliders.cc"],
     hdrs = ["joint_sliders.h"],
     deps = [
+        "//common:overloaded",
         "//common:scope_exit",
         "//geometry:meshcat",
+        "//geometry:meshcat_graphviz",
         "//multibody/plant",
     ],
 )
@@ -104,6 +107,7 @@ drake_cc_googletest(
         "//geometry:meshcat_visualizer",
         "//geometry/test_utilities:meshcat_environment",
         "//multibody/parsing",
+        "//systems/framework/test_utilities",
     ],
 )
 
@@ -131,4 +135,4 @@ drake_cc_library(
     ],
 )
 
-add_lint_tests()
+add_lint_tests(enable_clang_format_lint = False)

@@ -11,7 +11,6 @@
 
 #include "drake/common/copyable_unique_ptr.h"
 #include "drake/common/drake_copyable.h"
-#include "drake/common/drake_deprecated.h"
 #include "drake/common/eigen_types.h"
 #include "drake/common/fmt_ostream.h"
 #include "drake/math/rigid_transform.h"
@@ -64,9 +63,6 @@ class DifferentialInverseKinematicsParameters {
    * @param num_positions Number of generalized positions.
    * @param num_velocities Number of generalized velocities (by default it will
    * be set to num_positions).
-   *
-   * @note Currently DoDifferentialInverseKinematics requires that
-   * num_positions == num_velocities.
    */
   DifferentialInverseKinematicsParameters(
       int num_positions, std::optional<int> num_velocities = std::nullopt);
@@ -157,11 +153,11 @@ class DifferentialInverseKinematicsParameters {
 
   /**
    * Sets the joint centering gain, K, so that the joint centering command is
-   * v_next = K * (q_nominal - q_current).
-   * @pre K must be num_velocities x num_positions.
+   * attempting to achieve v_next = N⁺(q) * K * (q_nominal - q_current).
+   * @pre K must be num_positions x num_positions.
    */
   void set_joint_centering_gain(const MatrixX<double>& K) {
-    DRAKE_DEMAND(K.rows() == num_velocities_);
+    DRAKE_DEMAND(K.rows() == num_positions_);
     DRAKE_DEMAND(K.cols() == num_positions_);
     joint_centering_gain_ = K;
   }
@@ -287,13 +283,13 @@ class DifferentialInverseKinematicsParameters {
  * MathematicalProgram:
  *
  * ```
- *   min_{v_next,alpha}  -100 * alpha
- *                         + | P * (v_next - K * (q_nominal - q_current)) |^2
+ *   min_{v_next,alpha}
+ *     -100 * alpha + |P⋅(v_next - N⁺(q)⋅K⋅(q_nominal - q_current))|²
  *
  *   s.t.
- *     J * v_next = alpha * V, // J * v_next has the same direction as V
+ *     J⋅v_next = alpha⋅V, // J⋅v_next has the same direction as V
  *     0 <= alpha <= 1,        // Never go faster than V
- *     joint_lim_min <= q_current + v_next*dt <= joint_lim_max,
+ *     joint_lim_min <= q_current + N⋅v_next⋅dt <= joint_lim_max,
  *     joint_vel_lim_min <= v_next <= joint_vel_lim_max,
  *     joint_accel_lim_min <= (v_next - v_current)/dt <= joint_accel_lim_max,
  *     and additional linear velocity constraints,
@@ -301,7 +297,7 @@ class DifferentialInverseKinematicsParameters {
  * where:
  *   - The rows of P form an orthonormal basis for the nullspace of J,
  *   - J.rows() == V.size(),
- *   - J.cols() == v_current.size() == q_current.size() == v_next.size(),
+ *   - J.cols() == v_current.size() == v_next.size(),
  *   - V can have any size, with each element representing a constraint on the
  *     solution (6 constraints specifying an end-effector spatial velocity is
  *     typical, but not required),
@@ -312,8 +308,8 @@ class DifferentialInverseKinematicsParameters {
  * Intuitively, this finds a v_next such that J*v_next is in the same direction
  * as V, and the difference between |V| and |J * v_next| is minimized while all
  * constraints in @p parameters are satisfied as well. In the nullspace of this
- * objective, we have a secondary objective to minimize |v_next - K *
- * (q_nominal - q_current)|.
+ * objective, we have a secondary objective to minimize |v_next -
+ * N⁺(q)⋅K⋅(q_nominal - q_current)|².
  *
  * For more details, see
  * https://manipulation.csail.mit.edu/pick.html#diff_ik_w_constraints .
@@ -330,10 +326,18 @@ class DifferentialInverseKinematicsParameters {
  * @param V Desired spatial velocity. It must have the same number of rows as
  * @p J.
  * @param J Jacobian with respect to generalized velocities v. It must have the
- * same number of rows as @p V. J * v need to represent the same spatial
+ * same number of rows as @p V. J * v needs to represent the same spatial
  * velocity as @p V.
  * @param parameters Collection of various problem specific constraints and
  * constants.
+ * @param N (optional) matrix which maps q̇ = N(q)⋅v. See
+ * MultibodyPlant::MakeVelocityToQDotMap(). By default, it is taken to be the
+ * identity matrix. If dim(q) != dim(v) and any joint position limits are set in
+ * `parameters`, then you *must* provide N.
+ * @param Nplus (optional) matrix which maps q̇ = N⁺(q)⋅v. See
+ * MultibodyPlant::MakeQDotToVelocityMap(). By default, it is taken to be the
+ * identity matrix. If dim(q) != dim(v) and J is not full column rank, then you
+ * *must* provide Nplus.
  * @return If the solver successfully finds a solution, joint_velocities will
  * be set to v, otherwise it will be nullopt.
  *
@@ -344,7 +348,11 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const Eigen::Ref<const VectorX<double>>& v_current,
     const Eigen::Ref<const VectorX<double>>& V,
     const Eigen::Ref<const MatrixX<double>>& J,
-    const DifferentialInverseKinematicsParameters& parameters);
+    const DifferentialInverseKinematicsParameters& parameters,
+    const std::optional<Eigen::Ref<const Eigen::SparseMatrix<double>>>& N =
+        std::nullopt,
+    const std::optional<Eigen::Ref<const Eigen::SparseMatrix<double>>>& Nplus =
+        std::nullopt);
 
 // TODO(russt): V_WE_desired should be of type SpatialVelocity.
 /**
@@ -373,9 +381,36 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const DifferentialInverseKinematicsParameters& parameters);
 
 /**
+ * A wrapper over DoDifferentialInverseKinematics(q_current, v_current, V, J,
+ * params) that tracks frame E's spatial velocity in frame A.
+ * q_current and v_current are taken from @p context. V and J are expressed
+ * in E, and only the elements with non-zero gains in @p parameters
+ * get_end_effector_velocity_gains() are used in the program.
+ * @param robot A MultibodyPlant model.
+ * @param context Must be the Context of the MultibodyPlant. Contains the
+ * current generalized position and velocity.
+ * @param V_AE_desired Desired spatial velocity of @p frame_E in @p frame A.
+ * @param frame_A Reference frame (inertial or non-inertial).
+ * @param frame_E End effector frame.
+ * @param parameters Collection of various problem specific constraints and
+ * constants.
+ * @return If the solver successfully finds a solution, joint_velocities will
+ * be set to v, otherwise it will be nullopt.
+ *
+ * @ingroup planning_kinematics
+ */
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
+    const MultibodyPlant<double>& robot,
+    const systems::Context<double>& context,
+    const Vector6<double>& V_AE_desired,
+    const Frame<double>& frame_A,
+    const Frame<double>& frame_E,
+    const DifferentialInverseKinematicsParameters& parameters);
+
+/**
  * A wrapper over DoDifferentialInverseKinematics(robot, context, V_WE_desired,
  * frame_E, params) that tracks frame E's pose in the world frame. q_current
- * and v_current are taken from @p cache. V_WE is computed by
+ * and v_current are taken from @p context. V_WE_desired is computed by
  * ComputePoseDiffInCommonFrame(X_WE, X_WE_desired) / dt, where X_WE is
  * computed from @p context, and dt is taken from @p parameters.
  * @param robot A MultibodyPlant model.
@@ -397,15 +432,46 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const Frame<double>& frame_E,
     const DifferentialInverseKinematicsParameters& parameters);
 
+/**
+ * A wrapper over DoDifferentialInverseKinematics(robot, context, V_AE_desired,
+ * frame_A, frame_E, params) that tracks frame E's pose in frame A. q_current
+ * and v_current are taken from @p context. V_AE_desired is computed by
+ * ComputePoseDiffInCommonFrame(X_AE, X_AE_desired) / dt, where X_WE is
+ * computed from @p context, and dt is taken from @p parameters.
+ * @param robot A MultibodyPlant model.
+ * @param context Must be the Context of the MultibodyPlant. Contains the
+ * current generalized position and velocity.
+ * @param X_AE_desired Desired pose of @p frame_E in @p frame_A.
+ * @param frame_A Reference frame (inertial or non-inertial).
+ * @param frame_E End effector frame.
+ * @param parameters Collection of various problem specific constraints and
+ * constants.
+ * @return If the solver successfully finds a solution, joint_velocities will
+ * be set to v, otherwise it will be nullopt.
+ *
+ * @ingroup planning_kinematics
+ */
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
+    const MultibodyPlant<double>& robot,
+    const systems::Context<double>& context,
+    const math::RigidTransform<double>& X_AE_desired,
+    const Frame<double>& frame_A,
+    const Frame<double>& frame_E,
+    const DifferentialInverseKinematicsParameters& parameters);
+
 #ifndef DRAKE_DOXYGEN_CXX
 namespace internal {
 DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
-    const Eigen::Ref<const VectorX<double>>&,
-    const Eigen::Ref<const VectorX<double>>&,
-    const math::RigidTransform<double>&,
-    const Eigen::Ref<const Matrix6X<double>>&,
-    const SpatialVelocity<double>&,
-    const DifferentialInverseKinematicsParameters&);
+    const Eigen::Ref<const VectorX<double>>& q_current,
+    const Eigen::Ref<const VectorX<double>>& v_current,
+    const math::RigidTransform<double>& X_WE,
+    const Eigen::Ref<const Matrix6X<double>>& J_WE_W,
+    const SpatialVelocity<double>& V_WE_desired,
+    const DifferentialInverseKinematicsParameters& parameters,
+    const std::optional<Eigen::Ref<const MatrixX<double>>>& N =
+        std::nullopt,
+    const std::optional<Eigen::Ref<const MatrixX<double>>>& Nplus =
+        std::nullopt);
 }  // namespace internal
 #endif
 

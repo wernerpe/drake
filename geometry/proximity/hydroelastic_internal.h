@@ -143,8 +143,9 @@ class SoftGeometry {
    this will throw if is_half_space() returns `true`.  */
   const VolumeMeshFieldLinear<double, double>& pressure_field() const {
     if (is_half_space()) {
-      throw std::runtime_error("SoftGeometry::pressure_field() cannot be "
-                               "invoked for soft half space");
+      throw std::runtime_error(
+          "SoftGeometry::pressure_field() cannot be "
+          "invoked for soft half space");
     }
     return std::get<SoftMesh>(geometry_).pressure();
   }
@@ -184,8 +185,7 @@ class RigidMesh {
 
   explicit RigidMesh(std::unique_ptr<TriangleSurfaceMesh<double>> mesh)
       : mesh_(std::move(mesh)),
-        bvh_(std::make_unique<Bvh<Obb, TriangleSurfaceMesh<double>>>(
-            *mesh_)) {}
+        bvh_(std::make_unique<Bvh<Obb, TriangleSurfaceMesh<double>>>(*mesh_)) {}
 
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RigidMesh)
 
@@ -385,7 +385,7 @@ std::optional<RigidGeometry> MakeRigidRepresentation(
       "Rigid {} shapes are not currently supported for hydroelastic "
       "contact; registration is allowed, but an error will be thrown "
       "during contact.",
-      ShapeName(shape));
+      shape.type_name());
   return {};
 }
 
@@ -437,7 +437,7 @@ std::optional<SoftGeometry> MakeSoftRepresentation(const Shape& shape,
   static const logging::Warn log_once(
       "Soft {} shapes are not currently supported for hydroelastic contact; "
       "registration is allowed, but an error will be thrown during contact.",
-      ShapeName(shape));
+      shape.type_name());
   return {};
 }
 

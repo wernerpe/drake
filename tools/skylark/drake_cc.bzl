@@ -1,9 +1,11 @@
 load("@cc//:compiler.bzl", "COMPILER_ID", "COMPILER_VERSION_MAJOR")
+load("//tools/skylark:cc.bzl", "cc_binary", "cc_library", "cc_test")
 load(
     "//tools/skylark:kwargs.bzl",
     "incorporate_allow_network",
     "incorporate_num_threads",
 )
+load("//tools/workspace:generate_file.bzl", "generate_file")
 
 # The CXX_FLAGS will be enabled for all C++ rules in the project
 # building with any compiler.
@@ -174,7 +176,7 @@ def installed_headers_for_dep(dep):
     provider associated with that library.  The returned label is appropriate
     to use in the deps of a `drake_installed_headers()` rule.
 
-    Once our rules are better able to call native rules like native.cc_binary,
+    Once our rules are better able to call native rules like native cc_binary,
     instead of having two labels we would prefer to tack a DrakeCc provider
     onto the cc_library target directly.
 
@@ -425,7 +427,7 @@ def _raw_drake_cc_library(
             fail("implementation_deps are only supported for static libraries")
         compiled_name = "_{}_compiled_cc_impl".format(name)
         compiled_visibility = ["//visibility:private"]
-    native.cc_library(
+    cc_library(
         name = compiled_name,
         srcs = srcs,
         hdrs = hdrs,
@@ -449,7 +451,7 @@ def _raw_drake_cc_library(
     # our static archive, and then squash them together to the final result.
     if implementation_deps:
         headers_name = "_{}_headers_cc_impl".format(name)
-        native.cc_library(
+        cc_library(
             name = headers_name,
             hdrs = hdrs,
             strip_include_prefix = strip_include_prefix,
@@ -468,7 +470,7 @@ def _raw_drake_cc_library(
             visibility = ["//visibility:private"],
             tags = tags,
         )
-        native.cc_library(
+        cc_library(
             name = name,
             deps = [
                 ":" + headers_name,
@@ -563,7 +565,7 @@ def drake_cc_library(
     used by Drake's installed headers. This is especially helpful when the
     header_lint tool is complaining about third-party dependency pollution.
     Flagging a library as `internal = True` means that the library is internal
-    from the point of view of the the build system, which is an even stronger
+    from the point of view of the build system, which is an even stronger
     promise that merely placing code inside `namespace internal {}`.
     Code that is build-system internal should always be namespace-internal,
     but not all namespace-internal code is build-system internal. For example,
@@ -722,7 +724,7 @@ def drake_cc_binary(
         **kwargs
     )
 
-    native.cc_binary(
+    cc_binary(
         name = name,
         srcs = new_srcs,
         data = data,
@@ -813,7 +815,7 @@ def drake_cc_test(
         copts = new_copts,
         **kwargs
     )
-    native.cc_test(
+    cc_test(
         name = name,
         size = size,
         srcs = new_srcs,
@@ -891,4 +893,106 @@ def drake_cc_googletest(
         tags = new_tags,
         deps = deps,
         **kwargs
+    )
+
+def drake_cc_library_linux_only(
+        name,
+        srcs = [],
+        interface_deps = None,
+        deps = [],
+        linkopts = [],
+        tags = [],
+        visibility = ["//visibility:private"],
+        **kwargs):
+    """Declares a platform-specific drake_cc_library.
+
+    When building on non-Linux, the interface_deps and deps and linkopts are
+    nulled out. Note that we do NOT null out srcs; using a select() on srcs
+    would cause the linter to skip them, even on Linux builds.
+
+    The tags will be forced to have "manual" set so that the library compile is
+    skipped on macOS.
+
+    Because this library is not cross-platform, the visibility defaults to
+    private and internal is forced to True (so that, e.g., the headers are
+    excluded from the installation).
+    """
+    new_tags = tags or []
+    if "manual" not in new_tags:
+        new_tags.append("manual")
+    drake_cc_library(
+        name = name,
+        srcs = srcs,
+        interface_deps = None if interface_deps == None else select({
+            "@drake//tools/skylark:linux": interface_deps,
+            "//conditions:default": [],
+        }),
+        deps = select({
+            "@drake//tools/skylark:linux": deps,
+            "//conditions:default": [],
+        }),
+        linkopts = select({
+            "@drake//tools/skylark:linux": linkopts,
+            "//conditions:default": [],
+        }),
+        tags = new_tags,
+        visibility = visibility,
+        internal = True,
+        **kwargs
+    )
+
+def drake_cc_googletest_linux_only(
+        name,
+        data = [],
+        deps = [],
+        linkopts = [],
+        tags = [],
+        visibility = ["//visibility:private"]):
+    """Declares a platform-specific drake_cc_googletest. When not building on
+    Linux, the deps and linkopts are nulled out.
+
+    Because this test is not cross-platform, the visibility defaults to
+    private.
+    """
+
+    # We need add the source file to an intermediate cc_library so that our
+    # linters will find it. The library will not be compiled on non-Linux.
+    srcs = ["test/{}.cc".format(name)]
+    drake_cc_library(
+        name = "_{}_compile".format(name),
+        srcs = srcs,
+        testonly = True,
+        tags = ["manual"],
+        deps = select({
+            "@drake//tools/skylark:linux": deps + [
+                "@gtest//:without_main",
+            ],
+            "//conditions:default": [],
+        }),
+        linkopts = select({
+            "@drake//tools/skylark:linux": linkopts,
+            "//conditions:default": [],
+        }),
+        alwayslink = True,
+        visibility = ["//visibility:private"],
+    )
+
+    # Now link the unit test (but on non-Linux, skip over the actual code).
+    # We need to use a dummy header file to disable the default 'srcs = ...'
+    # inference from drake_cc_googletest.
+    generate_file(
+        name = "_{}_empty.h".format(name),
+        content = "",
+        visibility = ["//visibility:private"],
+    )
+    drake_cc_googletest(
+        name = name,
+        srcs = ["_{}_empty.h".format(name)],
+        tags = tags + ["nolint"],
+        data = data,
+        deps = select({
+            "@drake//tools/skylark:linux": [":_{}_compile".format(name)],
+            "//conditions:default": [],
+        }),
+        visibility = visibility,
     )

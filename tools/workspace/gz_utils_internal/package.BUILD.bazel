@@ -8,14 +8,8 @@ load(
     "@drake//tools/workspace:check_lists_consistency.bzl",
     "check_lists_consistency",
 )
-load(
-    "@drake//tools/install:install.bzl",
-    "install",
-)
-load(
-    "@drake//tools/workspace:vendor_cxx.bzl",
-    "cc_library_vendored",
-)
+load("@drake//tools/install:install.bzl", "install")
+load("@drake//tools/workspace:vendor_cxx.bzl", "cc_library_vendored")
 load("@drake//tools/workspace:generate_file.bzl", "generate_file")
 
 licenses(["notice"])  # Apache-2.0
@@ -48,7 +42,6 @@ generate_file(
 )
 
 _MOST_PUBLIC_HDRS = [
-    "include/gz/utils/Environment.hh",
     "include/gz/utils/ImplPtr.hh",
     "include/gz/utils/NeverDestroyed.hh",
     "include/gz/utils/SuppressWarning.hh",
@@ -58,7 +51,6 @@ _MOST_PUBLIC_HDRS = [
 ]
 
 _SRCS = [
-    "src/Environment.cc",
 ]
 
 check_lists_consistency(
@@ -68,6 +60,12 @@ check_lists_consistency(
         "src/**/*.cc",
     ],
     glob_exclude = [
+        # These features are inappropriate for use by Drake. (The sdformat
+        # parser should not be launching subprocesses, nor checking or setting
+        # environment variables.) We exclude them to prevent accidental use.
+        "include/gz/utils/Environment.hh",
+        "include/gz/utils/Subprocess.hh",
+        "src/Environment.cc",
         # These are test utilities, not for use by library code.
         "include/gz/utils/ExtraTestMacros.hh",
         "include/gz/utils/detail/ExtraTestMacros.hh",
@@ -99,7 +97,7 @@ cc_library_vendored(
     name = "gz_utils",
     hdrs = _HDRS,
     hdrs_vendored = [
-        x.replace("include/gz/", "drake_src/drake_vendor/gz/")
+        x.replace("include/gz/", "drake_hdr/gz/")
         for x in _HDRS
     ],
     srcs = _SRCS,
@@ -107,19 +105,15 @@ cc_library_vendored(
         x.replace("src/", "drake_src/")
         for x in _SRCS
     ],
-    edit_include = {
-        "gz/": "drake_vendor/gz/",
-    },
     copts = ["-w"],
     linkstatic = True,
-    includes = ["drake_src"],
+    includes = ["drake_hdr"],
     visibility = ["//visibility:public"],
 )
 
 install(
     name = "install",
     docs = [
-        "COPYING",
         "LICENSE",
     ],
     visibility = ["//visibility:public"],

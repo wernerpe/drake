@@ -1,6 +1,6 @@
-load("@drake//tools/skylark:drake_cc.bzl", "drake_cc_binary")
+load("//tools/skylark:drake_cc.bzl", "drake_cc_binary")
 load("//tools/lint:lint.bzl", "add_lint_tests")
-load("@drake//tools/install:install.bzl", "install")
+load("//tools/install:install.bzl", "install")
 
 drake_cc_binary(
     name = "simple_continuous_time_system",
@@ -33,7 +33,7 @@ drake_cc_binary(
 )
 
 # The :models in these packages are installed as part of the Drake release
-# process, and loaded into drake_visualizer's model database by default.
+# process and loaded into //tools:drake_visualizer's model database by default.
 INSTALLED_MODEL_PACKAGES = [
     "//examples/acrobot",
     "//examples/hydroelastic/spatula_slip_control",

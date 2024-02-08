@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -13,11 +13,33 @@ drake_cc_package_library(
     name = "render",
     visibility = ["//visibility:public"],
     deps = [
+        ":color_deprecated",
+        ":light_parameter",
         ":render_camera",
         ":render_engine",
         ":render_label",
         ":render_material",
         ":render_mesh",
+    ],
+)
+
+drake_cc_library(
+    name = "color_deprecated",
+    hdrs = ["color_deprecated.h"],
+    deps = [
+        "//common:essential",
+        "//common:hash",
+    ],
+)
+
+drake_cc_library(
+    name = "light_parameter",
+    srcs = ["light_parameter.cc"],
+    hdrs = ["light_parameter.h"],
+    deps = [
+        "//common:essential",
+        "//common:name_value",
+        "//geometry:rgba",
     ],
 )
 
@@ -41,6 +63,7 @@ drake_cc_library(
     deps = [
         ":render_camera",
         ":render_label",
+        ":render_mesh",
         "//common:essential",
         "//geometry:geometry_ids",
         "//geometry:geometry_roles",
@@ -75,7 +98,7 @@ drake_cc_library(
         "//geometry:rgba",
     ],
     deps = [
-        "@tinyobjloader",
+        "@tinyobjloader_internal//:tinyobjloader",
     ],
 )
 
@@ -89,9 +112,10 @@ drake_cc_library(
         "//common:essential",
         "//geometry:geometry_properties",
         "//geometry:rgba",
+        "//geometry/proximity:triangle_surface_mesh",
     ],
     deps = [
-        "@tinyobjloader",
+        "@tinyobjloader_internal//:tinyobjloader",
     ],
 )
 
@@ -111,8 +135,17 @@ filegroup(
     srcs = [":box_no_mtl"] + glob([
         "test/meshes/*",
         "test/box.sdf",
-        "test/diag_gradient.png",
+        "test/*.png",
     ]),
+)
+
+drake_cc_googletest(
+    name = "light_parameter_test",
+    deps = [
+        ":light_parameter",
+        "//common/test_utilities",
+        "//common/yaml:yaml_io",
+    ],
 )
 
 drake_cc_googletest(

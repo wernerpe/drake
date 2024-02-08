@@ -45,13 +45,13 @@ using math::RigidTransform;
 using math::RigidTransformd;
 using math::RollPitchYaw;
 using math::RotationMatrix;
-using multibody::Body;
 using multibody::ExternallyAppliedSpatialForce;
 using multibody::Joint;
 using multibody::MultibodyForces;
 using multibody::MultibodyPlant;
 using multibody::PrismaticJoint;
 using multibody::RevoluteJoint;
+using multibody::RigidBody;
 using multibody::SpatialForce;
 using multibody::SpatialInertia;
 
@@ -59,7 +59,7 @@ namespace internal {
 namespace {
 
 // This system computes the generalized forces on the IIWA arm of the
-// manipulation resulting from externally applied spatial forces.
+// manipulation station resulting from externally applied spatial forces.
 //
 // @system
 // name: ExternalGeneralizedForcesComputer
@@ -120,7 +120,7 @@ class ExternalGeneralizedForcesComputer : public systems::LeafSystem<double> {
       multibody::MultibodyForces<double> forces(*plant_);
       for (const ExternallyAppliedSpatialForce<double>& a_force :
            *applied_input) {
-        const Body<double>& body = plant_->get_body(a_force.body_index);
+        const RigidBody<double>& body = plant_->get_body(a_force.body_index);
 
         // Get the pose for this body in the world frame.
         const RigidTransform<double>& X_WB =
@@ -232,17 +232,17 @@ multibody::ModelInstanceIndex AddAndWeldModelFrom(
     const RigidTransform<double>& X_PC, MultibodyPlant<T>* plant) {
   DRAKE_THROW_UNLESS(!plant->HasModelInstanceNamed(model_name));
 
-  // Since we need to force the model name here, exploit the fact that model
-  // directives processing can do that.
+  // We need to parse model_url into a plant model instance named model_name,
+  // ignoring the model name defined within the model_url file. We accomplish
+  // that by parsing the model first and then renaming it second. If the model
+  // name defined within the model_url file was already in use, the first step
+  // would throw; to avoid that, we must enable auto renaming during its parse.
   multibody::Parser parser(plant);
-  multibody::parsing::ModelDirectives directives;
-  multibody::parsing::ModelDirective directive;
-  directive.add_model = multibody::parsing::AddModel{
-      model_url, model_name, {}, {}};
-  directives.directives.push_back(directive);
-  const auto models = ProcessModelDirectives(directives, &parser);
+  parser.SetAutoRenaming(true);
+  const auto models = parser.AddModelsFromUrl(model_url);
   DRAKE_THROW_UNLESS(models.size() == 1);
-  const multibody::ModelInstanceIndex new_model = models[0].model_instance;
+  plant->RenameModelInstance(models[0], model_name);
+  const multibody::ModelInstanceIndex new_model = models[0];
 
   const auto& child_frame = plant->GetFrameByName(child_frame_name, new_model);
   plant->WeldFrames(parent, child_frame, X_PC);
@@ -601,7 +601,7 @@ void ManipulationStation<T>::Finalize(
           y(-0.35, 0.35), z(0, 0.05);
       const Vector3<symbolic::Expression> xyz{x(), y(), z()};
       for (const auto& body_index : object_ids_) {
-        const multibody::Body<T>& body = plant_->get_body(body_index);
+        const multibody::RigidBody<T>& body = plant_->get_body(body_index);
         plant_->SetFreeBodyRandomPositionDistribution(body, xyz);
         plant_->SetFreeBodyRandomRotationDistributionToUniform(body);
       }
@@ -616,7 +616,7 @@ void ManipulationStation<T>::Finalize(
           y(-0.8, -.55), z(0.3, 0.35);
       const Vector3<symbolic::Expression> xyz{x(), y(), z()};
       for (const auto& body_index : object_ids_) {
-        const multibody::Body<T>& body = plant_->get_body(body_index);
+        const multibody::RigidBody<T>& body = plant_->get_body(body_index);
         plant_->SetFreeBodyRandomPositionDistribution(body, xyz);
         plant_->SetFreeBodyRandomRotationDistributionToUniform(body);
       }
@@ -631,7 +631,7 @@ void ManipulationStation<T>::Finalize(
           y(0, 0), z(0, 0.05);
       const Vector3<symbolic::Expression> xyz{x(), y(), z()};
       for (const auto& body_index : object_ids_) {
-        const multibody::Body<T>& body = plant_->get_body(body_index);
+        const multibody::RigidBody<T>& body = plant_->get_body(body_index);
         plant_->SetFreeBodyRandomPositionDistribution(body, xyz);
       }
       break;
@@ -796,6 +796,10 @@ void ManipulationStation<T>::Finalize(
                   computer->GetInputPort("multibody_state"));
   builder.ExportInput(computer->GetInputPort("applied_spatial_force"),
                       "applied_spatial_force");
+  // Connect the exported input to the plant's applied spatial force input as
+  // well.
+  builder.ConnectToSame(computer->GetInputPort("applied_spatial_force"),
+                        plant_->get_applied_spatial_force_input_port());
 
   // Adder to compute τ_external = τ_applied_spatial_force + τ_contact
   systems::Adder<double>* external_forces_adder =
@@ -1067,7 +1071,7 @@ void ManipulationStation<T>::RegisterRgbdSensor(
   const geometry::SourceId source_id = plant_->get_source_id().value();
   for (const multibody::BodyIndex& body_index :
            plant_->GetBodyIndices(model_index)) {
-    const multibody::Body<T>& body = plant_->get_body(body_index);
+    const multibody::RigidBody<T>& body = plant_->get_body(body_index);
     for (const geometry::GeometryId& geometry_id :
              plant_->GetVisualGeometriesForBody(body)) {
       scene_graph_->RemoveRole(source_id, geometry_id,

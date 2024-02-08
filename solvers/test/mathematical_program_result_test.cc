@@ -41,6 +41,7 @@ TEST_F(MathematicalProgramResultTest, DefaultConstructor) {
 TEST_F(MathematicalProgramResultTest, Setters) {
   MathematicalProgramResult result;
   result.set_decision_variable_index(decision_variable_index_);
+  EXPECT_EQ(result.get_decision_variable_index(), decision_variable_index_);
   EXPECT_TRUE(CompareMatrices(
       result.get_x_val(),
       Eigen::VectorXd::Constant(decision_variable_index_.size(),
@@ -64,6 +65,11 @@ TEST_F(MathematicalProgramResultTest, Setters) {
   EXPECT_EQ(result.get_optimal_cost(), cost);
   EXPECT_EQ(result.get_solver_id().name(), "foo");
   EXPECT_TRUE(CompareMatrices(result.GetSolution(), x_val));
+
+  result.SetSolution(x0_, 0.123);
+  EXPECT_EQ(result.GetSolution(x0_), 0.123);
+  symbolic::Variable unregistered("unregistered");
+  EXPECT_THROW(result.SetSolution(unregistered, 0.456), std::exception);
 }
 
 TEST_F(MathematicalProgramResultTest, GetSolution) {
@@ -233,7 +239,7 @@ GTEST_TEST(TestMathematicalProgramResult, InfeasibleProblem) {
 }
 
 GTEST_TEST(TestMathematicalProgramResult, GetInfeasibleConstraintNames) {
-  if (SnoptSolver::is_available()) {
+  if (SnoptSolver::is_available() && SnoptSolver::is_enabled()) {
     MathematicalProgram prog;
     auto x = prog.NewContinuousVariables<1>();
     auto b0 = prog.AddBoundingBoxConstraint(0, 0, x);
@@ -274,7 +280,7 @@ GTEST_TEST(TestMathematicalProgramResult, GetInfeasibleConstraintBindings) {
   auto constraint1 = prog.AddBoundingBoxConstraint(value1, value1, x.head<2>());
   auto constraint2 = prog.AddBoundingBoxConstraint(value2, value2, x);
   SnoptSolver solver;
-  if (solver.is_available()) {
+  if (solver.is_available() && solver.is_enabled()) {
     const auto result = solver.Solve(prog);
     EXPECT_FALSE(result.is_success());
     const double tol = 1e-4;
@@ -305,13 +311,6 @@ GTEST_TEST(TestMathematicalProgramResult, GetInfeasibleConstraintBindings) {
     EXPECT_EQ(infeasible_bindings_relaxed.size(), 0);
   }
 }
-
-// Remove this whole stanza upon completion of deprecation 2023-09-01.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-static_assert(SolutionResult::kUnknownError ==
-              SolutionResult::kSolverSpecificError);
-#pragma GCC diagnostic pop
 
 }  // namespace
 }  // namespace solvers

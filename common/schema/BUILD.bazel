@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -25,6 +25,7 @@ drake_cc_library(
     deps = [
         ":stochastic",
         "//common:name_value",
+        "//common:overloaded",
         "//math:geometric_transform",
     ],
 )
@@ -37,6 +38,7 @@ drake_cc_library(
         "//common:essential",
         "//common:name_value",
         "//common:nice_type_name",
+        "//common:overloaded",
         "//common:random",
         "//common:unused",
         "//common/symbolic:expression",
@@ -79,12 +81,17 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "transform_test",
+    env = {
+        # On deprecation completion 2024-05-01 the next line should be removed.
+        "_DRAKE_DEPRECATION_IS_ERROR": "1",
+    },
     deps = [
         ":transform",
         "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
         "//common/test_utilities:symbolic_test_util",
         "//common/yaml",
     ],
 )
 
-add_lint_tests()
+add_lint_tests(enable_clang_format_lint = False)

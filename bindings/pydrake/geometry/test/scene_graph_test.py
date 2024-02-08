@@ -4,7 +4,6 @@ import unittest
 from math import pi
 
 from pydrake.common.test_utilities import numpy_compare
-from pydrake.common.test_utilities.deprecation import catch_drake_warnings
 from pydrake.common.value import Value
 from pydrake.math import RigidTransform_
 from pydrake.symbolic import Expression
@@ -34,6 +33,8 @@ class TestGeometrySceneGraph(unittest.TestCase):
         global_frame = scene_graph.RegisterFrame(
             source_id=global_source,
             frame=mut.GeometryFrame("anchored_frame1"))
+        scene_graph.RenameFrame(frame_id=global_frame, name="something")
+        scene_graph.RenameFrame(frame_id=global_frame, name="anchored_frame1")
         scene_graph.RegisterFrame(
             source_id=global_source, parent_id=global_frame,
             frame=mut.GeometryFrame("anchored_frame2"))
@@ -48,6 +49,8 @@ class TestGeometrySceneGraph(unittest.TestCase):
             geometry=mut.GeometryInstance(X_PG=RigidTransform_[float](),
                                           shape=mut.Sphere(1.),
                                           name="sphere2"))
+        scene_graph.RenameGeometry(geometry_id=sphere_2, name="else")
+        scene_graph.RenameGeometry(geometry_id=sphere_2, name="sphere2")
         props = mut.ProximityProperties()
         mut.AddRigidHydroelasticProperties(resolution_hint=1, properties=props)
         scene_graph.AssignRole(source_id=global_source, geometry_id=sphere_2,
@@ -75,23 +78,41 @@ class TestGeometrySceneGraph(unittest.TestCase):
             scene_graph.get_query_output_port(), OutputPort)
 
         # Test limited rendering API.
-        scene_graph.AddRenderer("test_renderer",
+        renderer_name = "test_renderer"
+        scene_graph.AddRenderer(renderer_name,
                                 mut.MakeRenderEngineVtk(
                                     mut.RenderEngineVtkParams()))
-        self.assertTrue(scene_graph.HasRenderer("test_renderer"))
+        self.assertTrue(scene_graph.HasRenderer(renderer_name))
         self.assertEqual(scene_graph.RendererCount(), 1)
+        renderer_type_name = scene_graph.GetRendererTypeName(
+            name=renderer_name)
+
+        scene_graph.RemoveRenderer(renderer_name)
+        self.assertFalse(scene_graph.HasRenderer(renderer_name))
+        self.assertEqual(scene_graph.RendererCount(), 0)
+
+        # Now add the renderer back.
+        scene_graph.AddRenderer(renderer_name,
+                                mut.MakeRenderEngineVtk(
+                                    mut.RenderEngineVtkParams()))
 
         # Test SceneGraphInspector API
         inspector = scene_graph.model_inspector()
         self.assertEqual(inspector.num_sources(), 2)
         self.assertEqual(inspector.num_frames(), 3)
+        self.assertEqual(len(inspector.GetAllSourceIds()), 2)
         self.assertEqual(len(inspector.GetAllFrameIds()), 3)
         self.assertTrue(inspector.world_frame_id()
                         in inspector.GetAllFrameIds())
         self.assertTrue(global_frame in inspector.GetAllFrameIds())
         self.assertIsInstance(inspector.world_frame_id(), mut.FrameId)
         self.assertEqual(inspector.num_geometries(), 3)
-        self.assertEqual(len(inspector.GetAllGeometryIds()), 3)
+        self.assertEqual(
+            len(inspector.GetAllGeometryIds()),
+            3)
+        self.assertEqual(
+            len(inspector.GetAllGeometryIds(role=mut.Role.kProximity)),
+            2)
 
         # Test both GeometrySet API as well as SceneGraphInspector's
         # GeometrySet API.
@@ -313,6 +334,27 @@ class TestGeometrySceneGraph(unittest.TestCase):
                     context=context, source_id=global_source,
                     frame_id=global_frame, role=role),
                 1 if i == 0 else 0)
+
+    @numpy_compare.check_all_types
+    def test_scene_graph_renderer_with_context(self, T):
+        SceneGraph = mut.SceneGraph_[T]
+        scene_graph = SceneGraph()
+        context = scene_graph.CreateDefaultContext()
+        self.assertEqual(scene_graph.RendererCount(context), 0)
+        render_params = mut.RenderEngineVtkParams()
+        renderer_name = "test_renderer"
+        self.assertFalse(
+            scene_graph.HasRenderer(context=context, name=renderer_name))
+        scene_graph.AddRenderer(
+            context=context, name=renderer_name,
+            renderer=mut.MakeRenderEngineVtk(params=render_params))
+        self.assertEqual(scene_graph.RendererCount(context=context), 1)
+        self.assertTrue(
+            scene_graph.HasRenderer(context=context, name=renderer_name))
+        scene_graph.RemoveRenderer(context=context, name=renderer_name)
+        self.assertEqual(scene_graph.RendererCount(context=context), 0)
+        renderer_type_name = scene_graph.GetRendererTypeName(
+            context=context, name=renderer_name)
 
     @numpy_compare.check_all_types
     def test_scene_graph_register_geometry(self, T):

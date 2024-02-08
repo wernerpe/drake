@@ -7,7 +7,6 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <initializer_list>
 #include <map>
 #include <optional>
@@ -16,8 +15,7 @@
 #include <tuple>
 #include <utility>
 
-#include <drake_vendor/tinyxml2.h>
-#include <picosha2.h>
+#include <tinyxml2.h>
 
 #include "drake/common/drake_assert.h"
 #include "drake/common/drake_throw.h"
@@ -27,6 +25,7 @@
 #include "drake/common/network_policy.h"
 #include "drake/common/never_destroyed.h"
 #include "drake/common/scope_exit.h"
+#include "drake/common/sha256.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/yaml/yaml_io.h"
 
@@ -255,7 +254,7 @@ std::vector<std::string> GetAllowedUrls(const std::vector<std::string>& urls) {
 fs::path PackageData::GetCacheRelativePath() const {
   DRAKE_DEMAND(is_remote());
   const std::string hashed_strip_prefix =
-      picosha2::hash256_hex_string(remote_params_->strip_prefix.value_or(""));
+      Sha256::Checksum(remote_params_->strip_prefix.value_or("")).to_string();
   return fmt::format("{}-{}", remote_params_->sha256, hashed_strip_prefix);
 }
 
@@ -278,7 +277,8 @@ bool PackageData::FindInCache() {
   if (!path_.needs_fetch()) {
     return true;
   }
-  internal::PathOrError try_cache = internal::FindOrCreateCache("package_map");
+  drake::internal::PathOrError try_cache =
+      drake::internal::FindOrCreateCache("package_map");
   if (!try_cache.error.empty()) {
     return false;
   }
@@ -312,7 +312,8 @@ const std::string& PackageData::GetPathWithAutomaticFetching(
   }
 
   // Find and/or create the cache_dir.
-  internal::PathOrError try_cache = internal::FindOrCreateCache("package_map");
+  drake::internal::PathOrError try_cache =
+      drake::internal::FindOrCreateCache("package_map");
   if (!try_cache.error.empty()) {
     throw std::runtime_error(fmt::format(
         "PackageMap: when downloading '{}', could not create temporary cache "
@@ -365,17 +366,14 @@ const std::string& PackageData::GetPathWithAutomaticFetching(
   const int returncode = std::system(command.c_str());
   if (returncode != 0) {
     // Try to read the error message text from the downloader.
-    std::ifstream error_file(error_filename);
-    std::stringstream error_stream;
-    error_stream << error_file.rdbuf();
-    std::string error = error_stream.str();
-    if (error.empty()) {
+    std::optional<std::string> error = ReadFile(error_filename);
+    if (!error || error->empty()) {
       error = fmt::format("returncode == {}", returncode);
     }
     throw std::runtime_error(fmt::format(
         "PackageMap: when downloading '{}', the downloader experienced an "
         "error: {}",
-        package_name, error));
+        package_name, *error));
   }
 
   // Confirm that it actually fetched.
@@ -500,8 +498,10 @@ struct RepositoryMetadataSchema {
   std::string strip_prefix;
 };
 
-/* Loads and parses the metadata from tools/workspace/models_internal into the
-RemoteParams structure needed by PackageMap. */
+}  // namespace
+
+namespace internal {
+
 PackageMap::RemoteParams GetDrakeModelsRemoteParams() {
   const std::string json_filename =
       FindResourceOrThrow("drake/multibody/parsing/drake_models.json");
@@ -520,7 +520,7 @@ PackageMap::RemoteParams GetDrakeModelsRemoteParams() {
   return result;
 }
 
-}  // namespace
+}  // namespace internal
 
 PackageMap::PackageMap() : PackageMap{std::nullopt} {
   // FindResource is the source of truth for where Drake's first-party files
@@ -533,7 +533,7 @@ PackageMap::PackageMap() : PackageMap{std::nullopt} {
   // the if-else to ensure it receives test coverage under bazel (i.e., even if
   // we're never going to download anything).
   static const never_destroyed<RemoteParams> memoized_params(
-      GetDrakeModelsRemoteParams());
+      internal::GetDrakeModelsRemoteParams());
 
   // For drake_models (i.e., https://github.com/RobotLocomotion/models), the
   // location where we find the data will vary. If we have Bazel runfiles with

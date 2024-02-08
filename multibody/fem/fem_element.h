@@ -8,6 +8,7 @@
 #include "drake/multibody/fem/constitutive_model.h"
 #include "drake/multibody/fem/damping_model.h"
 #include "drake/multibody/fem/fem_indexes.h"
+#include "drake/multibody/fem/fem_plant_data.h"
 #include "drake/multibody/fem/fem_state.h"
 
 namespace drake {
@@ -80,6 +81,7 @@ class FemElement {
   static constexpr int num_dofs = Traits::num_dofs;
   static constexpr int num_nodes = Traits::num_nodes;
   static constexpr int num_quadrature_points = Traits::num_quadrature_points;
+  static constexpr bool is_linear = ConstitutiveModel::is_linear;
 
   /* Indices of the nodes of this element within the model. */
   const std::array<FemNodeIndex, num_nodes>& node_indices() const {
@@ -188,6 +190,23 @@ class FemElement {
                                                                     M);
   }
 
+  /* Accumulates external forces for this element given the `data` and the
+   `force_density_field`.
+   @param[in] data  The FEM data to evaluate the external force.
+   @param[in] plant_data  Data from the owning MultibodyPlant used to evaluate
+   the external force.
+   @param[in] scale  The scaling factor applied to the external force.
+   @param[in, out] external_force  The vector to which the scaled external force
+   will be added.
+   @pre external_force != nullptr */
+  void AddScaledExternalForces(
+      const Data& data, const FemPlantData<T>& plant_data, const T& scale,
+      EigenPtr<Vector<T, num_dofs>> external_force) const {
+    DRAKE_ASSERT(external_force != nullptr);
+    static_cast<const DerivedElement*>(this)->DoAddScaledExternalForces(
+        data, plant_data, scale, external_force);
+  }
+
   /* Extracts the dofs corresponding to the nodes given by `node_indices` from
    the given `state_dofs`. */
   static Vector<T, 3 * num_nodes> ExtractElementDofs(
@@ -208,20 +227,6 @@ class FemElement {
   Vector<T, 3 * num_nodes> ExtractElementDofs(
       const VectorX<T>& state_dofs) const {
     return ExtractElementDofs(this->node_indices(), state_dofs);
-  }
-
-  /* Adds the gravity force acting on each node in the element scaled by
-   `scale` into `force`. Derived elements may choose to override this method
-   to provide a more efficient implementation for specific elements. */
-  void AddScaledGravityForce(const Data& data, const T& scale,
-                             const Vector3<T>& gravity_vector,
-                             EigenPtr<Vector<T, num_dofs>> force) const {
-    Eigen::Matrix<T, num_dofs, num_dofs> mass_matrix =
-        Eigen::Matrix<T, num_dofs, num_dofs>::Zero();
-    AddScaledMassMatrix(data, 1.0, &mass_matrix);
-    const Vector<T, num_dofs> stacked_gravity =
-        gravity_vector.template replicate<num_nodes, 1>();
-    *force += scale * mass_matrix * stacked_gravity;
   }
 
  protected:
@@ -282,6 +287,18 @@ class FemElement {
   void DoAddScaledMassMatrix(
       const Data& data, const T& scale,
       EigenPtr<Eigen::Matrix<T, num_dofs, num_dofs>> M) const {
+    ThrowIfNotImplemented(__func__);
+  }
+
+  /* `DerivedElement` must provide an implementation for
+   `DoAddScaledExternalForces()` to accumulate external forces to this element
+   that is up-to-date given the data and the force density evaluator. The caller
+   guarantees that the output pointer is non-null; the implementation in the
+   derived class does not have to test for this.
+   @throw std::exception if `DerivedElement` does not provide an implementation
+   for `DoAddScaledExternalForces()`. */
+  void DoAddScaledExternalForces(const Data&, const FemPlantData<T>&, const T&,
+                                 EigenPtr<Vector<T, num_dofs>>) const {
     ThrowIfNotImplemented(__func__);
   }
 

@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
 )
 load("//tools/skylark:drake_data.bzl", "models_filegroup")
@@ -57,6 +57,7 @@ drake_cc_googletest(
     data = [":models"],
     deps = [
         "//common:find_resource",
+        "//common/test_utilities:eigen_matrix_compare",
         "//multibody/parsing",
         "//multibody/plant",
     ],

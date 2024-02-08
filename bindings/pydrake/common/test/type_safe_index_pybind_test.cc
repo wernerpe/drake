@@ -8,7 +8,6 @@
 
 #include "pybind11/embed.h"
 #include "pybind11/eval.h"
-#include "pybind11/pybind11.h"
 #include <gtest/gtest.h>
 
 #include "drake/bindings/pydrake/test/test_util_pybind.h"
@@ -59,7 +58,7 @@ GTEST_TEST(TypeSafeIndexTest, CheckCasting) {
   // TypeSafeIndex<> is not implicitly constructible from an int.
   // TODO(eric.cousineau): Consider relaxing this to *only* accept `int`s, and
   // puke if another `TypeSafeIndex<U>` is encountered.
-  ASSERT_THROW(py::eval("pass_thru_index(10)"), std::runtime_error);
+  ASSERT_THROW(py::eval("pass_thru_index(10)"), py::error_already_set);
   CheckValue("pass_thru_index(Index(10))", 10);
   CheckValue("pass_thru_index(Index(10))", Index{10});
 
@@ -67,7 +66,8 @@ GTEST_TEST(TypeSafeIndexTest, CheckCasting) {
   using OtherIndex = TypeSafeIndex<OtherTag>;
   BindTypeSafeIndex<OtherIndex>(m, "OtherIndex");
 
-  ASSERT_THROW(py::eval("pass_thru_index(OtherIndex(10))"), std::runtime_error);
+  ASSERT_THROW(
+      py::eval("pass_thru_index(OtherIndex(10))"), py::error_already_set);
   py::object py_index = py::eval("Index(10)");
   ASSERT_THROW(py_index.cast<OtherIndex>(), std::runtime_error);
 
@@ -90,9 +90,8 @@ GTEST_TEST(TypeSafeIndexTest, CheckCasting) {
   CheckValue("repr(Index(10)) == 'Index(10)'", true);
 
   // Check value instantiation.
-  py::exec("from pydrake.common.value import AbstractValue");
-  CheckValue(
-      "isinstance(AbstractValue.Make(Index(11)).get_value(), Index)", true);
+  py::exec("from pydrake.common.value import Value");
+  CheckValue("isinstance(Value(Index(11)).get_value(), Index)", true);
 }
 
 int main(int argc, char** argv) {

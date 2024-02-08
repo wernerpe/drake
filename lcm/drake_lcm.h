@@ -9,15 +9,6 @@
 #include "drake/lcm/drake_lcm_interface.h"
 #include "drake/lcm/drake_lcm_params.h"
 
-#ifndef DRAKE_DOXYGEN_CXX
-namespace lcm {
-// We don't want to pollute our Drake headers with the include paths for either
-// @lcm or @glib, so we forward-declare the `class ::lcm::LCM` for use only by
-// DrakeLcm::get_lcm_instance() -- an advanced function that is rarely used.
-class LCM;
-}  // namespace lcm
-#endif
-
 namespace drake {
 namespace lcm {
 
@@ -53,13 +44,6 @@ class DrakeLcm : public DrakeLcmInterface {
    */
   ~DrakeLcm() override;
 
-  /**
-   * (Advanced.) An accessor to the underlying LCM instance. The returned
-   * pointer is guaranteed to be valid for the duration of this object's
-   * lifetime.
-   */
-  ::lcm::LCM* get_lcm_instance();
-
   void Publish(const std::string&, const void*, int,
                std::optional<double>) override;
   std::string get_lcm_url() const override;
@@ -72,7 +56,11 @@ class DrakeLcm : public DrakeLcmInterface {
   int HandleSubscriptions(int) override;
 
  private:
+  friend class DrakeLcmTester;
+
   void OnHandleSubscriptionsError(const std::string&) override;
+
+  void* get_native_lcm_handle_for_unit_testing();
 
   class Impl;
   std::unique_ptr<Impl> impl_;

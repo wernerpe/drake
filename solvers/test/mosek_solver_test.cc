@@ -10,6 +10,7 @@
 #include "drake/solvers/mixed_integer_optimization_util.h"
 #include "drake/solvers/test/exponential_cone_program_examples.h"
 #include "drake/solvers/test/linear_program_examples.h"
+#include "drake/solvers/test/quadratic_constrained_program_examples.h"
 #include "drake/solvers/test/quadratic_program_examples.h"
 #include "drake/solvers/test/second_order_cone_program_examples.h"
 #include "drake/solvers/test/semidefinite_program_examples.h"
@@ -43,7 +44,7 @@ TEST_F(UnboundedLinearProgramTest0, Test) {
         result.get_solver_details<MosekSolver>();
     EXPECT_EQ(mosek_solver_details.rescode, 0);
     // This problem status is defined in
-    // https://docs.mosek.com/10.0/capi/constants.html#mosek.prosta
+    // https://docs.mosek.com/10.1/capi/constants.html#mosek.prosta
     const int MSK_SOL_STA_DUAL_INFEAS_CER = 6;
     EXPECT_EQ(mosek_solver_details.solution_status,
               MSK_SOL_STA_DUAL_INFEAS_CER);
@@ -232,6 +233,13 @@ GTEST_TEST(TestExponentialConeProgram, MinimalEllipsoidConveringPoints) {
   }
 }
 
+GTEST_TEST(TestExponentialConeProgram, MatrixLogDeterminantLower) {
+  MosekSolver mosek_solver;
+  if (mosek_solver.available()) {
+    MatrixLogDeterminantLower(mosek_solver, 1E-6);
+  }
+}
+
 GTEST_TEST(MosekTest, TestLogging) {
   // Test if we can print the logging info to a log file.
   MathematicalProgram prog;
@@ -279,7 +287,7 @@ GTEST_TEST(MosekTest, SolverOptionsTest) {
   mosek_solver.Solve(prog, {}, solver_options, &result);
   EXPECT_FALSE(result.is_success());
   // This response code is defined in
-  // https://docs.mosek.com/10.0/capi/response-codes.html#mosek.rescode
+  // https://docs.mosek.com/10.1/capi/response-codes.html#mosek.rescode
   const int MSK_RES_ERR_HUGE_C{1375};
   EXPECT_EQ(result.get_solver_details<MosekSolver>().rescode,
             MSK_RES_ERR_HUGE_C);
@@ -411,7 +419,7 @@ GTEST_TEST(MosekTest, MotzkinPolynomial) {
   MosekSolver solver;
   if (solver.available()) {
     const auto result = solver.Solve(dut.prog());
-    dut.CheckResult(result, 1.3E-9);
+    dut.CheckResult(result, 1E-8);
   }
 }
 
@@ -491,6 +499,11 @@ GTEST_TEST(MosekTest, LPDualSolution4) {
   }
 }
 
+GTEST_TEST(MosekTest, LPDualSolution5) {
+  MosekSolver solver;
+  TestLPDualSolution5(solver, 1E-8);
+}
+
 GTEST_TEST(MosekTest, QPDualSolution1) {
   MosekSolver solver;
   if (solver.available()) {
@@ -552,6 +565,22 @@ GTEST_TEST(MosekTest, SDPDualSolution1) {
   MosekSolver solver;
   if (solver.available()) {
     TestSDPDualSolution1(solver, 3E-6);
+  }
+}
+
+GTEST_TEST(MosekTest, TestEllipsoid1) {
+  // Test quadratically constrained program.
+  MosekSolver solver;
+  if (solver.available()) {
+    TestEllipsoid1(solver, std::nullopt, 1E-6);
+  }
+}
+
+GTEST_TEST(MosekTest, TestEllipsoid2) {
+  // Test quadratically constrained program.
+  MosekSolver solver;
+  if (solver.available()) {
+    TestEllipsoid2(solver, std::nullopt, 1E-5);
   }
 }
 

@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -31,6 +31,7 @@ drake_cc_package_library(
         ":linear_solve",
         ":matrix_util",
         ":quadratic_form",
+        ":soft_min_max",
         ":vector3_util",
         ":wrap_to",
     ],
@@ -93,10 +94,13 @@ drake_cc_library(
     name = "continuous_algebraic_riccati_equation",
     srcs = ["continuous_algebraic_riccati_equation.cc"],
     hdrs = ["continuous_algebraic_riccati_equation.h"],
+    interface_deps = [],
     deps = [
         "//common:essential",
         "//common:is_approx_equal_abstol",
-        "//systems/primitives:linear_system",
+        # TODO(jwnimmer-tri) Move this code into //math to avoid the circular
+        # dependency.
+        "//systems/primitives:linear_system_internal",
     ],
 )
 
@@ -105,9 +109,11 @@ drake_cc_library(
     srcs = ["discrete_algebraic_riccati_equation.cc"],
     hdrs = ["discrete_algebraic_riccati_equation.h"],
     deps = [
-        ":autodiff",
         "//common:essential",
         "//common:is_approx_equal_abstol",
+        # TODO(jwnimmer-tri) Move this code into //math to avoid the circular
+        # dependency.
+        "//systems/primitives:linear_system_internal",
     ],
 )
 
@@ -150,9 +156,11 @@ drake_cc_library(
     ],
     deps = [
         ":fast_pose_composition_functions",
+        ":vector3_util",
         "//common:default_scalars",
         "//common:drake_bool",
         "//common:essential",
+        "//common:hash",
         "//common:is_approx_equal_abstol",
         "//common:unused",
         "//math:gradient",
@@ -171,13 +179,20 @@ drake_cc_library(
 
 drake_cc_library(
     name = "vector3_util",
-    srcs = ["cross_product.cc"],
+    srcs = [
+        "cross_product.cc",
+        "unit_vector.cc",
+    ],
     hdrs = [
         "convert_time_derivative.h",
         "cross_product.h",
+        "unit_vector.h",
     ],
     deps = [
+        "//common:default_scalars",
         "//common:essential",
+        "//common:unused",
+        "//math:autodiff",
     ],
 )
 
@@ -258,6 +273,17 @@ drake_cc_library(
         ":matrix_util",
         "//common:essential",
         "@eigen",
+    ],
+)
+
+drake_cc_library(
+    name = "soft_min_max",
+    srcs = ["soft_min_max.cc"],
+    hdrs = ["soft_min_max.h"],
+    deps = [
+        "//common:autodiff",
+        "//common:default_scalars",
+        "//common:essential",
     ],
 )
 
@@ -548,6 +574,25 @@ drake_cc_googletest(
         ":autodiff",
         ":geometric_transform",
         "//common/test_utilities",
+    ],
+)
+
+drake_cc_googletest(
+    name = "soft_min_max_test",
+    deps = [
+        ":soft_min_max",
+        "//common/test_utilities:eigen_matrix_compare",
+        "@eigen",
+    ],
+)
+
+drake_cc_googletest(
+    name = "unit_vector_test",
+    deps = [
+        ":vector3_util",
+        "//common/symbolic:expression",
+        "//common/test_utilities:expect_no_throw",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 

@@ -5,8 +5,8 @@
 #include <utility>
 #include <vector>
 
-#include "drake/multibody/tree/body.h"
 #include "drake/multibody/tree/multibody_tree.h"
+#include "drake/multibody/tree/rigid_body.h"
 
 namespace drake {
 namespace multibody {
@@ -135,8 +135,8 @@ void LinearBushingRollPitchYaw<T>::DoCalcAndAddForceContribution(
 
   // Apply a torque to link L0 and apply the force −𝐟 to L0ₒ.
   // Apply a torque to link L1 and apply the force +𝐟 to L1ₒ.
-  F_BodyOrigin_W_array[link0().node_index()] += F_L0_W;
-  F_BodyOrigin_W_array[link1().node_index()] += F_L1_W;
+  F_BodyOrigin_W_array[link0().mobod_index()] += F_L0_W;
+  F_BodyOrigin_W_array[link1().mobod_index()] += F_L1_W;
 }
 
 template <typename T>
@@ -181,7 +181,7 @@ math::RotationMatrix<T> LinearBushingRollPitchYaw<T>::CalcR_AB(
   // However, R_AC.ToQuaternion() guarantees q0 >= 0, so sqrt(0.5) <= e0 <= 1
   // which means the angle θₑ in e0 = cos(θₑ/2) has range  0 <= θₑ <= π/2.
   DRAKE_ASSERT(q0 >= 0);
-  const T oneOver2e0 = T(1) / (2 * e0);
+  const T oneOver2e0 = 1.0 / (2 * e0);
   const T e1 = q1 * oneOver2e0;
   const T e2 = q2 * oneOver2e0;
   const T e3 = q3 * oneOver2e0;

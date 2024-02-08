@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "drake/common/test_utilities/eigen_matrix_compare.h"
+#include "drake/planning/linear_distance_and_interpolation_provider.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/test/planning_test_helpers.h"
 #include "drake/planning/test_utilities/collision_checker_abstract_test_suite.h"
@@ -19,20 +20,34 @@ using Eigen::Vector3d;
 using Eigen::VectorXd;
 using geometry::GeometryId;
 using geometry::SceneGraphInspector;
-using multibody::Body;
 using multibody::BodyIndex;
+using multibody::RigidBody;
 using testing::ElementsAre;
 
-CollisionCheckerTestParams MakeSceneGraphCollisionCheckerParams() {
+enum class MakeCheckerOptions { kMakeNone, kMakeProvider, kMakeFunction };
+
+CollisionCheckerTestParams MakeSceneGraphCollisionCheckerParams(
+    MakeCheckerOptions make_checker_option) {
   CollisionCheckerTestParams result;
   const CollisionCheckerConstructionParams p;
   auto model = MakePlanningTestModel(MakeCollisionCheckerTestScene());
+
+  std::unique_ptr<LinearDistanceAndInterpolationProvider> provider = nullptr;
+  ConfigurationDistanceFunction distance_function = nullptr;
+
+  if (make_checker_option == MakeCheckerOptions::kMakeProvider) {
+    provider = std::make_unique<LinearDistanceAndInterpolationProvider>(
+        model->plant(), GetIiwaDistanceWeights());
+  } else if (make_checker_option == MakeCheckerOptions::kMakeFunction) {
+    distance_function = MakeWeightedIiwaConfigurationDistanceFunction();
+  }
+
   const auto robot_instance = model->plant().GetModelInstanceByName("iiwa");
   result.checker.reset(new SceneGraphCollisionChecker(
       {.model = std::move(model),
+       .distance_and_interpolation_provider = std::move(provider),
        .robot_model_instances = {robot_instance},
-       .configuration_distance_function =
-           MakeWeightedIiwaConfigurationDistanceFunction(),
+       .configuration_distance_function = std::move(distance_function),
        .edge_step_size = p.edge_step_size,
        .env_collision_padding = p.env_padding,
        .self_collision_padding = p.self_padding}));
@@ -52,13 +67,13 @@ Eigen::MatrixXi GenerateFilteredCollisionMatrixFromSceneGraphOnly(
 
   // Loop variables below use `int` for Eigen indexing compatibility.
   for (int i = 0; i < num_bodies; ++i) {
-    const Body<double>& body_i = checker.get_body(BodyIndex(i));
+    const RigidBody<double>& body_i = checker.get_body(BodyIndex(i));
 
     const std::vector<GeometryId>& geometries_i =
         checker.plant().GetCollisionGeometriesForBody(body_i);
 
     for (int j = i; j < num_bodies; ++j) {
-      const Body<double>& body_j = checker.get_body(BodyIndex(j));
+      const RigidBody<double>& body_j = checker.get_body(BodyIndex(j));
 
       // Check if collisions between the geometries are already filtered.
       bool collisions_filtered = false;
@@ -172,7 +187,11 @@ void EnforceCollisionFilterConsistency(
 
 INSTANTIATE_TEST_SUITE_P(
     SceneGraphCollisionCheckerTestSuite, CollisionCheckerAbstractTestSuite,
-    testing::Values(MakeSceneGraphCollisionCheckerParams()));
+    testing::Values(
+        MakeSceneGraphCollisionCheckerParams(MakeCheckerOptions::kMakeNone),
+        MakeSceneGraphCollisionCheckerParams(MakeCheckerOptions::kMakeProvider),
+        MakeSceneGraphCollisionCheckerParams(
+            MakeCheckerOptions::kMakeFunction)));
 
 // Creates three spheres (each on a prismatic joint with its parent set to
 // the world origin) and checks their RobotClearance query.

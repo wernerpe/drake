@@ -18,7 +18,6 @@ struct RenderEngineGltfClientParams {
   void Serialize(Archive* a) {
     a->Visit(DRAKE_NVP(base_url));
     a->Visit(DRAKE_NVP(render_endpoint));
-    a->Visit(DRAKE_NVP(default_label));
     a->Visit(DRAKE_NVP(verbose));
     a->Visit(DRAKE_NVP(cleanup));
   }
@@ -30,9 +29,6 @@ struct RenderEngineGltfClientParams {
   /** (Advanced) The server endpoint to retrieve renderings from.
    See GetUrl() for details. */
   std::string render_endpoint{"render"};
-
-  /** The (optional) label to apply when none is otherwise specified. */
-  std::optional<render::RenderLabel> default_label{};
 
   /** Whether or not the client should log information about which files are
    being generated, as well as any information about HTTP communications between

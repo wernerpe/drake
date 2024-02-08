@@ -2,12 +2,12 @@
  and drake/geometry/render* directories. They can be found in the
  pydrake.geometry module. */
 
-#include "pybind11/operators.h"
-
 #include "drake/bindings/pydrake/common/default_scalars_pybind.h"
+#include "drake/bindings/pydrake/common/deprecation_pybind.h"
 #include "drake/bindings/pydrake/common/serialize_pybind.h"
 #include "drake/bindings/pydrake/common/value_pybind.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
+#include "drake/geometry/render/light_parameter.h"
 #include "drake/geometry/render/render_engine.h"
 #include "drake/geometry/render/render_label.h"
 #include "drake/geometry/render_gl/factory.h"
@@ -23,6 +23,8 @@ using geometry::PerceptionProperties;
 using geometry::Shape;
 using geometry::render::ColorRenderCamera;
 using geometry::render::DepthRenderCamera;
+using geometry::render::LightParameter;
+using geometry::render::LightType;
 using geometry::render::RenderEngine;
 using math::RigidTransformd;
 using systems::sensors::CameraInfo;
@@ -208,7 +210,8 @@ void DoScalarIndependentDefinitions(py::module m) {
   {
     using Class = RenderEngine;
     const auto& cls_doc = doc.RenderEngine;
-    py::class_<Class, PyRenderEngine>(m, "RenderEngine")
+    py::class_<Class, PyRenderEngine> cls(m, "RenderEngine");
+    cls  // BR
         .def(py::init<>(), cls_doc.ctor.doc)
         .def("Clone",
             static_cast<::std::unique_ptr<Class> (Class::*)() const>(
@@ -259,18 +262,6 @@ void DoScalarIndependentDefinitions(py::module m) {
             static_cast<RenderLabel (Class::*)(PerceptionProperties const&)
                     const>(&PyRenderEngine::GetRenderLabelOrThrow),
             py::arg("properties"), cls_doc.GetRenderLabelOrThrow.doc)
-        .def_static("LabelFromColor",
-            static_cast<RenderLabel (*)(ColorI const&)>(
-                &PyRenderEngine::LabelFromColor),
-            py::arg("color"), cls_doc.LabelFromColor.doc)
-        .def_static("GetColorIFromLabel",
-            static_cast<ColorI (*)(RenderLabel const&)>(
-                &PyRenderEngine::GetColorIFromLabel),
-            py::arg("label"), cls_doc.GetColorIFromLabel.doc)
-        .def_static("GetColorDFromLabel",
-            static_cast<ColorD (*)(RenderLabel const&)>(
-                &PyRenderEngine::GetColorDFromLabel),
-            py::arg("label"), cls_doc.GetColorDFromLabel.doc)
         .def("SetDefaultLightPosition",
             static_cast<void (Class::*)(Vector3d const&)>(
                 &PyRenderEngine::SetDefaultLightPosition),
@@ -293,6 +284,27 @@ void DoScalarIndependentDefinitions(py::module m) {
                 &PyRenderEngine::ThrowIfInvalid<Image<PixelType::kLabel16I>>),
             py::arg("intrinsics"), py::arg("image"), py::arg("image_type"),
             cls_doc.ThrowIfInvalid.doc);
+    // Note that we do not bind MakeRgbFromLabel nor MakeLabelFromRgb, because
+    // crossing the C++ <=> Python boundary one pixel at a time would be
+    // extraordinarily inefficient.
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    // To be removed on 2024-05-01.
+    cls  // BR
+        .def_static("LabelFromColor",
+            static_cast<RenderLabel (*)(ColorI const&)>(
+                &PyRenderEngine::LabelFromColor),
+            py::arg("color"))
+        .def_static("GetColorIFromLabel",
+            static_cast<ColorI (*)(RenderLabel const&)>(
+                &PyRenderEngine::GetColorIFromLabel),
+            py::arg("label"))
+        .def_static("GetColorDFromLabel",
+            static_cast<ColorD (*)(RenderLabel const&)>(
+                &PyRenderEngine::GetColorDFromLabel),
+            py::arg("label"));
+#pragma GCC diagnostic pop
   }
 
   {
@@ -336,6 +348,50 @@ void DoScalarIndependentDefinitions(py::module m) {
   }
 
   {
+    using Class = geometry::NullTexture;
+    constexpr auto& cls_doc = doc_geometry.NullTexture;
+    py::class_<Class> cls(m, "NullTexture", cls_doc.doc);
+    cls  // BR
+        .def(ParamInit<Class>());
+    DefAttributesUsingSerialize(&cls);
+    DefReprUsingSerialize(&cls);
+    DefCopyAndDeepCopy(&cls);
+  }
+
+  {
+    using Class = geometry::EquirectangularMap;
+    constexpr auto& cls_doc = doc_geometry.EquirectangularMap;
+    py::class_<Class> cls(m, "EquirectangularMap", cls_doc.doc);
+    cls  // BR
+        .def(ParamInit<Class>());
+    DefAttributesUsingSerialize(&cls);
+    DefReprUsingSerialize(&cls);
+    DefCopyAndDeepCopy(&cls);
+  }
+
+  {
+    using Class = geometry::EnvironmentMap;
+    constexpr auto& cls_doc = doc_geometry.EnvironmentMap;
+    py::class_<Class> cls(m, "EnvironmentMap", cls_doc.doc);
+    cls  // BR
+        .def(ParamInit<Class>());
+    DefAttributesUsingSerialize(&cls);
+    DefReprUsingSerialize(&cls);
+    DefCopyAndDeepCopy(&cls);
+  }
+
+  {
+    using Class = geometry::render::LightParameter;
+    constexpr auto& cls_doc = doc.LightParameter;
+    py::class_<Class> cls(m, "LightParameter", cls_doc.doc);
+    cls  // BR
+        .def(ParamInit<Class>());
+    DefAttributesUsingSerialize(&cls);
+    DefReprUsingSerialize(&cls);
+    DefCopyAndDeepCopy(&cls);
+  }
+
+  {
     using Class = RenderEngineVtkParams;
     constexpr auto& cls_doc = doc_geometry.RenderEngineVtkParams;
     py::class_<Class> cls(m, "RenderEngineVtkParams", cls_doc.doc);
@@ -350,9 +406,7 @@ void DoScalarIndependentDefinitions(py::module m) {
       doc_geometry.MakeRenderEngineVtk.doc);
 
   {
-    // TODO(zachfang): During the 2023-07-01 deprecation removals also
-    // remove the spurious `geometry::` qualifier on this typename.
-    using Class = geometry::RenderEngineGlParams;
+    using Class = RenderEngineGlParams;
     constexpr auto& cls_doc = doc_geometry.RenderEngineGlParams;
     py::class_<Class> cls(m, "RenderEngineGlParams", cls_doc.doc);
     cls  // BR
@@ -362,10 +416,8 @@ void DoScalarIndependentDefinitions(py::module m) {
     DefCopyAndDeepCopy(&cls);
   }
 
-  // TODO(zachfang): During the 2023-07-01 deprecation removals also
-  // remove the spurious `geometry::` qualifier on this typename.
-  m.def("MakeRenderEngineGl", &geometry::MakeRenderEngineGl,
-      py::arg("params") = geometry::RenderEngineGlParams(),
+  m.def("MakeRenderEngineGl", &MakeRenderEngineGl,
+      py::arg("params") = RenderEngineGlParams(),
       doc_geometry.MakeRenderEngineGl.doc);
 
   {

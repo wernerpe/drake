@@ -1,12 +1,12 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
     "drake_cc_test",
 )
-load("@drake//tools/skylark:test_tags.bzl", "gurobi_test_tags")
+load("//tools/skylark:test_tags.bzl", "gurobi_test_tags")
 load("//tools/lint:lint.bzl", "add_lint_tests")
 
 package(default_visibility = ["//visibility:public"])
@@ -70,7 +70,8 @@ drake_cc_library(
         "distance_constraint_utilities.cc",
         "gaze_target_constraint.cc",
         "kinematic_evaluator_utilities.cc",
-        "minimum_distance_constraint.cc",
+        "minimum_distance_lower_bound_constraint.cc",
+        "minimum_distance_upper_bound_constraint.cc",
         "orientation_constraint.cc",
         "orientation_cost.cc",
         "point_to_line_distance_constraint.cc",
@@ -89,7 +90,8 @@ drake_cc_library(
         "distance_constraint_utilities.h",
         "gaze_target_constraint.h",
         "kinematic_evaluator_utilities.h",
-        "minimum_distance_constraint.h",
+        "minimum_distance_lower_bound_constraint.h",
+        "minimum_distance_upper_bound_constraint.h",
         "orientation_constraint.h",
         "orientation_cost.h",
         "point_to_line_distance_constraint.h",
@@ -104,6 +106,7 @@ drake_cc_library(
         "//math:geometric_transform",
         "//math:gradient",
         "//multibody/plant",
+        "//planning:collision_checker",
         "//solvers:constraint",
         "//solvers:mathematical_program",
         "//solvers:minimum_value_constraint",
@@ -168,6 +171,7 @@ drake_cc_googletest(
     deps = [
         ":differential_inverse_kinematics",
         "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
         "//manipulation/kuka_iiwa:iiwa_constants",
         "//multibody/parsing",
     ],
@@ -205,6 +209,7 @@ drake_cc_library(
         "//multibody/parsing",
         "//multibody/plant",
         "//multibody/tree",
+        "//planning:robot_diagram_builder",
         "@gtest//:without_main",
     ],
 )
@@ -289,6 +294,7 @@ drake_cc_googletest(
         ":inverse_kinematics_test_utilities",
         ":kinematic_evaluators",
         "//common/test_utilities:expect_throws_message",
+        "//planning:scene_graph_collision_checker",
         "//solvers/test_utilities",
     ],
 )
@@ -367,6 +373,8 @@ drake_cc_library(
         "//multibody/parsing",
         "//multibody/plant",
         "//multibody/tree",
+        "//solvers:ipopt_solver",
+        "//solvers:snopt_solver",
         "//solvers:solve",
         "@gtest//:without_main",
     ],
@@ -441,4 +449,4 @@ drake_cc_googletest(
     ],
 )
 
-add_lint_tests()
+add_lint_tests(enable_clang_format_lint = False)

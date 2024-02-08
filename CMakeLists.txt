@@ -106,8 +106,12 @@ endif()
 
 # The version passed to find_package(Bazel) should match the
 # minimum_bazel_version value in the call to versions.check() in WORKSPACE.
-set(MINIMUM_BAZEL_VERSION 4.0)
-find_package(Bazel ${MINIMUM_BAZEL_VERSION} MODULE REQUIRED)
+set(MINIMUM_BAZEL_VERSION 5.1)
+find_package(Bazel ${MINIMUM_BAZEL_VERSION} MODULE)
+if(NOT Bazel_FOUND)
+  set(Bazel_EXECUTABLE "${PROJECT_SOURCE_DIR}/third_party/com_github_bazelbuild_bazelisk/bazelisk.py")
+  message(STATUS "Using Bazelisk as Bazel_EXECUTABLE to fetch Bazel on demand")
+endif()
 
 get_filename_component(C_COMPILER_REALPATH "${CMAKE_C_COMPILER}" REALPATH)
 get_filename_component(C_COMPILER_NAME "${C_COMPILER_REALPATH}" NAME)
@@ -216,8 +220,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 
-# The supported Python major/minor versions should match those listed in both
-# doc/_pages/from_source.md and tools/workspace/python/repository.bzl.
+# The supported Python major/minor versions should match those listed in
+# doc/_pages/from_source.md.
 if(APPLE)
   set(SUPPORTED_PYTHON_VERSION 3.11)
 else()
@@ -392,13 +396,6 @@ macro(override_repository NAME)
   list(APPEND BAZEL_WORKSPACE_EXCLUDES "${NAME}")
 endmacro()
 
-# For Python, always override Drake's default with the CMake selection instead.
-generate_external_repository_file(cmake_python/WORKSPACE)
-configure_file(
-  cmake/external/workspace/cmake_python/BUILD.bazel.in
-  external/workspace/cmake_python/BUILD.bazel @ONLY)
-override_repository(cmake_python)
-
 option(WITH_USER_EIGEN "Use user-provided Eigen3" OFF)
 
 if(WITH_USER_EIGEN)
@@ -454,7 +451,7 @@ set(BAZEL_CONFIG)
 option(WITH_GUROBI "Build with support for Gurobi" OFF)
 
 if(WITH_GUROBI)
-  find_package(Gurobi 9.5 EXACT MODULE REQUIRED)
+  find_package(Gurobi 10.0 EXACT MODULE REQUIRED)
 
   string(APPEND BAZEL_CONFIG " --config=gurobi")
 
@@ -468,6 +465,12 @@ option(WITH_MOSEK "Build with support for MOSEK" OFF)
 
 if(WITH_MOSEK)
   string(APPEND BAZEL_CONFIG " --config=mosek")
+endif()
+
+option(WITH_OPENMP "Build with support for OpenMP" OFF)
+
+if(WITH_OPENMP)
+  string(APPEND BAZEL_CONFIG " --config=omp")
 endif()
 
 set(WITH_ROBOTLOCOMOTION_SNOPT OFF CACHE BOOL
@@ -578,9 +581,12 @@ foreach(import IN LISTS BAZELRC_IMPORTS)
 endforeach()
 
 # We need to run Bazel in a dedicated temporary directory. The particular
-# name `drake_build_cwd` isn't important, it just needs to be unique.
+# name `drake_build_cwd` isn't important, it just needs to be unique. Note,
+# however, that the macOS wheel builds also need to know this path, so if it
+# ever changes, tools/wheel/macos/build-wheel.sh will also need to be updated.
 configure_file(cmake/bazel.rc.in drake_build_cwd/.bazelrc @ONLY)
 configure_file(cmake/WORKSPACE.in drake_build_cwd/WORKSPACE.bazel @ONLY)
+file(CREATE_LINK "${PROJECT_SOURCE_DIR}/.bazeliskrc" drake_build_cwd/.bazeliskrc SYMBOLIC)
 
 include(ExternalProject)
 

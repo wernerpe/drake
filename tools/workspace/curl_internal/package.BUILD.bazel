@@ -8,10 +8,7 @@ load(
     "@drake//tools/workspace:check_lists_consistency.bzl",
     "check_lists_consistency",
 )
-load(
-    "@drake//tools/install:install.bzl",
-    "install",
-)
+load("@drake//tools/install:install.bzl", "install")
 load(
     "@drake//tools/workspace/curl_internal:cmakedefines.bzl",
     "CMAKE_DEFINES",
@@ -45,6 +42,10 @@ _INCLUDES = [
 _SRCS = [
     "lib/altsvc.c",
     "lib/base64.c",
+    "lib/bufq.c",
+    "lib/cf-h1-proxy.c",
+    "lib/cf-h2-proxy.c",
+    "lib/cf-haproxy.c",
     "lib/cf-https-connect.c",
     "lib/cf-socket.c",
     "lib/cfilters.c",
@@ -54,10 +55,11 @@ _SRCS = [
     "lib/cookie.c",
     "lib/curl_addrinfo.c",
     "lib/curl_get_line.c",
-    "lib/curl_log.c",
     "lib/curl_memrchr.c",
+    "lib/curl_trc.c",
     "lib/doh.c",
     "lib/dynbuf.c",
+    "lib/dynhds.c",
     "lib/easy.c",
     "lib/easygetopt.c",
     "lib/easyoptions.c",
@@ -73,6 +75,7 @@ _SRCS = [
     "lib/hostip6.c",
     "lib/hsts.c",
     "lib/http.c",
+    "lib/http1.c",
     "lib/http_aws_sigv4.c",
     "lib/http_chunks.c",
     "lib/http_digest.c",
@@ -83,6 +86,7 @@ _SRCS = [
     "lib/inet_ntop.c",
     "lib/inet_pton.c",
     "lib/llist.c",
+    "lib/macos.c",
     "lib/md4.c",
     "lib/md5.c",
     "lib/memdebug.c",
@@ -124,6 +128,7 @@ _SRCS = [
 
 # The build flags for the library only (not passed on to downstream code).
 _COPTS = [
+    "-w",
     # Our build of curl should be private.
     "-fvisibility=hidden",
     # To match CMakeLists.txt.

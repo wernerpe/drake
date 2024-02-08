@@ -1,9 +1,7 @@
 # -*- bazel -*-
 
-load(
-    "@drake//tools/install:install.bzl",
-    "install",
-)
+load("@drake//tools/skylark:cc.bzl", "cc_library")
+load("@drake//tools/install:install.bzl", "install")
 
 licenses(["notice"])  # BSD
 
@@ -12,7 +10,6 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "nanoflann",
     hdrs = ["include/nanoflann.hpp"],
-    include_prefix = "drake_vendor",
     strip_include_prefix = "include",
     linkstatic = 1,
 )

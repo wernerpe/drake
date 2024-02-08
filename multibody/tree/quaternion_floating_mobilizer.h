@@ -132,12 +132,6 @@ class QuaternionFloatingMobilizer final : public MobilizerImpl<T, 7, 6> {
   // @param[in] R_FM
   //   The rotation matrix relating the orientation of frame F and frame M.
   // @returns a constant reference to `this` mobilizer.
-  // @note: To create a RotationMatrix R_FM (which is inherently orthonormal)
-  // from a non-orthonormal Matrix3<T> m (e.g., m is approximate data), use
-  // R_FM = math::RotationMatrix<T>::ProjectToRotationMatrix( m ).
-  // Alternatively, set this mobilizer's orientation with the two statements:
-  // const Eigen::Quaternion<T> q_FM = RotationMatrix<T>::ToQuaternion( m );
-  // set_quaternion(context, q_FM);
   const QuaternionFloatingMobilizer<T>& SetFromRotationMatrix(
       systems::Context<T>* context, const math::RotationMatrix<T>& R_FM) const {
     const Eigen::Quaternion<T> q_FM = R_FM.ToQuaternion();
@@ -213,6 +207,8 @@ class QuaternionFloatingMobilizer final : public MobilizerImpl<T, 7, 6> {
       const systems::Context<T>& context,
       const SpatialForce<T>& F_Mo_F,
       Eigen::Ref<VectorX<T>> tau) const override;
+
+  bool is_velocity_equal_to_qdot() const override { return false; }
 
   void MapVelocityToQDot(
       const systems::Context<T>& context,

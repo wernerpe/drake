@@ -1,9 +1,6 @@
 #pragma once
 
-#include <utility>
 #include <vector>
-
-#include "pybind11/stl.h"
 
 #include "drake/bindings/pydrake/pydrake_pybind.h"
 #include "drake/geometry/optimization/convex_set.h"
@@ -15,7 +12,7 @@ namespace pydrake {
 object ConvexSets (which uses copyable_unique_ptr ownership). This is useful to
 accept Python-natural function arguments (list of pointers) and then call the
 C++ API that requires a more complicated type. */
-geometry::optimization::ConvexSets CloneConvexSets(
+inline geometry::optimization::ConvexSets CloneConvexSets(
     const std::vector<geometry::optimization::ConvexSet*>& sets_in) {
   geometry::optimization::ConvexSets sets;
   sets.reserve(sets_in.size());

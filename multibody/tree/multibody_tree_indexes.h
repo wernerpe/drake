@@ -1,5 +1,6 @@
 #pragma once
 
+#include "drake/common/identifier.h"
 #include "drake/common/type_safe_index.h"
 
 namespace drake {
@@ -10,12 +11,20 @@ namespace internal {
 // Type used to identify mobilizers by index in a multibody tree system.
 using MobilizerIndex = TypeSafeIndex<class MobilizerTag>;
 
-// Type used to identify tree nodes by index within a multibody tree system.
-using BodyNodeIndex = TypeSafeIndex<class BodyNodeTag>;
+// Type used to identify any quantity associated with a "mobilized body"
+// (abbreviated "mobod"), which is a depth-first numbered node of the spanning
+// forest used to model a multibody system. This includes BodyNodes and
+// associated computed quantities such as their accelerations.
+// TODO(sherm1) Bring more objects into this numbering scheme,
+//  including Mobilizers.
+using MobodIndex = TypeSafeIndex<class MobodTag>;
 
 // Type used to identify a topological tree within the "forest" of a multibody
 // system.
 using TreeIndex = TypeSafeIndex<class TreeTag>;
+
+// World is always modeled as the 0th mobilized body.
+inline MobodIndex world_mobod_index() { return MobodIndex(0); }
 
 }  // namespace internal
 
@@ -38,8 +47,8 @@ using JointIndex = TypeSafeIndex<class JointElementTag>;
 /// Type used to identify actuators by index within a multibody tree system.
 using JointActuatorIndex = TypeSafeIndex<class JointActuatorElementTag>;
 
-/// Type used to identify constraints by index within a multibody system.
-using ConstraintIndex = TypeSafeIndex<class ConstraintTag>;
+/// Type used to identify constraint by id within a multibody system.
+using MultibodyConstraintId = Identifier<class ConstraintTag>;
 
 /// Type used to identify model instances by index within a multibody
 /// tree system.

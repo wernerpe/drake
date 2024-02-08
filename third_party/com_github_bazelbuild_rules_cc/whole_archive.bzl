@@ -14,12 +14,26 @@
 # limitations under the License.
 
 # This function is forked and modified from bazelbuild/rules_cc as of:
-# https://github.com/bazelbuild/rules_cc/blob/262ebec3c2296296526740db4aefce68c80de7fa/cc/find_cc_toolchain.bzl
+# https://github.com/bazelbuild/rules_cc/blob/262ebec/cc/find_cc_toolchain.bzl
 def _find_cc_toolchain(ctx):
     # Check the incompatible flag for toolchain resolution.
     if hasattr(cc_common, "is_cc_toolchain_resolution_enabled_do_not_use") and cc_common.is_cc_toolchain_resolution_enabled_do_not_use(ctx = ctx):  # noqa
-        if "//cc:toolchain_type" in ctx.toolchains:
-            return ctx.toolchains["//cc:toolchain_type"]
+        valid_names = [
+            # The name for Bazel 6 and earlier.
+            "//cc:toolchain_type",
+            # The name for Bazel 7 and after.
+            "@@bazel_tools//tools/cpp:toolchain_type",
+        ]
+        for possible_name in valid_names:
+            if possible_name in ctx.toolchains:
+                info = ctx.toolchains[possible_name]
+                if all([
+                    hasattr(info, x)
+                    for x in ["cc_provider_in_toolchain", "cc"]
+                ]):
+                    # This logic is cherry-picked from upstream d5d830b.
+                    return info.cc
+                return info
         fail("In order to use find_cc_toolchain, your rule has to depend on C++ toolchain. See find_cc_toolchain.bzl docs for details.")  # noqa
 
     # Fall back to the legacy implicit attribute lookup.
@@ -52,6 +66,20 @@ def _cc_whole_archive_library_impl(ctx):
         old_libraries = old_linker_input.libraries
         new_libraries = []
         for old_library in old_libraries:
+            # Objective-C libraries (objc_library(...)) need special treatment.
+            # We want the objc object code itself, but not its redundant copy
+            # of the nearby C++ object code (the "applebin").
+            is_objc_library = any([
+                "_objc/non_arc/" in obj.path
+                for obj in old_library.objects
+            ])
+            static_path = getattr(old_library.static_library, "path", "")
+            if not is_objc_library and "/applebin_macos-darwin" in static_path:
+                # Avoid double-linking from objc_library() deps; see
+                # https://github.com/bazelbuild/rules_apple/issues/1474.
+                continue
+
+            # Make a new_library (identical to old_library, but always linked).
             new_library = cc_common.create_library_to_link(
                 actions = ctx.actions,
                 feature_configuration = feature_configuration,

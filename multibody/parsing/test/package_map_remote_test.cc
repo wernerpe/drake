@@ -2,12 +2,12 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <picosha2.h>
 
 #include "drake/common/drake_assert.h"
 #include "drake/common/find_cache.h"
 #include "drake/common/find_resource.h"
 #include "drake/common/scope_exit.h"
+#include "drake/common/sha256.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/multibody/parsing/package_map.h"
 
@@ -30,7 +30,7 @@ class PackageMapRemoteTest : public ::testing::Test {
     const fs::path package_dir =
         try_cache.abspath /
         fmt::format("{}-{}", sha256,
-                    picosha2::hash256_hex_string(strip_prefix));
+                    Sha256::Checksum(strip_prefix).to_string());
     const bool exists = fs::create_directory(package_dir);
     DRAKE_DEMAND(exists);
     std::ofstream xml(package_dir / "package.xml");
@@ -94,10 +94,7 @@ TEST_F(PackageMapRemoteTest, ActuallyFetch) {
   EXPECT_TRUE(fs::is_regular_file(readme_path)) << readme_path;
 
   // Double-check the file content.
-  std::ifstream readme(readme_path);
-  std::stringstream buffer;
-  buffer << readme.rdbuf();
-  EXPECT_EQ(buffer.str(), "This package is empty.\n");
+  EXPECT_EQ(ReadFileOrThrow(readme_path), "This package is empty.\n");
 }
 
 // Fetch a remote zip file, then again with a different strip_prefix.
@@ -293,6 +290,24 @@ TEST_F(PackageMapRemoteTest, AddMapMismatch) {
   other.AddRemote("compressed", params2);
 
   DRAKE_EXPECT_THROWS_MESSAGE(dut.AddMap(other), ".*parameters differ.*");
+}
+
+// Sanity check the `package://drake_models/...` defaults.
+TEST_F(PackageMapRemoteTest, DrakeModelsDefaults) {
+  // Check that the package exists by default.
+  std::string drake_models_path;
+  EXPECT_NO_THROW(drake_models_path = PackageMap().GetPath("drake_models"));
+  EXPECT_TRUE(fs::is_directory(drake_models_path)) << drake_models_path;
+
+  // Check its remote fetching configuration (using an internal API, because we
+  // don't actually want to fetch it from the network during a unit test).
+  const RemoteParams params = internal::GetDrakeModelsRemoteParams();
+  EXPECT_GE(params.urls.size(), 1);
+  EXPECT_THAT(params.urls, testing::Each(testing::StartsWith("https://")));
+  EXPECT_EQ(params.sha256.size(), 64);
+  EXPECT_EQ(params.archive_type, std::nullopt);
+  EXPECT_THAT(params.strip_prefix,
+              testing::Optional(testing::StartsWith("models-")));
 }
 
 }  // namespace

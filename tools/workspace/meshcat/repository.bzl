@@ -1,17 +1,17 @@
-load("@drake//tools/workspace:github.bzl", "github_archive")
+load("//tools/workspace:github.bzl", "github_archive")
 
 def meshcat_repository(
         name,
         mirrors = None):
     github_archive(
         name = name,
-        repository = "rdeits/meshcat",
+        repository = "meshcat-dev/meshcat",
         upgrade_advice = """
         Updating this commit requires local testing; see
         drake/tools/workspace/meshcat/README.md for details.
         """,
-        commit = "ea474eb1e7b595b45145c8104fc9684d49f15231",
-        sha256 = "609988dcb6ca3090121ae0b0a149e0c1fab9656a8f2e867786e666264a1d42ca",  # noqa
+        commit = "92929106db8a75ec85b2689f83e65873ba514fbc",
+        sha256 = "5216770e4ddc40e8363e9da9a17afce9271be5f4822015df84cfbe3af477ebbb",  # noqa
         build_file = ":package.BUILD.bazel",
         mirrors = mirrors,
     )

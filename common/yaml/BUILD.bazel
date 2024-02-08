@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -35,6 +35,7 @@ drake_cc_library(
     hdrs = ["yaml_node.h"],
     deps = [
         "//common:essential",
+        "//common:overloaded",
     ],
 )
 
@@ -62,6 +63,7 @@ drake_cc_library(
         "//common:essential",
         "//common:name_value",
         "//common:nice_type_name",
+        "//common:overloaded",
         "//common:unused",
         "@yaml_cpp_internal//:yaml_cpp",
     ],
@@ -173,4 +175,4 @@ drake_cc_googletest(
     ],
 )
 
-add_lint_tests(enable_clang_format_lint = True)
+add_lint_tests()

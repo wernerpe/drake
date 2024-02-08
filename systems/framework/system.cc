@@ -1,8 +1,5 @@
 #include "drake/systems/framework/system.h"
 
-#include <iomanip>
-#include <ios>
-#include <regex>
 #include <set>
 #include <string_view>
 #include <vector>
@@ -38,9 +35,6 @@ std::unique_ptr<System<T>> System<T>::Clone() const {
   auto intermediate = this->template ToScalarTypeMaybe<U>();
   if (intermediate != nullptr) {
     result = intermediate->template ToScalarTypeMaybe<T>();
-    if (result != nullptr) {
-      result->ResetSystemId();
-    }
   }
 
   // If anything went wrong, throw an exception.
@@ -212,15 +206,17 @@ bool System<T>::HasDirectFeedthrough(int input_port, int output_port) const {
 }
 
 template <typename T>
-void System<T>::Publish(const Context<T>& context,
+EventStatus System<T>::Publish(const Context<T>& context,
                         const EventCollection<PublishEvent<T>>& events) const {
   ValidateContext(context);
-  DispatchPublishHandler(context, events);
+  return DispatchPublishHandler(context, events);
 }
 
 template <typename T>
 void System<T>::ForcedPublish(const Context<T>& context) const {
-  Publish(context, this->get_forced_publish_events());
+  const EventStatus status =
+      Publish(context, this->get_forced_publish_events());
+  status.ThrowOnFailure(__func__);
 }
 
 template <typename T>
@@ -301,14 +297,14 @@ void System<T>::CalcImplicitTimeDerivativesResidual(
 }
 
 template <typename T>
-void System<T>::CalcDiscreteVariableUpdate(
+EventStatus System<T>::CalcDiscreteVariableUpdate(
     const Context<T>& context,
     const EventCollection<DiscreteUpdateEvent<T>>& events,
     DiscreteValues<T>* discrete_state) const {
   ValidateContext(context);
   ValidateCreatedForThisSystem(discrete_state);
 
-  DispatchDiscreteVariableUpdateHandler(context, events, discrete_state);
+  return DispatchDiscreteVariableUpdateHandler(context, events, discrete_state);
 }
 
 template <typename T>
@@ -324,12 +320,13 @@ template <typename T>
 void System<T>::CalcForcedDiscreteVariableUpdate(
     const Context<T>& context,
     DiscreteValues<T>* discrete_state) const {
-  CalcDiscreteVariableUpdate(
+  const EventStatus status = CalcDiscreteVariableUpdate(
       context, this->get_forced_discrete_update_events(), discrete_state);
+  status.ThrowOnFailure(__func__);
 }
 
 template <typename T>
-void System<T>::CalcUnrestrictedUpdate(
+EventStatus System<T>::CalcUnrestrictedUpdate(
     const Context<T>& context,
     const EventCollection<UnrestrictedUpdateEvent<T>>& events,
     State<T>* state) const {
@@ -339,14 +336,18 @@ void System<T>::CalcUnrestrictedUpdate(
   const int discrete_state_dim = state->get_discrete_state().num_groups();
   const int abstract_state_dim = state->get_abstract_state().size();
 
-  DispatchUnrestrictedUpdateHandler(context, events, state);
+  const EventStatus status =
+      DispatchUnrestrictedUpdateHandler(context, events, state);
 
   if (continuous_state_dim != state->get_continuous_state().size() ||
       discrete_state_dim != state->get_discrete_state().num_groups() ||
-      abstract_state_dim != state->get_abstract_state().size())
+      abstract_state_dim != state->get_abstract_state().size()) {
     throw std::logic_error(
         "State variable dimensions cannot be changed "
         "in CalcUnrestrictedUpdate().");
+  }
+
+  return status;
 }
 
 template <typename T>
@@ -361,8 +362,9 @@ void System<T>::ApplyUnrestrictedUpdate(
 template <typename T>
 void System<T>::CalcForcedUnrestrictedUpdate(const Context<T>& context,
                                              State<T>* state) const {
-  CalcUnrestrictedUpdate(
+  const EventStatus status = CalcUnrestrictedUpdate(
       context, this->get_forced_unrestricted_update_events(), state);
+  status.ThrowOnFailure(__func__);
 }
 
 template <typename T>
@@ -424,8 +426,8 @@ void System<T>::CalcUniquePeriodicDiscreteUpdate(
   ValidateCreatedForThisSystem(discrete_values);
 
   // TODO(sherm1) We only need the DiscreteUpdateEvent portion of the
-  // CompositeEventCollection but don't have a convenient way to allocate
-  // that in a Leaf vs. Diagram agnostic way. Add that if needed for speed.
+  //  CompositeEventCollection but don't have a convenient way to allocate
+  //  that in a Leaf vs. Diagram agnostic way. Add that if needed for speed.
   auto collection = AllocateCompositeEventCollection();
 
   std::optional<PeriodicEventData> timing;
@@ -446,8 +448,9 @@ void System<T>::CalcUniquePeriodicDiscreteUpdate(
   discrete_values->SetFrom(context.get_discrete_state());
 
   // Then let the event handlers modify them or not.
-  this->CalcDiscreteVariableUpdate(
+  const EventStatus status = this->CalcDiscreteVariableUpdate(
       context, collection->get_discrete_update_events(), discrete_values);
+  status.ThrowOnFailure(__func__);
 }
 
 template <typename T>
@@ -476,6 +479,41 @@ void System<T>::GetInitializationEvents(
   ValidateCreatedForThisSystem(events);
   events->Clear();
   DoGetInitializationEvents(context, events);
+}
+
+template <typename T>
+void System<T>::ExecuteInitializationEvents(Context<T>* context) const {
+  auto discrete_updates = AllocateDiscreteVariables();
+  auto state = context->CloneState();
+  auto init_events = AllocateCompositeEventCollection();
+
+  // NOTE: The execution order here must match the code in
+  // Simulator::Initialize().
+  GetInitializationEvents(*context, init_events.get());
+
+  // Do unrestricted updates first.
+  if (init_events->get_unrestricted_update_events().HasEvents()) {
+    const EventStatus status = CalcUnrestrictedUpdate(
+        *context, init_events->get_unrestricted_update_events(), state.get());
+    status.ThrowOnFailure(__func__);
+    ApplyUnrestrictedUpdate(init_events->get_unrestricted_update_events(),
+                            state.get(), context);
+  }
+  // Do restricted (discrete variable) updates next.
+  if (init_events->get_discrete_update_events().HasEvents()) {
+    const EventStatus status = CalcDiscreteVariableUpdate(
+        *context, init_events->get_discrete_update_events(),
+        discrete_updates.get());
+    status.ThrowOnFailure(__func__);
+    ApplyDiscreteVariableUpdate(init_events->get_discrete_update_events(),
+                                discrete_updates.get(), context);
+  }
+  // Do any publishes last.
+  if (init_events->get_publish_events().HasEvents()) {
+    const EventStatus status =
+        Publish(*context, init_events->get_publish_events());
+    status.ThrowOnFailure(__func__);
+  }
 }
 
 template <typename T>
@@ -698,25 +736,35 @@ System<T>::DoGetTargetSystemCompositeEventCollection(
 }
 
 template <typename T>
-std::string System<T>::GetMemoryObjectName() const {
-  using std::setfill;
-  using std::setw;
-  using std::hex;
+const InputPort<T>& System<T>::GetSoleInputPort() const {
+  // Give a nice message if there were no inputs at all.
+  if (num_input_ports() == 0) {
+    throw std::logic_error(fmt::format(
+        "System::get_input_port(): {} system '{}' does not have any inputs",
+        this->GetSystemType(), this->GetSystemPathname()));
+  }
 
-  // Remove the template parameter(s).
-  const std::string type_name_without_templates = std::regex_replace(
-      NiceTypeName::Get(*this), std::regex("<.*>$"), std::string());
+  // Check if there is exactly one non-deprecated input port (and return it).
+  int num_non_deprecated = 0;
+  InputPortIndex non_deprecated_index;
+  for (InputPortIndex i{0}; i < num_input_ports(); i++) {
+    const InputPortBase& port_base = this->GetInputPortBaseOrThrow(
+        __func__, i, /* warn_deprecated = */ false);
+    if (port_base.get_deprecation() == std::nullopt) {
+      ++num_non_deprecated;
+      non_deprecated_index = i;
+    }
+  }
+  if (num_non_deprecated == 1) {
+    return get_input_port(non_deprecated_index);
+  }
 
-  // Replace "::" with "/" because ":" is System::GetSystemPathname's separator.
-  // TODO(sherm1) Change the separator to "/" and avoid this!
-  const std::string default_name = std::regex_replace(
-      type_name_without_templates, std::regex(":+"), std::string("/"));
-
-  // Append the address spelled like "@0123456789abcdef".
-  const int64_t address = GetGraphvizId();
-  std::ostringstream result;
-  result << default_name << '@' << setfill('0') << setw(16) << hex << address;
-  return result.str();
+  // Too many inputs.
+  throw std::logic_error(fmt::format(
+      "System::get_input_port(): {} system '{}' has {} inputs, so this "
+      "convenience function cannot be used; instead, use another overload "
+      "e.g. get_input_port(InputPortIndex) or GetInputPort(string)",
+      this->GetSystemType(), this->GetSystemPathname(), num_input_ports()));
 }
 
 template <typename T>
@@ -778,6 +826,38 @@ bool System<T>::HasInputPort(
     }
   }
   return false;
+}
+
+template <typename T>
+const OutputPort<T>& System<T>::GetSoleOutputPort() const {
+  // Give a nice message if there were no outputs at all.
+  if (num_output_ports() == 0) {
+    throw std::logic_error(fmt::format(
+        "System::get_output_port(): {} system '{}' does not have any outputs",
+        this->GetSystemType(), this->GetSystemPathname()));
+  }
+
+  // Check if there is exactly one non-deprecated output port (and return it).
+  int num_non_deprecated = 0;
+  OutputPortIndex non_deprecated_index;
+  for (OutputPortIndex i{0}; i < num_output_ports(); i++) {
+    const OutputPortBase& port_base = this->GetOutputPortBaseOrThrow(
+        __func__, i, /* warn_deprecated = */ false);
+    if (port_base.get_deprecation() == std::nullopt) {
+      ++num_non_deprecated;
+      non_deprecated_index = i;
+    }
+  }
+  if (num_non_deprecated == 1) {
+    return get_output_port(non_deprecated_index);
+  }
+
+  // Too many outputs.
+  throw std::logic_error(fmt::format(
+      "System::get_output_port(): {} system '{}' has {} outputs, so this "
+      "convenience function cannot be used; instead, use another overload "
+      "e.g. get_output_port(OutputPortIndex) or GetOutputPort(string)",
+      this->GetSystemType(), this->GetSystemPathname(), num_output_ports()));
 }
 
 template <typename T>
@@ -880,42 +960,6 @@ template <typename T>
 VectorX<T> System<T>::CopyContinuousStateVector(
     const Context<T>& context) const {
   return context.get_continuous_state().CopyToVector();
-}
-
-template <typename T>
-std::string System<T>::GetGraphvizString(int max_depth) const {
-  DRAKE_DEMAND(max_depth >= 0);
-  std::stringstream dot;
-  dot << "digraph _" << this->GetGraphvizId() << " {" << std::endl;
-  dot << "rankdir=LR" << std::endl;
-  GetGraphvizFragment(max_depth, &dot);
-  dot << "}" << std::endl;
-  return dot.str();
-}
-
-template <typename T>
-void System<T>::GetGraphvizFragment(int max_depth,
-                                    std::stringstream* dot) const {
-  unused(dot, max_depth);
-}
-
-template <typename T>
-void System<T>::GetGraphvizInputPortToken(const InputPort<T>& port,
-                                          int max_depth,
-                                          std::stringstream* dot) const {
-  unused(port, max_depth, dot);
-}
-
-template <typename T>
-void System<T>::GetGraphvizOutputPortToken(const OutputPort<T>& port,
-                                           int max_depth,
-                                           std::stringstream* dot) const {
-  unused(port, max_depth, dot);
-}
-
-template <typename T>
-int64_t System<T>::GetGraphvizId() const {
-  return reinterpret_cast<int64_t>(this);
 }
 
 template <typename T>

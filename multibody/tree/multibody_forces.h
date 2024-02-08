@@ -15,8 +15,10 @@ template <typename T> class MultibodyTree;
 template <typename T> class MultibodyTreeSystem;
 }  // namespace internal
 
-/// A class to hold a set of forces applied to a MultibodyTree system.
-/// Forces can include generalized forces as well as body spatial forces.
+/// A class to hold a set of forces applied to a MultibodyTree system. Forces
+/// can include generalized forces as well as body spatial forces.
+/// MultibodyPlant::CalcGeneralizedForces() can be used to compute the _total_
+/// generalized force, combining generalized_forces() and body_forces().
 ///
 /// @tparam_default_scalar
 template <typename T>
@@ -36,7 +38,7 @@ class MultibodyForces {
 
   /// Number of bodies and number of generalized velocities overload. This
   /// constructor is useful for constructing the MultibodyForces structure
-  /// before a MultibodyPlant has been consructed.
+  /// before a MultibodyPlant has been constructed.
   MultibodyForces(int nb, int nv);
 
   /// Sets `this` to store zero forces (no applied forces).
@@ -62,7 +64,7 @@ class MultibodyForces {
   /// (Advanced) Returns a constant reference to the vector of spatial body
   /// forces `F_BBo_W` on each body B in the model, at the body's frame
   /// origin `Bo`, expressed in the world frame W.
-  /// @note Entries are ordered by BodyNodeIndex.
+  /// @note Entries are ordered by MobodIndex.
   const std::vector<SpatialForce<T>>& body_forces() const { return F_B_W_; }
 
   /// (Advanced) Mutable version of body_forces().
@@ -84,7 +86,7 @@ class MultibodyForces {
  private:
   // Vector holding, for each body in the MultibodyTree, the externally applied
   // force F_Bi_W on the i-th body Bi, expressed in the world frame W.
-  // Store by BodyNodeIndex order.
+  // Store by MobodIndex order.
   std::vector<SpatialForce<T>> F_B_W_;
 
   // Vector of generalized forces applied on each mobilizer in the

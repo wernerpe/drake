@@ -5,7 +5,7 @@ import webbrowser
 
 import numpy as np
 
-from pydrake.common.value import AbstractValue
+from pydrake.common.value import Value
 from pydrake.examples import (
     ManipulationStation, ManipulationStationHardwareInterface,
     CreateClutterClearingYcbObjectList, SchunkCollisionModel)
@@ -142,7 +142,7 @@ class MouseKeyboardTeleop(LeafSystem):
 
         # Note: This timing affects the keyboard teleop performance. A larger
         #       time step causes more lag in the response.
-        self.DeclarePeriodicPublishNoHandler(0.01, 0.0)
+        self.DeclarePeriodicPublishEvent(0.01, 0.0, lambda _: None)
 
         self.teleop_manager = TeleopMouseKeyboardManager(grab_focus=grab_focus)
         self.roll = self.pitch = self.yaw = 0
@@ -249,7 +249,7 @@ class ToPose(LeafSystem):
         LeafSystem.__init__(self)
         self.DeclareVectorInputPort("rpy_xyz", 6)
         self.DeclareAbstractOutputPort(
-            "pose", lambda: AbstractValue.Make(RigidTransform()),
+            "pose", lambda: Value(RigidTransform()),
             self.DoCalcOutput)
 
     def DoCalcOutput(self, context, output):

@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/performance:defs.bzl",
+    "//tools/performance:defs.bzl",
     "drake_cc_googlebench_binary",
     "drake_py_experiment_binary",
 )
@@ -31,4 +31,4 @@ drake_py_experiment_binary(
     googlebench_binary = ":benchmark_polynomial",
 )
 
-add_lint_tests(enable_clang_format_lint = True)
+add_lint_tests()

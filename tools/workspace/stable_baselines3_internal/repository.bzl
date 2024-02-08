@@ -1,4 +1,4 @@
-load("@drake//tools/workspace:github.bzl", "github_archive")
+load("//tools/workspace:github.bzl", "github_archive")
 
 def stable_baselines3_internal_repository(
         name,
@@ -6,11 +6,14 @@ def stable_baselines3_internal_repository(
     github_archive(
         name = name,
         repository = "DLR-RM/stable-baselines3",
-        commit = "v1.8.0",
-        sha256 = "2ac876fc53546258008dbb1d249eb5b051bf9f0c8d1aae88c0c75af08c1c180d",  # noqa
+        commit = "v2.2.1",
+        sha256 = "08db4c60856031d8d86e459eacc5b8fe6069f8c034e5741a52c7b3df2c7d6dce",  # noqa
         build_file = ":package.BUILD.bazel",
         patches = [
-            ":no_torch.patch",
+            ":patches/no_torch.patch",
+        ],
+        patch_cmds = [
+            "sed -i -e 's#$#drake_internal#' stable_baselines3/version.txt",
         ],
         mirrors = mirrors,
     )

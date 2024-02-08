@@ -1,9 +1,0 @@
-# -*- bazel -*-
-
-package(default_visibility = ["//visibility:public"])
-
-# On Ubuntu, no targets should depend on @openblas.
-cc_library(
-    name = "openblas",
-    srcs = ["missing-ubuntu.cc"],
-)

@@ -1,6 +1,7 @@
 #pragma once
 
-/// @file Functions to help with the creation of lcmt_robot_plan messages.
+/// @file
+/// Functions to help with the creation of lcmt_robot_plan messages.
 
 #include <string>
 #include <vector>
@@ -28,10 +29,9 @@ std::vector<std::string> GetJointNames(
 /// velocity limits are equal regardless of direction.  If any step does
 /// exceed the maximum velocities in @p limits, @p times will be modified to
 /// reduce the velocity.
-void ApplyJointVelocityLimits(
-    const std::vector<Eigen::VectorXd>& keyframes,
-    const Eigen::VectorXd& limits,
-    std::vector<double>* times);
+void ApplyJointVelocityLimits(const std::vector<Eigen::VectorXd>& keyframes,
+                              const Eigen::VectorXd& limits,
+                              std::vector<double>* times);
 
 /// Makes an lcmt_robot_plan message.  The entries in @p
 /// joint_names should be unique, though the behavior if names are duplicated
@@ -39,10 +39,9 @@ void ApplyJointVelocityLimits(
 /// @p keyframes must match the size of @p joint_names.  The size of @p
 /// keyframes must match the size of @p times.  Times must be in strictly
 /// increasing order.
-lcmt_robot_plan EncodeKeyFrames(
-    const std::vector<std::string>& joint_names,
-    const std::vector<double>& times,
-    const std::vector<Eigen::VectorXd>& keyframes);
+lcmt_robot_plan EncodeKeyFrames(const std::vector<std::string>& joint_names,
+                                const std::vector<double>& times,
+                                const std::vector<Eigen::VectorXd>& keyframes);
 
 }  // namespace util
 }  // namespace manipulation

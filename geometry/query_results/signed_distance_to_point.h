@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include "drake/common/drake_copyable.h"
-#include "drake/common/drake_deprecated.h"
 #include "drake/common/eigen_types.h"
 #include "drake/geometry/geometry_ids.h"
 
@@ -22,7 +21,7 @@ namespace geometry {
   @tparam T The underlying scalar type. Must be a valid Eigen scalar.
  */
 template <typename T>
-struct SignedDistanceToPoint{
+struct SignedDistanceToPoint {
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(SignedDistanceToPoint)
   SignedDistanceToPoint() = default;
 
@@ -50,10 +49,7 @@ struct SignedDistanceToPoint{
    */
   SignedDistanceToPoint(GeometryId id_G_in, const Vector3<T>& p_GN_in,
                         T distance_in, const Vector3<T>& grad_W_in)
-      : id_G(id_G_in),
-        p_GN(p_GN_in),
-        distance(distance_in),
-        grad_W(grad_W_in) {
+      : id_G(id_G_in), p_GN(p_GN_in), distance(distance_in), grad_W(grad_W_in) {
     using std::isnan;
     DRAKE_ASSERT(!(isnan(grad_W(0)) || isnan(grad_W(1)) || isnan(grad_W(2))));
   }

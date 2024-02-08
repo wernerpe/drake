@@ -1,12 +1,14 @@
 #include "drake/multibody/inverse_kinematics/inverse_kinematics.h"
 
 #include <limits>
+#include <utility>
 
 #include "drake/multibody/inverse_kinematics/angle_between_vectors_constraint.h"
 #include "drake/multibody/inverse_kinematics/angle_between_vectors_cost.h"
 #include "drake/multibody/inverse_kinematics/distance_constraint.h"
 #include "drake/multibody/inverse_kinematics/gaze_target_constraint.h"
-#include "drake/multibody/inverse_kinematics/minimum_distance_constraint.h"
+#include "drake/multibody/inverse_kinematics/minimum_distance_lower_bound_constraint.h"
+#include "drake/multibody/inverse_kinematics/minimum_distance_upper_bound_constraint.h"
 #include "drake/multibody/inverse_kinematics/orientation_constraint.h"
 #include "drake/multibody/inverse_kinematics/orientation_cost.h"
 #include "drake/multibody/inverse_kinematics/point_to_line_distance_constraint.h"
@@ -18,34 +20,95 @@
 
 namespace drake {
 namespace multibody {
+
+constexpr double kInf = std::numeric_limits<double>::infinity();
+
 InverseKinematics::InverseKinematics(const MultibodyPlant<double>& plant,
                                      bool with_joint_limits)
-    : prog_{new solvers::MathematicalProgram()},
-      plant_(plant),
-      owned_context_(plant_.CreateDefaultContext()),
-      context_(owned_context_.get()),
-      q_(prog_->NewContinuousVariables(plant_.num_positions(), "q")) {
-  if (with_joint_limits) {
-    prog_->AddBoundingBoxConstraint(plant.GetPositionLowerLimits(),
-                                    plant.GetPositionUpperLimits(), q_);
-  }
-  AddUnitQuaternionConstraintOnPlant(plant, q_, prog_.get());
-}
+    : InverseKinematics(plant, plant.CreateDefaultContext(), nullptr,
+                        with_joint_limits) {}
 
 InverseKinematics::InverseKinematics(const MultibodyPlant<double>& plant,
                                      systems::Context<double>* plant_context,
                                      bool with_joint_limits)
-    : prog_{new solvers::MathematicalProgram()},
+    : InverseKinematics(plant, nullptr, plant_context, with_joint_limits) {}
+
+InverseKinematics::InverseKinematics(
+    const MultibodyPlant<double>& plant,
+    std::unique_ptr<systems::Context<double>> owned_context,
+    systems::Context<double>* plant_context, bool with_joint_limits)
+    : prog_(std::make_unique<solvers::MathematicalProgram>()),
       plant_(plant),
-      owned_context_(nullptr),
-      context_(plant_context),
+      owned_context_(std::move(owned_context)),
+      context_(owned_context_ ? owned_context_.get() : plant_context),
       q_(prog_->NewContinuousVariables(plant.num_positions(), "q")) {
-  DRAKE_DEMAND(plant_context != nullptr);
-  if (with_joint_limits) {
-    prog_->AddBoundingBoxConstraint(plant.GetPositionLowerLimits(),
-                                    plant.GetPositionUpperLimits(), q_);
+  if (owned_context_ != nullptr) {
+    // The public constructor must not pass both pointers when calling us.
+    DRAKE_DEMAND(plant_context == nullptr);
+  } else {
+    // The user calling the `plant_context` overload should not pass nullptr.
+    DRAKE_THROW_UNLESS(plant_context != nullptr);
   }
-  AddUnitQuaternionConstraintOnPlant(plant, q_, prog_.get());
+  DRAKE_DEMAND(context_ != nullptr);  // Sanity check.
+
+  // We're about to add constraints for position limits (if requested), locked
+  // joints, and quaternions (unit norm). When a quaternion is locked, we'll use
+  // the lock constraint instead of the unit norm constraint.
+
+  // Obey the joint limits (if requested).
+  const int nq = plant.num_positions();
+  Eigen::VectorXd lb;
+  Eigen::VectorXd ub;
+  if (with_joint_limits) {
+    lb = plant.GetPositionLowerLimits();
+    ub = plant.GetPositionUpperLimits();
+  } else {
+    lb = Eigen::VectorXd::Constant(nq, -kInf);
+    ub = Eigen::VectorXd::Constant(nq, +kInf);
+  }
+
+  // Obey joint locking. Joint locking trumps joint limits.
+  const Eigen::VectorXd current_positions = plant.GetPositions(context());
+  VectorX<bool> is_locked = VectorX<bool>::Constant(nq, false);
+  for (JointIndex i{0}; i < plant.num_joints(); ++i) {
+    const Joint<double>& joint = plant.get_joint(i);
+    if (joint.is_locked(context())) {
+      const int start = joint.position_start();
+      const int size = joint.num_positions();
+      lb.segment(start, size) = current_positions.segment(start, size);
+      ub.segment(start, size) = current_positions.segment(start, size);
+      is_locked.segment(start, size).array() = true;
+    }
+  }
+
+  // Add the unit quaternion constraints.
+  for (BodyIndex i{0}; i < plant.num_bodies(); ++i) {
+    const RigidBody<double>& body = plant.get_body(i);
+    if (body.has_quaternion_dofs()) {
+      const int start = body.floating_positions_start();
+      constexpr int size = 4;
+      if (is_locked.segment<size>(start).any()) {
+        // Sanity check the MultibodyTree invariant.
+        DRAKE_DEMAND(is_locked.segment<size>(start).all());
+        // Lock to the normalized value, in lieu of a unit norm constraint.
+        const Eigen::Vector4d quat =
+            current_positions.segment<size>(start).normalized();
+        lb.segment<size>(start) = quat;
+        ub.segment<size>(start) = quat;
+        prog_->SetInitialGuess(q_.segment<size>(start), quat);
+      } else {
+        prog_->AddConstraint(solvers::Binding<solvers::Constraint>(
+            std::make_shared<UnitQuaternionConstraint>(),
+            q_.segment<size>(start)));
+        // Set a non-zero initial guess to help avoid singularities.
+        prog_->SetInitialGuess(q_.segment<size>(start),
+                              Eigen::Vector4d{1, 0, 0, 0});
+      }
+    }
+  }
+
+  // Now we can finally add the bbox constraint for joint limits and locking.
+  prog_->AddBoundingBoxConstraint(lb, ub, q_);
 }
 
 solvers::Binding<solvers::Constraint> InverseKinematics::AddPositionConstraint(
@@ -133,12 +196,22 @@ solvers::Binding<solvers::Cost> InverseKinematics::AddAngleBetweenVectorsCost(
 }
 
 solvers::Binding<solvers::Constraint>
-InverseKinematics::AddMinimumDistanceConstraint(
-    double minimum_distance, double influence_distance_offset) {
-  auto constraint =
-      std::shared_ptr<MinimumDistanceConstraint>(new MinimumDistanceConstraint(
-          &plant_, minimum_distance, get_mutable_context(), {},
-          influence_distance_offset));
+InverseKinematics::AddMinimumDistanceLowerBoundConstraint(
+    double bound, double influence_distance_offset) {
+  auto constraint = std::shared_ptr<MinimumDistanceLowerBoundConstraint>(
+      new MinimumDistanceLowerBoundConstraint(&plant_, bound,
+                                              get_mutable_context(), {},
+                                              influence_distance_offset));
+  return prog_->AddConstraint(constraint, q_);
+}
+
+solvers::Binding<solvers::Constraint>
+InverseKinematics::AddMinimumDistanceUpperBoundConstraint(
+    double bound, double influence_distance_offset) {
+  auto constraint = std::shared_ptr<MinimumDistanceUpperBoundConstraint>(
+      new MinimumDistanceUpperBoundConstraint(&plant_, bound,
+                                              get_mutable_context(),
+                                              influence_distance_offset, {}));
   return prog_->AddConstraint(constraint, q_);
 }
 

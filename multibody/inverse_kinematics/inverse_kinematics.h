@@ -15,6 +15,10 @@ namespace multibody {
  * postures of the robot satisfying certain constraints.
  * The decision variables include the generalized position of the robot.
  *
+ * To perform IK on a subset of the plant, use the constructor overload that
+ * takes a `plant_context` and use `Joint::Lock` on the joints in that Context
+ * that should be fixed during IK.
+ *
  * @ingroup planning_kinematics
  */
 class InverseKinematics {
@@ -48,10 +52,12 @@ class InverseKinematics {
    * @param plant The robot on which the inverse kinematics problem will be
    * solved. This plant should have been connected to a SceneGraph within a
    * Diagram
-   * @param context The context for the plant. This context should be a part of
-   * the Diagram context.
-   * To construct a plant connected to a SceneGraph, with the corresponding
-   * plant_context, the steps are
+   * @param plant_context The context for the plant. This context should be a
+   * part of the Diagram context. Any locked joints in the `plant_context` will
+   * remain fixed at their locked value. (This provides a convenient way to
+   * perform IK on a subset of the plant.) To construct a plant connected to a
+   * SceneGraph, with the corresponding plant_context, the steps are:
+   * ```
    * // 1. Add a diagram containing the MultibodyPlant and SceneGraph
    * systems::DiagramBuilder<double> builder;
    * auto items = AddMultibodyPlantSceneGraph(&builder, 0.0);
@@ -64,6 +70,7 @@ class InverseKinematics {
    * // 5. Get the context for the plant.
    * auto plant_context = &(diagram->GetMutableSubsystemContext(items.plant,
    * diagram_context.get()));
+   * ```
    * This context will be modified during calling ik.prog.Solve(...). When
    * Solve() returns `result`, context will store the optimized posture, namely
    * plant.GetPositions(*context) will be the same as in
@@ -189,8 +196,7 @@ class InverseKinematics {
       const Frame<double>& frameAbar,
       const math::RotationMatrix<double>& R_AbarA,
       const Frame<double>& frameBbar,
-      const math::RotationMatrix<double>& R_BbarB,
-      double c);
+      const math::RotationMatrix<double>& R_BbarB, double c);
 
   /**
    * Constrains a target point T to be within a cone K. The point T ("T" stands
@@ -273,33 +279,44 @@ class InverseKinematics {
       const Frame<double>& frameA,
       const Eigen::Ref<const Eigen::Vector3d>& na_A,
       const Frame<double>& frameB,
-      const Eigen::Ref<const Eigen::Vector3d>& nb_B,
-      double c);
+      const Eigen::Ref<const Eigen::Vector3d>& nb_B, double c);
 
-  // TODO(hongkai.dai): remove this documentation.
   /**
    * Adds the constraint that the pairwise distance between objects should be no
-   * smaller than `minimum_distance`. We consider the distance between pairs
-   * of
+   * smaller than `bound`. We consider the distance between
+   * pairs of
    * 1. Anchored (static) object and a dynamic object.
    * 2. A dynamic object and another dynamic object, if one is not the parent
    * link of the other.
-   * @param minimum_distance The minimum allowed value, dₘᵢₙ, of the signed
+   * @param bound The minimum allowed value, dₘᵢₙ, of the signed
    * distance between any candidate pair of geometries.
-   * @param influence_distance_offset The difference (in meters) between the
-   * influence distance, d_influence, and the minimum distance, dₘᵢₙ. This value
-   * must be finite and strictly positive, as it is used to scale the signed
-   * distances between pairs of geometries. Smaller values may improve
-   * performance, as fewer pairs of geometries need to be considered in each
-   * constraint evaluation. @default 1 meter
-   * @see MinimumDistanceConstraint for more details on the %constraint
-   * formulation.
+   * @param influence_distance_offset See MinimumDistanceLowerBoundConstraint
+   * for explanation.
    * @pre The MultibodyPlant passed to the constructor of `this` has registered
    * its geometry with a SceneGraph.
    * @pre 0 < `influence_distance_offset` < ∞
    */
-  solvers::Binding<solvers::Constraint> AddMinimumDistanceConstraint(
-      double minimum_distance, double influence_distance_offset = 1);
+  solvers::Binding<solvers::Constraint> AddMinimumDistanceLowerBoundConstraint(
+      double bound, double influence_distance_offset = 0.01);
+
+  /**
+   Adds the constraint that at least one pair of geometries has distance no
+   larger than `bound`. We consider the distance between pairs
+   of
+   1. Anchored (static) object and a dynamic object.
+   2. A dynamic object and another dynamic object, if one is not the parent
+   link of the other.
+   @param bound The upper bound of the minimum signed distance
+   between any candidate pair of geometries. Notice this is NOT the upper bound
+   of every distance, but the upper bound of the smallest distance.
+   @param influence_distance_offset  See MinimumDistanceUpperBoundConstraint
+   for more details on influence_distance_offset.
+   @pre The MultibodyPlant passed to the constructor of `this` has registered
+   its geometry with a SceneGraph.
+   @pre 0 < `influence_distance_offset` < ∞
+   */
+  solvers::Binding<solvers::Constraint> AddMinimumDistanceUpperBoundConstraint(
+      double bound, double influence_distance_offset);
 
   /**
    * Adds the constraint that the distance between a pair of geometries is
@@ -390,6 +407,13 @@ class InverseKinematics {
   systems::Context<double>* get_mutable_context() { return context_; }
 
  private:
+  /* Both public constructors delegate to here. Exactly one of owned_context or
+  plant_context must be non-null. */
+  InverseKinematics(const MultibodyPlant<double>& plant,
+                    std::unique_ptr<systems::Context<double>> owned_context,
+                    systems::Context<double>* plant_context,
+                    bool with_joint_limits);
+
   std::unique_ptr<solvers::MathematicalProgram> prog_;
   const MultibodyPlant<double>& plant_;
   std::unique_ptr<systems::Context<double>> const owned_context_;

@@ -3,7 +3,6 @@
 
 #include <gflags/gflags.h>
 
-#include "drake/geometry/drake_visualizer.h"
 #include "drake/geometry/scene_graph.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/multibody/benchmarks/inclined_plane/inclined_plane_plant.h"
@@ -11,6 +10,7 @@
 #include "drake/multibody/plant/multibody_plant_config_functions.h"
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram_builder.h"
+#include "drake/visualization/visualization_config_functions.h"
 
 namespace drake {
 namespace multibody {
@@ -59,8 +59,9 @@ DEFINE_bool(is_inclined_plane_half_space, true,
             "Is inclined plane a half-space (true) or box (false).");
 DEFINE_string(bodyB_type, "sphere", "Valid body types are "
               "'sphere', 'block', or 'block_with_4Spheres'");
-DEFINE_string(contact_solver, "tamsi", "Options are: "
-              "'tamsi', 'sap'");
+DEFINE_string(contact_approximation, "tamsi",
+              "Discrete contact approximation. Options are: 'tamsi', "
+              "'sap', 'similar', 'lagged'");
 
 using drake::multibody::MultibodyPlant;
 
@@ -71,7 +72,7 @@ int do_main() {
   MultibodyPlantConfig plant_config;
   plant_config.time_step = FLAGS_time_step;
   plant_config.stiction_tolerance = FLAGS_stiction_tolerance;
-  plant_config.discrete_contact_solver = FLAGS_contact_solver;
+  plant_config.discrete_contact_approximation = FLAGS_contact_approximation;
   auto [plant, scene_graph] =
       multibody::AddMultibodyPlant(plant_config, &builder);
 
@@ -142,12 +143,9 @@ int do_main() {
   DRAKE_DEMAND(plant.num_velocities() == 6);
   DRAKE_DEMAND(plant.num_positions() == 7);
 
-  // Publish contact results for visualization.
-  // TODO(Mitiguy) Ensure contact forces can be displayed when time_step = 0.
-  if (FLAGS_time_step > 0)
-    ConnectContactResultsToDrakeVisualizer(&builder, plant, scene_graph);
+  // Provide visualization.
+  visualization::AddDefaultVisualization(&builder);
 
-  geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph);
   auto diagram = builder.Build();
 
   // Create a context for this system:
@@ -163,7 +161,8 @@ int do_main() {
 
   // Overwrite B's default initial position so it is somewhere above the
   // inclined plane provided `0 < inclined_plane_angle < 40`.
-  const drake::multibody::Body<double>& bodyB = plant.GetBodyByName("BodyB");
+  const drake::multibody::RigidBody<double>& bodyB =
+      plant.GetBodyByName("BodyB");
   const Vector3<double> p_WoBo_W(-1.0, 0, 1.2);
   const math::RigidTransform<double> X_WB(p_WoBo_W);
   plant.SetFreeBodyPoseInWorldFrame(&plant_context, bodyB, X_WB);
