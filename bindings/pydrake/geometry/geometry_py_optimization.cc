@@ -539,6 +539,9 @@ void DefineGeometryOptimization(py::module m) {
         .def_readwrite("max_iterations_separating_planes",
             &FastIrisOptions::max_iterations_separating_planes,
             cls_doc.max_iterations_separating_planes.doc)
+        .def_readwrite("max_separating_planes_per_iteration",
+            &FastIrisOptions::max_separating_planes_per_iteration,
+            cls_doc.max_separating_planes_per_iteration.doc)
         .def_readwrite("bisection_steps",
             &FastIrisOptions::bisection_steps,
             cls_doc.bisection_steps.doc)
@@ -567,6 +570,7 @@ void DefineGeometryOptimization(py::module m) {
               "num_consecutive_failures={}, "
               "max_iterations={}, "
               "max_iterations_separating_planes={}, "
+              "max_separating_planes_per_iteration={}, "
               "bisection_steps={}, "
               "verbose={}, "
               "require_sample_point_is_contained={}, "
@@ -578,6 +582,7 @@ void DefineGeometryOptimization(py::module m) {
               .format(self.num_particles,
                   self.num_consecutive_failures, self.max_iterations,
                   self.max_iterations_separating_planes,
+                  self.max_separating_planes_per_iteration,
                   self.bisection_steps,
                   self.verbose,
                   self.require_sample_point_is_contained,

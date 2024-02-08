@@ -28,6 +28,7 @@ struct FastIrisOptions {
     a->Visit(DRAKE_NVP(num_consecutive_failures));
     a->Visit(DRAKE_NVP(max_iterations));
     a->Visit(DRAKE_NVP(max_iterations_separating_planes));
+    a->Visit(DRAKE_NVP(max_separating_planes_per_iteration));
     //a->Visit(DRAKE_NVP(gradient_steps));
     a->Visit(DRAKE_NVP(bisection_steps));
     a->Visit(DRAKE_NVP(verbose));
@@ -55,6 +56,9 @@ struct FastIrisOptions {
 
   /** Maximum number of rounds of adding faces to the polytope*/
   int max_iterations_separating_planes = 100;
+  
+  /** Maximum number of faces to add per round of samples*/
+  int max_separating_planes_per_iteration = -1;
 
   /** Maximum number of bisection steps per gradient step*/
   int bisection_steps = 10;

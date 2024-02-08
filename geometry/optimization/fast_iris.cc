@@ -244,6 +244,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
         }
 
         //add separating planes step
+        int hyperplanes_added = 0;
         for (auto i : indices_sorted) {
           // add nearest face
           auto nearest_particle = particles_in_collision_updated[i];
@@ -256,44 +257,50 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
             A.row(current_num_faces) = a_face.transpose();
             b(current_num_faces) = b_face;
             ++current_num_faces;
+            ++hyperplanes_added;
+            
             // debugging visualization
-          if (options.meshcat && dim <= 3) {
-            for (int pt_to_draw = 0; pt_to_draw < number_particles_in_collision;
-               ++pt_to_draw) {
-              std::string path = fmt::format("face_pt/iteration{:02}/sepit{:02}/{:03}/pt",
-                                           iteration, num_iterations_separating_planes, current_num_faces);
-              options.meshcat->SetObject(path, Sphere(0.03),
-                                       geometry::Rgba(1, 1, 0.1, 1.0));
-              point_to_draw.head(dim) = nearest_particle;
-              options.meshcat->SetTransform(
-                path, RigidTransform<double>(
-                          point_to_draw));
+            if (options.meshcat && dim <= 3) {
+              for (int pt_to_draw = 0; pt_to_draw < number_particles_in_collision;
+                 ++pt_to_draw) {
+                std::string path = fmt::format("face_pt/iteration{:02}/sepit{:02}/{:03}/pt",
+                                             iteration, num_iterations_separating_planes, current_num_faces);
+                options.meshcat->SetObject(path, Sphere(0.03),
+                                         geometry::Rgba(1, 1, 0.1, 1.0));
+                point_to_draw.head(dim) = nearest_particle;
+                options.meshcat->SetTransform(
+                  path, RigidTransform<double>(
+                            point_to_draw));
+              }
             }
-          }
-          if(options.verbose){
-            log()->info("Face added : {} faces, iter {}",
-            current_num_faces, num_iterations_separating_planes);
-          }
-          // set used particle to redundant
-          particle_is_redundant.at(i) = true;
-  
-          // loop over remaining non-redundant particles and check for
-          // redundancy
-          #if defined(_OPENMP)
-          #pragma omp parallel for num_threads(num_threads_to_use)
-          #endif
-            for (int particle_index = 0;
-                particle_index < number_particles_in_collision;
-                ++particle_index) {
-                if (!particle_is_redundant[particle_index]) {
-                if (a_face.transpose() *
-                            particles_in_collision_updated[particle_index] -
-                        b_face >=0 ) {
-                    particle_is_redundant[particle_index] = 1;
-                }
-                }
+
+            if(hyperplanes_added = options.max_separating_planes_per_iteration&&
+                  options.max_separating_planes_per_iteration>0) break;
+            
+            if(options.verbose){
+              log()->info("Face added : {} faces, iter {}",
+              current_num_faces, num_iterations_separating_planes);
             }
-          }
+            // set used particle to redundant
+            particle_is_redundant.at(i) = true;
+    
+            // loop over remaining non-redundant particles and check for
+            // redundancy
+            #if defined(_OPENMP)
+            #pragma omp parallel for num_threads(num_threads_to_use)
+            #endif
+              for (int particle_index = 0;
+                  particle_index < number_particles_in_collision;
+                  ++particle_index) {
+                  if (!particle_is_redundant[particle_index]) {
+                  if (a_face.transpose() *
+                              particles_in_collision_updated[particle_index] -
+                          b_face >=0 ) {
+                      particle_is_redundant[particle_index] = 1;
+                  }
+                  }
+              }
+            }
         }
   
         // update current polyhedron
