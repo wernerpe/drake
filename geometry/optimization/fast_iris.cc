@@ -258,7 +258,15 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
             b(current_num_faces) = b_face;
             ++current_num_faces;
             ++hyperplanes_added;
-            
+
+            //resize A matrix if we need more faces
+            if (A.rows()<= current_num_faces)
+            {
+                A.conservativeResize(A.rows() * 2, A.cols());
+                b.conservativeResize(b.rows() * 2);
+            }
+
+
             // debugging visualization
             if (options.meshcat && dim <= 3) {
               for (int pt_to_draw = 0; pt_to_draw < number_particles_in_collision;
