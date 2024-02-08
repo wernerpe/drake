@@ -465,19 +465,6 @@ bool CheckTerminate(const IrisOptions& options, const HPolyhedron& P,
   return false;
 }
 
-bool CheckTerminate(const IrisOptions& options, const HPolyhedron& P,
-                    const std::string& error_msg, const std::string& info_msg,
-                    const bool is_initial_region) {
-  if (options.termination_func && options.termination_func(P)) {
-    if (is_initial_region) {
-      throw std::runtime_error(error_msg);
-    }
-    log()->info(info_msg);
-    return true;
-  }
-  return false;
-}
-
 }  // namespace
 
 namespace {
