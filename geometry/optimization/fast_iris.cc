@@ -274,7 +274,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
               }
             }
 
-            if(hyperplanes_added = options.max_separating_planes_per_iteration&&
+            if(hyperplanes_added == options.max_separating_planes_per_iteration&&
                   options.max_separating_planes_per_iteration>0) break;
             
             if(options.verbose){
