@@ -32,6 +32,9 @@ void DefinePlanningTrajectoryOptimization(py::module m);
 /* Defines bindings per planning_py_visibility_graph.cc. */
 void DefinePlanningVisibilityGraph(py::module m);
 
+/* Defines bindings per planning_py_fast_iris.cc. */
+void DefinePlanningFastIris(py::module m);
+
 }  // namespace internal
 }  // namespace pydrake
 }  // namespace drake

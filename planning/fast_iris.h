@@ -10,13 +10,16 @@
 
 #include "drake/common/parallelism.h"
 #include "drake/geometry/meshcat.h"
-#include "drake/geometry/optimization/convex_set.h"
+// #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
+#include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/planning/collision_checker.h"
 
 namespace drake {
-namespace geometry {
-namespace optimization {
+namespace planning {
+
+using geometry::optimization::Hyperellipsoid;
+using geometry::optimization::HPolyhedron;
 
 struct FastIrisOptions {
   /** Passes this object to an Archive.
@@ -42,7 +45,7 @@ struct FastIrisOptions {
   FastIrisOptions() = default;
 
   /** Number of particles used to estimate the closest collision*/
-  int num_particles{1e3};
+  int num_particles = 1e3;
 
   /** Number of consecutive failures to find a collision through sampling the
    * polytope*/
@@ -107,17 +110,16 @@ struct FastIrisOptions {
   /** Passing a meshcat instance may enable debugging visualizations; this
   currently and when the
   configuration space is <= 3 dimensional.*/
-  std::shared_ptr<Meshcat> meshcat{};
+  std::shared_ptr<geometry::Meshcat> meshcat{};
 };
 
 /** Given a seed point and an initial ellipsoidal metric, use sampling based
 optimization to find a collision free polytope in cspace.*/
 
-HPolyhedron FastIris(const planning::CollisionChecker& checker,
+HPolyhedron FastIris(const CollisionChecker& checker,
                      const Hyperellipsoid& starting_ellipsoid,
                      const HPolyhedron& domain,
                      const FastIrisOptions& options = FastIrisOptions());
 
-}  // namespace optimization
-}  // namespace geometry
+}  // namespace planning
 }  // namespace drake

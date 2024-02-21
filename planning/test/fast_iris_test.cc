@@ -1,4 +1,4 @@
-#include "drake/geometry/optimization/fast_iris.h"
+#include "drake/planning/fast_iris.h"
 
 #include <gtest/gtest.h>
 #include <thread>
@@ -18,13 +18,15 @@
 //#include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
-namespace geometry {
-namespace optimization {
+namespace planning {
 namespace {
 
 using common::MaybePauseForUser;
 using Eigen::Vector2d;
 using symbolic::Variable;
+using geometry::Meshcat;
+using geometry::optimization::HPolyhedron;
+using geometry::optimization::Hyperellipsoid;
 
 const double kInf = std::numeric_limits<double>::infinity();
 
@@ -32,8 +34,8 @@ const double kInf = std::numeric_limits<double>::infinity();
 HPolyhedron FastIrisFromUrdf(const std::string urdf,
                              const Eigen::Ref<const Eigen::VectorXd>& sample,
                              const FastIrisOptions& options) {
-  planning::CollisionCheckerParams params;
-  planning::RobotDiagramBuilder<double> builder(0.0);
+  CollisionCheckerParams params;
+  RobotDiagramBuilder<double> builder(0.0);
   
   builder.parser().package_map().AddPackageXml(FindResourceOrThrow(
       "drake/multibody/parsing/test/box_package/package.xml"));
@@ -394,6 +396,5 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
 }
 
 }  // namespace
-}  // namespace optimization
-}  // namespace geometry
+}  // namespace planning
 }  // namespace drake

@@ -1,16 +1,26 @@
-#include "drake/geometry/optimization/fast_iris.h"
+#include "drake/planning/fast_iris.h"
 #include <iostream>
 #include <common_robotics_utilities/parallelism.hpp>
 
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 
+
+namespace drake {
+namespace planning {
+
 using common_robotics_utilities::parallelism::DegreeOfParallelism;
 using common_robotics_utilities::parallelism::DynamicParallelForIndexLoop;
 using common_robotics_utilities::parallelism::ParallelForBackend;
 using common_robotics_utilities::parallelism::StaticParallelForIndexLoop;
+using math::RigidTransform;
+using geometry::Meshcat;
+using geometry::Sphere;
+using geometry::optimization::HPolyhedron;
+using geometry::optimization::Hyperellipsoid;
 
-{
+
+namespace {
 
 using values_t = std::vector<double>;
 using index_t = std::vector<uint8_t>;
@@ -24,13 +34,7 @@ index_t argsort(values_t const& values) {
   return index;
 }
 
-}
-
-namespace drake {
-namespace geometry {
-namespace optimization {
-
-using math::RigidTransform;
+}//namespace
 
 HPolyhedron FastIris(const planning::CollisionChecker& checker,
                      const Hyperellipsoid& starting_ellipsoid,
@@ -159,7 +163,11 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
         // std::vector<Eigen::VectorXd> particles_update_distance;
         // particles_update_distance.reserve(number_particles_in_collision);
   
-        const auto particle_update_work = [](const int thread_num,
+        const auto particle_update_work = [&checker, 
+                                           &particles_in_collision_updated, 
+                                           &particles_in_collision, 
+                                           &current_ellipsoid_center,
+                                           &options](const int thread_num,
                                               const int64_t index) {
           const int point_idx = static_cast<int>(index);
           auto start_point = particles_in_collision[point_idx];
@@ -372,6 +380,5 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   return P;
 }
 
-}  // namespace optimization
-}  // namespace geometry
+}  // namespace planning
 }  // namespace drake
