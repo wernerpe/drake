@@ -372,6 +372,7 @@ drake_cc_googletest(
         "//geometry/test_utilities:meshcat_environment",
         "//multibody/inverse_kinematics",
         ":robot_diagram_builder",
+        ":scene_graph_collision_checker",
     ],
 )
 

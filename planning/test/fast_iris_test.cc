@@ -25,7 +25,10 @@ using common::MaybePauseForUser;
 using Eigen::Vector2d;
 using symbolic::Variable;
 using geometry::Meshcat;
+using geometry::Sphere;
+using geometry::Rgba;
 using geometry::optimization::HPolyhedron;
+using geometry::optimization::VPolytope;
 using geometry::optimization::Hyperellipsoid;
 
 const double kInf = std::numeric_limits<double>::infinity();
