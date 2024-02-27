@@ -1056,11 +1056,10 @@ HPolyhedron SampledIrisInConfigurationSpace(
         particles.at(i) = P.UniformSample(&generator, particles.at(i - 1));
       }
 
-      // TODO(cohnt): Bernoulli test exit condition?
-
       // Build list of particles that are in collision, together with their collision pairs
       // Entries are of the form (particle_index, (geom_A, geom_B))
       std::vector<std::tuple<int, GeometryId, GeometryId>> collision_particles;
+      int num_samples_in_collision = 0;
       for (int i = 0; i < ssize(particles); ++i) {
         const VectorXd& current_particle = particles.at(i);
 
@@ -1069,6 +1068,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
                 plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
                     mutable_context);
 
+        bool this_sample_in_collision = false;
         for (const auto& [geomA, geomB] : pairs) {
           const auto signed_distance_pair = mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
           if (signed_distance_pair.distance < 0.0) {
@@ -1084,8 +1084,15 @@ HPolyhedron SampledIrisInConfigurationSpace(
             // const auto p_ACc = (p_ACa + p_ACb) / 2
             // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
             collision_particles.emplace_back(i, geomA, geomB);
+            this_sample_in_collision = true;
           }
         }
+        num_samples_in_collision += this_sample_in_collision;
+      }
+
+      // TODO(cohnt): Actual Bernoulli test exit condition?
+      if (num_samples_in_collision < 0.1 * options.particle_batch_size) {
+        break;
       }
 
       // Iterate over particles found to be in collision
