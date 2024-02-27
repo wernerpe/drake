@@ -18,6 +18,7 @@ drake_cc_package_library(
         ":collision_checker_context",
         ":collision_checker_params",
         ":distance_and_interpolation_provider",
+        ":fast_iris",
         ":linear_distance_and_interpolation_provider",
         ":robot_clearance",
         ":robot_collision_type",
@@ -26,7 +27,6 @@ drake_cc_package_library(
         ":scene_graph_collision_checker",
         ":unimplemented_collision_checker",
         ":visibility_graph",
-        ":fast_iris"
     ],
 )
 
@@ -221,9 +221,14 @@ drake_cc_library(
     deps = [
         ":collision_checker",
         "//common:parallelism",
-        "@common_robotics_utilities",
+        "//geometry:meshcat",
         "//geometry/optimization:convex_set",
-        "//geometry:meshcat", 
+        "//solvers:choose_best_solver",
+        "//solvers:clarabel_solver",
+        "//solvers:mathematical_program",
+        "//solvers:mosek_solver",
+        "//solvers:solve",
+        "@common_robotics_utilities",
     ],
 )
 
@@ -366,13 +371,13 @@ drake_cc_googletest(
     ],
     deps = [
         ":fast_iris",
+        ":robot_diagram_builder",
+        ":scene_graph_collision_checker",
         "//common/test_utilities:expect_throws_message",
         "//common/test_utilities:maybe_pause_for_user",
         "//geometry:meshcat",
         "//geometry/test_utilities:meshcat_environment",
         "//multibody/inverse_kinematics",
-        ":robot_diagram_builder",
-        ":scene_graph_collision_checker",
     ],
 )
 

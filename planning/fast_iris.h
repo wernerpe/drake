@@ -18,8 +18,8 @@
 namespace drake {
 namespace planning {
 
-using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::HPolyhedron;
+using geometry::optimization::Hyperellipsoid;
 
 struct FastIrisOptions {
   /** Passes this object to an Archive.
@@ -28,6 +28,8 @@ struct FastIrisOptions {
   template <typename Archive>
   void Serialize(Archive* a) {
     a->Visit(DRAKE_NVP(num_particles));
+    a->Visit(DRAKE_NVP(containment_points));
+    a->Visit(DRAKE_NVP(force_containment_points));
     a->Visit(DRAKE_NVP(num_consecutive_failures));
     a->Visit(DRAKE_NVP(max_iterations));
     a->Visit(DRAKE_NVP(max_iterations_separating_planes));
@@ -47,28 +49,37 @@ struct FastIrisOptions {
   /** Number of particles used to estimate the closest collision*/
   int num_particles = 1e3;
 
+  /** Points that are guaranteed to be contained in the final region
+   * provided their convex hull is collision free.*/
+  Eigen::MatrixXd containment_points;
+
+  /** If true, sets faces tangent to the sublevelsets of dist(C), where
+   * c is the convex hull of the points passed in `containment_points`.
+   */
+  bool force_containment_points{false};
+
   /** Number of consecutive failures to find a collision through sampling the
    * polytope*/
   int num_consecutive_failures{1};
 
   /** Number of resampling steps for the gradient updates*/
   // int num_resampling_steps = 1;
-  
+
   /** Number Iris Iterations*/
   int max_iterations{2};
 
   /** Maximum number of rounds of adding faces to the polytope*/
   int max_iterations_separating_planes{100};
-  
+
   /** Maximum number of faces to add per round of samples*/
   int max_separating_planes_per_iteration{-1};
 
   /** Maximum number of bisection steps per gradient step*/
   int bisection_steps{10};
-  
+
   /** Parallelize the updates of the particles*/
   bool parallelize{true};
-  
+
   /* Enables print statements indicating the progress of fast iris**/
   bool verbose{true};
 
@@ -89,8 +100,8 @@ struct FastIrisOptions {
   /** IRIS will terminate if the change in the *volume* of the hyperellipsoid
   between iterations is less that this threshold. This termination condition can
   be disabled by setting to a negative value. */
-  double termination_threshold{2e-2}; 
-  
+  double termination_threshold{2e-2};
+
   /** IRIS will terminate if the change in the *volume* of the hyperellipsoid
   between iterations is less that this percent of the previous best volume.
   This termination condition can be disabled by setting to a negative value. */

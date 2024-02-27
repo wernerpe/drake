@@ -18,6 +18,12 @@ void DefinePlanningFastIris(py::module m) {
     .def_readwrite("num_particles",
         &FastIrisOptions::num_particles,
         cls_doc.num_particles.doc)
+    .def_readwrite("containment_points",
+        &FastIrisOptions::containment_points,
+        cls_doc.containment_points.doc)
+    .def_readwrite("force_containment_points",
+        &FastIrisOptions::force_containment_points,
+        cls_doc.force_containment_points.doc)
     .def_readwrite("num_consecutive_failures", 
         &FastIrisOptions::num_consecutive_failures,
         cls_doc.num_consecutive_failures.doc)
@@ -58,6 +64,8 @@ void DefinePlanningFastIris(py::module m) {
         return py::str(
             "FastIrisOptions("
             "num_particles={}, "
+            "containment_points={}, "
+            "force_containment_points={}, "
             "num_consecutive_failures={}, "
             "max_iterations={}, "
             "max_iterations_separating_planes={}, "
@@ -72,6 +80,8 @@ void DefinePlanningFastIris(py::module m) {
             "random_seed={} "
             ")")
             .format(self.num_particles,
+                self.containment_points,
+                self.force_containment_points,
                 self.num_consecutive_failures, self.max_iterations,
                 self.max_iterations_separating_planes,
                 self.max_separating_planes_per_iteration,

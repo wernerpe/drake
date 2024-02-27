@@ -1,8 +1,9 @@
 #include "drake/planning/fast_iris.h"
 
-#include <gtest/gtest.h>
-#include <thread>
 #include <chrono>
+#include <thread>
+
+#include <gtest/gtest.h>
 
 #include "drake/common/find_resource.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
@@ -12,10 +13,8 @@
 #include "drake/geometry/optimization/vpolytope.h"
 #include "drake/geometry/test_utilities/meshcat_environment.h"
 #include "drake/multibody/inverse_kinematics/inverse_kinematics.h"
-//#include "drake/multibody/parsing/parser.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/scene_graph_collision_checker.h"
-//#include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
 namespace planning {
@@ -23,13 +22,13 @@ namespace {
 
 using common::MaybePauseForUser;
 using Eigen::Vector2d;
-using symbolic::Variable;
 using geometry::Meshcat;
-using geometry::Sphere;
 using geometry::Rgba;
+using geometry::Sphere;
 using geometry::optimization::HPolyhedron;
-using geometry::optimization::VPolytope;
 using geometry::optimization::Hyperellipsoid;
+using geometry::optimization::VPolytope;
+using symbolic::Variable;
 
 const double kInf = std::numeric_limits<double>::infinity();
 
@@ -39,10 +38,11 @@ HPolyhedron FastIrisFromUrdf(const std::string urdf,
                              const FastIrisOptions& options) {
   CollisionCheckerParams params;
   RobotDiagramBuilder<double> builder(0.0);
-  
+
   builder.parser().package_map().AddPackageXml(FindResourceOrThrow(
       "drake/multibody/parsing/test/box_package/package.xml"));
-  params.robot_model_instances = builder.parser().AddModelsFromString(urdf, "urdf");
+  params.robot_model_instances =
+      builder.parser().AddModelsFromString(urdf, "urdf");
 
   auto plant_ptr = &(builder.plant());
   plant_ptr->Finalize();
@@ -52,8 +52,8 @@ HPolyhedron FastIrisFromUrdf(const std::string urdf,
 
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
-  HPolyhedron domain = HPolyhedron::MakeBox(plant_ptr->GetPositionLowerLimits(),
-                                            plant_ptr->GetPositionUpperLimits());
+  HPolyhedron domain = HPolyhedron::MakeBox(
+      plant_ptr->GetPositionLowerLimits(), plant_ptr->GetPositionUpperLimits());
 
   planning::SceneGraphCollisionChecker checker(std::move(params));
   // plant.SetPositions(&plant.GetMyMutableContextFromRoot(context.get()),
@@ -282,7 +282,6 @@ GTEST_TEST(FastIrisTest, BlockOnGround) {
   }
 }
 
-
 // A (somewhat contrived) example of a concave configuration-space obstacle
 // (resulting in a convex configuration-space, which we approximate with
 // polytopes):  A simple pendulum of length `l` with a sphere at the tip of
@@ -369,7 +368,7 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
   // away from that corner. Open the meshcat visualization to step through the
   // details!
   options.meshcat = meshcat;
-  //std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
   HPolyhedron region = FastIrisFromUrdf(convex_urdf, sample, options);
   // TODO(russt): Expecting the test point to be outside the verified region is
   // too strong of a requirement right now. If we can improve the algorithm then
