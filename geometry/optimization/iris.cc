@@ -1,6 +1,5 @@
 #include "drake/geometry/optimization/iris.h"
 
-#include <iostream>
 #include <algorithm>
 #include <limits>
 #include <optional>
@@ -930,6 +929,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
     const multibody::MultibodyPlant<double>& plant,
     const systems::Context<double>& diagram_context,
     const SampledIrisOptions& options) {
+  auto start = std::chrono::high_resolution_clock::now();
   auto diagram_context_clone = diagram_context.Clone();
   const Context<double>& context{plant.GetMyContextFromRoot(diagram_context)};
 
@@ -1111,11 +1111,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
           AddTangentToPolytope(E, closest, options.configuration_space_margin,
                                &A, &b, &num_constraints);
 
-          for (int ii = 0; ii < closest.size(); ++ii) {
-            std::cout << closest[ii] << ' ';
-          }
-          std::cout << std::endl;
-
           // Check to ensure that the seed point is not made infeasible by the new hyperplane.
           if (options.require_sample_point_is_contained && A.row(num_constraints - 1) * seed > b(num_constraints - 1)) {
             --num_constraints;
@@ -1137,7 +1132,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
     }
 
     P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
-    return P;
     if (options.require_sample_point_is_contained && seed_point_made_infeasible) {
       log()->info("IrisInConfigurationSpace: Terminating because the seed point is no longer contained.");
       break;
@@ -1170,6 +1164,13 @@ HPolyhedron SampledIrisInConfigurationSpace(
       break;
     }
     best_volume = volume;
+  }
+  auto stop = std::chrono::high_resolution_clock::now();
+  if (options.verbose) {
+    log()->info(
+        "Fast Iris execution time : {} ms",
+        std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
+            .count());
   }
   return P;
 }

@@ -949,6 +949,7 @@ GTEST_TEST(IrisInConfigurationSpaceTest, SampledIRISConvexConfigurationSpace) {
   const double r = 0.1;
 
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Delete("/drake");
   meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
                            -3.25, 3.25, -3.25, 3.25);
   meshcat->SetProperty("/Grid", "visible", true);
