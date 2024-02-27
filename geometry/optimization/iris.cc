@@ -1,5 +1,6 @@
 #include "drake/geometry/optimization/iris.h"
 
+#include <iostream>
 #include <algorithm>
 #include <limits>
 #include <optional>
@@ -900,6 +901,254 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
           "IrisInConfigurationSpace: Terminating because the iteration limit "
           "{} has been reached.",
           options.iteration_limit);
+      break;
+    }
+
+    E = P.MaximumVolumeInscribedEllipsoid();
+    const double volume = E.Volume();
+    const double delta_volume = volume - best_volume;
+    if (delta_volume <= options.termination_threshold) {
+      log()->info(
+          "IrisInConfigurationSpace: Terminating because the hyperellipsoid "
+          "volume change {} is below the threshold {}.",
+          delta_volume, options.termination_threshold);
+      break;
+    } else if (delta_volume / best_volume <=
+               options.relative_termination_threshold) {
+      log()->info(
+          "IrisInConfigurationSpace: Terminating because the hyperellipsoid "
+          "relative volume change {} is below the threshold {}.",
+          delta_volume / best_volume, options.relative_termination_threshold);
+      break;
+    }
+    best_volume = volume;
+  }
+  return P;
+}
+
+HPolyhedron SampledIrisInConfigurationSpace(
+    const multibody::MultibodyPlant<double>& plant,
+    const systems::Context<double>& diagram_context,
+    const SampledIrisOptions& options) {
+  auto diagram_context_clone = diagram_context.Clone();
+  const Context<double>& context{plant.GetMyContextFromRoot(diagram_context)};
+
+  Context<double>& mutable_context =
+      plant.GetMyMutableContextFromRoot(diagram_context_clone.get());
+
+  // Check the inputs.
+  plant.ValidateContext(context);
+  const int nq = plant.num_positions();
+  const Eigen::VectorXd seed = plant.GetPositions(context);
+  // Note: We require finite joint limits to define the bounding box for the
+  // IRIS algorithm.
+  DRAKE_DEMAND(plant.GetPositionLowerLimits().array().isFinite().all());
+  DRAKE_DEMAND(plant.GetPositionUpperLimits().array().isFinite().all());
+
+  // Make the polytope and ellipsoid.
+  HPolyhedron P = HPolyhedron::MakeBox(plant.GetPositionLowerLimits(),
+                                       plant.GetPositionUpperLimits());
+  DRAKE_DEMAND(P.A().rows() == 2 * nq);
+
+  if (options.bounding_region) {
+    DRAKE_DEMAND(options.bounding_region->ambient_dimension() == nq);
+    P = P.Intersection(*options.bounding_region);
+  }
+
+  const double kEpsilonEllipsoid = 1e-2;
+  Hyperellipsoid E = options.starting_ellipse.value_or(
+      Hyperellipsoid::MakeHypersphere(kEpsilonEllipsoid, seed));
+
+  // Make all of the convex sets and supporting quantities.
+  auto query_object =
+      plant.get_geometry_query_input_port().Eval<QueryObject<double>>(context);
+  const SceneGraphInspector<double>& inspector = query_object.inspector();
+  IrisConvexSetMaker maker(query_object, inspector.world_frame_id());
+  std::unordered_map<GeometryId, copyable_unique_ptr<ConvexSet>> sets{};
+  std::unordered_map<GeometryId, const multibody::Frame<double>*> frames{};
+  const std::vector<GeometryId> geom_ids =
+      inspector.GetAllGeometryIds(Role::kProximity);
+  copyable_unique_ptr<ConvexSet> temp_set;
+  for (GeometryId geom_id : geom_ids) {
+    // Make all sets in the local geometry frame.
+    FrameId frame_id = inspector.GetFrameId(geom_id);
+    maker.set_reference_frame(frame_id);
+    maker.set_geometry_id(geom_id);
+    inspector.GetShape(geom_id).Reify(&maker, &temp_set);
+    sets.emplace(geom_id, std::move(temp_set));
+    frames.emplace(geom_id, &plant.GetBodyFromFrameId(frame_id)->body_frame());
+  }
+
+  auto pairs = inspector.GetCollisionCandidates();
+  const int n = static_cast<int>(pairs.size());
+  auto same_point_constraint =
+      std::make_shared<internal::SamePointConstraint>(&plant, context);
+  std::map<std::pair<GeometryId, GeometryId>, std::vector<VectorXd>>
+      counter_examples;
+
+  // On each iteration, we will build the collision-free polytope represented as
+  // {x | A * x <= b}.  Here we pre-allocate matrices with a generous maximum
+  // size.
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> A(
+      P.A().rows() + 2 * n, nq);
+  VectorXd b(P.A().rows() + 2 * n);
+  A.topRows(P.A().rows()) = P.A();
+  b.head(P.A().rows()) = P.b();
+  int num_initial_constraints = P.A().rows();
+
+  std::shared_ptr<CounterExampleConstraint> counter_example_constraint{};
+  std::unique_ptr<CounterExampleProgram> counter_example_prog{};
+
+  DRAKE_THROW_UNLESS(P.PointInSet(seed, 1e-12));
+
+  double best_volume;
+  int iteration = 0;
+  VectorXd closest(nq);
+  RandomGenerator generator(options.random_seed);
+
+  auto solver = solvers::MakeFirstAvailableSolver(
+      {solvers::SnoptSolver::id(), solvers::IpoptSolver::id()});
+
+  VectorXd guess = seed;
+
+  // For debugging visualization.
+  Vector3d point_to_draw = Vector3d::Zero();
+  int num_points_drawn = 0;
+  bool do_debugging_visualization = options.meshcat && nq <= 3;
+
+  const std::string seed_point_error_msg =
+      "IrisInConfigurationSpace: require_sample_point_is_contained is true but "
+      "the seed point exited the initial region. Does the provided "
+      "options.starting_ellipse not contain the seed point?";
+  const std::string seed_point_msg =
+      "IrisInConfigurationSpace: terminating iterations because the seed point "
+      "is no longer in the region.";
+  const std::string termination_error_msg =
+      "IrisInConfigurationSpace: the termination function returned false on "
+      "the computation of the initial region. Are the provided "
+      "options.starting_ellipse and options.termination_func compatible?";
+  const std::string termination_msg =
+      "IrisInConfigurationSpace: terminating iterations because "
+      "options.termination_func returned false.";
+
+  std::vector<Eigen::VectorXd> particles;
+  particles.reserve(options.particle_batch_size);
+  for (int i = 0; i < options.particle_batch_size; ++i) {
+    particles.emplace_back(Eigen::VectorXd::Zero(nq));
+  }
+
+  bool seed_point_made_infeasible = false;
+  while (true) {
+    log()->info("IrisInConfigurationSpace iteration {}", iteration);
+    int num_constraints = num_initial_constraints;
+    best_volume = E.Volume();
+    DRAKE_ASSERT(best_volume > 0);
+
+    // Find separating hyperplanes
+    for (int inner_iteration = 0; inner_iteration < options.max_particle_batches; ++inner_iteration) {
+      if (seed_point_made_infeasible) {
+        break;
+      }
+      // Draw samples
+      particles.at(0) = P.UniformSample(&generator);
+      // populate particles by uniform sampling
+      for (int i = 1; i < ssize(particles); ++i) {
+        particles.at(i) = P.UniformSample(&generator, particles.at(i - 1));
+      }
+
+      // TODO(cohnt): Bernoulli test exit condition?
+
+      // Build list of particles that are in collision, together with their collision pairs
+      // Entries are of the form (particle_index, (geom_A, geom_B))
+      std::vector<std::tuple<int, GeometryId, GeometryId>> collision_particles;
+      for (int i = 0; i < ssize(particles); ++i) {
+        const VectorXd& current_particle = particles.at(i);
+
+        plant.SetPositions(&mutable_context, current_particle);
+        auto mutable_query_object =
+                plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
+                    mutable_context);
+
+        for (const auto& [geomA, geomB] : pairs) {
+          const auto signed_distance_pair = mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
+          if (signed_distance_pair.distance < 0.0) {
+            // // UNUSED: Machinery to compute initial guess for witness point
+            // const auto p_ACa = signed_distance_pair.p_ACa;
+            // const auto p_BCb = signed_distance_pair.p_BCb;
+            // const auto frame_A = frames[geomA];
+            // const auto frame_B = frames[geomB];
+            // const auto X_AB = plant.CalcRelativeTransform(context, frame_A, frame_B);
+            // const auto p_ACb = X_AB.multibody(p_BCb);
+
+            // // Compute the midpoint of the two witness points
+            // const auto p_ACc = (p_ACa + p_ACb) / 2
+            // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
+            collision_particles.emplace_back(i, geomA, geomB);
+          }
+        }
+      }
+
+      // Iterate over particles found to be in collision
+      for (int i = 0; i < ssize(collision_particles); ++i) {
+        const auto& geomA = std::get<1>(collision_particles[i]);
+        const auto& geomB = std::get<2>(collision_particles[i]);
+        internal::ClosestCollisionProgram prog(
+            same_point_constraint, *frames.at(geomA),
+            *frames.at(geomB), *sets.at(geomA),
+            *sets.at(geomB), E, A.topRows(num_constraints),
+            b.head(num_constraints));
+        bool success = prog.Solve(*solver, particles.at(std::get<0>(collision_particles[i])), &closest);
+        if (success) {
+          if (do_debugging_visualization) {
+            point_to_draw.head(nq) = closest;
+            std::string path = fmt::format("iteration{:02}/{:03}/found",
+                                           iteration, num_points_drawn);
+            options.meshcat->SetObject(path, Sphere(0.01),
+                                       geometry::Rgba(0.8, 0.1, 0.8, 1.0));
+            options.meshcat->SetTransform(
+                path, RigidTransform<double>(point_to_draw));
+          }
+          AddTangentToPolytope(E, closest, options.configuration_space_margin,
+                               &A, &b, &num_constraints);
+
+          for (int ii = 0; ii < closest.size(); ++ii) {
+            std::cout << closest[ii] << ' ';
+          }
+          std::cout << std::endl;
+
+          // Check to ensure that the seed point is not made infeasible by the new hyperplane.
+          if (options.require_sample_point_is_contained && A.row(num_constraints - 1) * seed > b(num_constraints - 1)) {
+            --num_constraints;
+            seed_point_made_infeasible = true;
+            break;
+          }
+        } else {
+          if (do_debugging_visualization) {
+            point_to_draw.head(nq) = closest;
+            std::string path = fmt::format("iteration{:02}/{:03}/closest",
+                                           iteration, num_points_drawn);
+            options.meshcat->SetObject(path, Sphere(0.01),
+                                       geometry::Rgba(0.1, 0.8, 0.8, 1.0));
+            options.meshcat->SetTransform(
+                path, RigidTransform<double>(point_to_draw));
+          }
+        }
+      }
+    }
+
+    P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
+    return P;
+    if (options.require_sample_point_is_contained && seed_point_made_infeasible) {
+      log()->info("IrisInConfigurationSpace: Terminating because the seed point is no longer contained.");
+      break;
+    }
+
+    iteration++;
+    if (iteration >= options.max_alternations) {
+      log()->info(
+          "IrisInConfigurationSpace: Terminating because the iteration limit "
+          "{} has been reached.",
+          options.max_alternations);
       break;
     }
 

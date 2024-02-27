@@ -245,6 +245,96 @@ HPolyhedron IrisInConfigurationSpace(
     const systems::Context<double>& context,
     const IrisOptions& options = IrisOptions());
 
+struct SampledIrisOptions {
+  /** Passes this object to an Archive.
+  Refer to @ref yaml_serialization "YAML Serialization" for background.
+  Note: This only serializes options that are YAML built-in types. */
+  template <typename Archive>
+  void Serialize(Archive* a) {
+    a->Visit(DRAKE_NVP(starting_ellipse));
+    a->Visit(DRAKE_NVP(bounding_region));
+    a->Visit(DRAKE_NVP(particle_batch_size));
+    a->Visit(DRAKE_NVP(target_confidence));
+    a->Visit(DRAKE_NVP(target_proportion_in_collision));
+    a->Visit(DRAKE_NVP(max_particle_batches));
+    a->Visit(DRAKE_NVP(max_alternations));
+    a->Visit(DRAKE_NVP(verbose));
+    a->Visit(DRAKE_NVP(require_sample_point_is_contained));
+    a->Visit(DRAKE_NVP(configuration_space_margin));
+    a->Visit(DRAKE_NVP(termination_threshold));
+    a->Visit(DRAKE_NVP(relative_termination_threshold));
+    a->Visit(DRAKE_NVP(random_seed));
+  }
+
+  SampledIrisOptions() = default;
+
+  /** The initial hyperellipsoid that IRIS will use for calculating hyperplanes
+  in the first iteration. If no hyperellipsoid is provided, a small hypershpere
+  centered at the given sample will be used. */
+  std::optional<Hyperellipsoid> starting_ellipse{};
+
+  /** Optionally allows the caller to restrict the space within which IRIS
+  regions are allowed to grow. By default, IRIS regions are bounded by the
+  `domain` argument in the case of `Iris` or the joint limits of the input
+  `plant` in the case of `IrisInConfigurationSpace`. If this option is
+  specified, IRIS regions will be confined to the intersection between the
+  domain and `bounding_region` */
+  std::optional<HPolyhedron> bounding_region{};
+
+  int particle_batch_size = 1e2;
+
+  double target_confidence = 1e-2;
+
+  double target_proportion_in_collision = 1e-2;
+
+  int max_particle_batches = 1e2;
+
+  int max_alternations = 10;
+
+  /** Enables print statements indicating the progress of fast iris**/
+  bool verbose{true};
+
+  /** The initial polytope is guaranteed to contain the point if that point is
+  collision-free. However, the IRIS alternation objectives do not include (and
+  can not easily include) a constraint that the original sample point is
+  contained. Therefore, the IRIS paper recommends that if containment is a
+  requirement, then the algorithm should simply terminate early if alternations
+  would ever cause the set to not contain the point. */
+  bool require_sample_point_is_contained{true};
+
+  /** For IRIS in configuration space, we retreat by this margin from each
+  C-space obstacle in order to avoid the possibility of requiring an infinite
+  number of faces to approximate a curved boundary.
+  */
+  double configuration_space_margin{1e-2};
+
+  /** IRIS will terminate if the change in the *volume* of the hyperellipsoid
+  between iterations is less that this threshold. This termination condition can
+  be disabled by setting to a negative value. */
+  double termination_threshold{2e-2};
+
+  /** IRIS will terminate if the change in the *volume* of the hyperellipsoid
+  between iterations is less that this percent of the previous best volume.
+  This termination condition can be disabled by setting to a negative value. */
+  double relative_termination_threshold{1e-3};  // from rdeits/iris-distro.
+
+  /** The only randomization in IRIS is the random sampling done to find
+  counter-examples for the additional constraints using in
+  IrisInConfigurationSpace. Use this option to set the initial seed. */
+  int random_seed{1234};
+
+  /** Passing a meshcat instance may enable debugging visualizations; this
+  currently and when the
+  configuration space is <= 3 dimensional.*/
+  std::shared_ptr<geometry::Meshcat> meshcat{};
+};
+
+/** DOCS TODO */
+HPolyhedron SampledIrisInConfigurationSpace(
+    const multibody::MultibodyPlant<double>& plant,
+    const systems::Context<double>& diagram_context,
+    const SampledIrisOptions& options = SampledIrisOptions());
+
 /** Modifies the @p iris_options to facilitate finding a region that contains
 the edge between x_1 and x_2. It sets @p iris_options.starting_ellipse to be a
 hyperellipsoid that contains the edge, is centered at the midpoint of the

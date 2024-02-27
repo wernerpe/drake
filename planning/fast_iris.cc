@@ -114,7 +114,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   std::vector<Eigen::VectorXd> particles;
   particles.reserve(options.num_particles);
   for (int i = 0; i < options.num_particles; ++i) {
-    particles.emplace_back(Eigen::Vector3d::Zero());
+    particles.emplace_back(Eigen::VectorXd::Zero(dim));
   }
 
   int iteration = 0;

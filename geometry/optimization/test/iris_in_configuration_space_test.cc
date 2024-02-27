@@ -43,6 +43,25 @@ HPolyhedron IrisFromUrdf(const std::string urdf,
                                   options);
 }
 
+// Helper method for testing IrisInConfigurationSpace from a urdf string.
+HPolyhedron SampledIrisFromUrdf(const std::string urdf,
+                         const Eigen::Ref<const Eigen::VectorXd>& sample,
+                         const SampledIrisOptions& options) {
+  systems::DiagramBuilder<double> builder;
+  multibody::MultibodyPlant<double>& plant =
+      multibody::AddMultibodyPlantSceneGraph(&builder, 0.0);
+  multibody::Parser parser(&plant);
+  parser.package_map().AddPackageXml(FindResourceOrThrow(
+      "drake/multibody/parsing/test/box_package/package.xml"));
+  parser.AddModelsFromString(urdf, "urdf");
+  plant.Finalize();
+  auto diagram = builder.Build();
+
+  auto context = diagram->CreateDefaultContext();
+  plant.SetPositions(&plant.GetMyMutableContextFromRoot(context.get()), sample);
+  return SampledIrisInConfigurationSpace(plant, *context.get(), options);
+}
+
 // One prismatic link with joint limits.  Iris should return the joint limits.
 GTEST_TEST(IrisInConfigurationSpaceTest, JointLimits) {
   const std::string limits_urdf = R"(
@@ -923,6 +942,109 @@ GTEST_TEST(IrisInConfigurationSpaceTest, ConvexConfigurationSpace) {
   constexpr double kTol = 1e-4;
   EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume() + kTol,
             region2.MaximumVolumeInscribedEllipsoid().Volume());
+}
+
+GTEST_TEST(IrisInConfigurationSpaceTest, SampledIRISConvexConfigurationSpace) {
+  const double l = 1.5;
+  const double r = 0.1;
+
+  std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
+                           -3.25, 3.25, -3.25, 3.25);
+  meshcat->SetProperty("/Grid", "visible", true);
+  Eigen::RowVectorXd theta1s = Eigen::RowVectorXd::LinSpaced(100, -1.5, 1.5);
+  Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 2 * theta1s.size());
+  for (int i = 0; i < theta1s.size(); ++i) {
+    points(0, i) = r - l * cos(theta1s[i]);
+    points(1, i) = theta1s[i];
+    points(0, points.cols() - i - 1) = 0;
+    points(1, points.cols() - i - 1) = theta1s[i];
+  }
+  meshcat->SetLine("True C_free", points, 2.0, Rgba(0, 0, 1));
+
+  const std::string convex_urdf = fmt::format(
+      R"(
+<robot name="pendulum_on_vertical_track">
+  <link name="fixed">
+    <collision name="ground">
+      <origin rpy="0 0 0" xyz="0 0 -1"/>
+      <geometry><box size="10 10 2"/></geometry>
+    </collision>
+  </link>
+  <joint name="fixed_link_weld" type="fixed">
+    <parent link="world"/>
+    <child link="fixed"/>
+  </joint>
+  <link name="cart">
+  </link>
+  <joint name="track" type="prismatic">
+    <axis xyz="0 0 1"/>
+    <limit lower="-{l}" upper="0"/>
+    <parent link="world"/>
+    <child link="cart"/>
+  </joint>
+  <link name="pendulum">
+    <collision name="ball">
+      <origin rpy="0 0 0" xyz="0 0 {l}"/>
+      <geometry><sphere radius="{r}"/></geometry>
+    </collision>
+  </link>
+  <joint name="pendulum" type="revolute">
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57"/>
+    <parent link="cart"/>
+    <child link="pendulum"/>
+  </joint>
+</robot>
+)",
+      fmt::arg("l", l), fmt::arg("r", r));
+
+  const Vector2d sample{-0.5, 0.0};
+  SampledIrisOptions options;
+
+  // This point should be outside of the configuration space (in collision).
+  // The particular value was found by visual inspection using meshcat.
+  const double z_test = 0, theta_test = -1.55;
+  // Confirm that the pendulum is colliding with the wall with true kinematics:
+  EXPECT_LE(z_test + l * std::cos(theta_test), r);
+
+  // Turn on meshcat for addition debugging visualizations.
+  // This example is truly adversarial for IRIS. After one iteration, the
+  // maximum-volume inscribed ellipse is approximately centered in C-free. So
+  // finding a counter-example in the bottom corner (near the test point) is
+  // not only difficult because we need to sample in a corner of the polytope,
+  // but because the objective is actually pulling the counter-example search
+  // away from that corner. Open the meshcat visualization to step through the
+  // details!
+  options.meshcat = meshcat;
+
+  HPolyhedron region = SampledIrisFromUrdf(convex_urdf, sample, options);
+
+  // TODO(russt): Expecting the test point to be outside the verified region is
+  // too strong of a requirement right now. If we can improve the algorithm then
+  // we should make this EXPECT_FALSE.
+  if (!region.PointInSet(Vector2d{z_test, theta_test})) {
+    log()->info("Our test point is not in the set");
+  }
+
+  EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a substantial region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 0.5);
+
+  {
+    VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
+    points.resize(3, vregion.vertices().cols() + 1);
+    points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
+    points.topRightCorner(2, 1) = vregion.vertices().col(0);
+    points.bottomRows<1>().setZero();
+    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+
+    meshcat->SetObject("Test point", Sphere(0.03), Rgba(1, 0, 0));
+    meshcat->SetTransform("Test point", math::RigidTransform(Eigen::Vector3d(
+                                            z_test, theta_test, 0)));
+
+    MaybePauseForUser();
+  }
 }
 
 // Three boxes.  Two on the outside are fixed.  One in the middle on a prismatic
