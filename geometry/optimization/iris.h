@@ -254,7 +254,7 @@ struct SampledIrisOptions {
     a->Visit(DRAKE_NVP(starting_ellipse));
     a->Visit(DRAKE_NVP(bounding_region));
     a->Visit(DRAKE_NVP(particle_batch_size));
-    a->Visit(DRAKE_NVP(target_confidence));
+    a->Visit(DRAKE_NVP(target_uncertainty));
     a->Visit(DRAKE_NVP(target_proportion_in_collision));
     a->Visit(DRAKE_NVP(max_particle_batches));
     a->Visit(DRAKE_NVP(max_alternations));
@@ -283,7 +283,7 @@ struct SampledIrisOptions {
 
   int particle_batch_size = 1e2;
 
-  double target_confidence = 1e-2;
+  double target_uncertainty = 5e-2;
 
   double target_proportion_in_collision = 1e-2;
 

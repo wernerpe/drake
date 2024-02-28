@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "drake/common/symbolic/expression.h"
 #include "drake/geometry/optimization/affine_ball.h"
@@ -925,6 +926,33 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
   return P;
 }
 
+namespace{
+//Winitzki, S., 2008. A handy approximation for the error function and its inverse. A lecture note obtained through private communication.
+double erfc_inv(double p){
+   double x = p-1.;
+   double tt1, tt2, lnx, sgn;
+   sgn = (x < 0) ? 1.0 : -1.0;
+   x = (1 - x)*(1 + x);        // x = 1 - x*x;
+   lnx = std::log(x);
+   double a = 0.15449436008930206298828125;
+   tt1 = 2./(M_PI*a) + 0.5 * lnx;
+   tt2 = 1./(a) * lnx;
+   return sgn*std::sqrt(-tt1 + std::sqrt(tt1*tt1 - tt2)) ;
+}
+
+//inverse normal probability mass function required to compute the acceptance threshold for the bernoulli test
+double inverse_cdf_normal(double probability, double mean, double std_dev) {
+    if (probability < 0 || probability > 1) {
+        throw std::invalid_argument("Probability must be between 0 and 1");
+    }
+    // Compute the argument for erfc_inv based on the probability
+    double arg = 2 - 2 * probability;
+    // Use erfc_inv to compute the inverse CDF
+    double result = mean + std_dev * std::sqrt(2) * erfc_inv(arg);
+    return result;
+}
+
+}
 HPolyhedron SampledIrisInConfigurationSpace(
     const multibody::MultibodyPlant<double>& plant,
     const systems::Context<double>& diagram_context,
@@ -1036,10 +1064,19 @@ HPolyhedron SampledIrisInConfigurationSpace(
   for (int i = 0; i < options.particle_batch_size; ++i) {
     particles.emplace_back(Eigen::VectorXd::Zero(nq));
   }
+ 
+  //compute termination condition for separating planes step
+  double confidence = 1 - options.target_uncertainty;
+  double sigma = std::sqrt(options.particle_batch_size * (1-options.target_proportion_in_collision)*options.target_proportion_in_collision);
+  double threshold = inverse_cdf_normal(confidence, options.particle_batch_size * (1.0-options.target_proportion_in_collision), sigma);
+  int bernoulli_threshold = std::min(int(threshold+0.5), options.particle_batch_size);
 
+  if(options.verbose){
+    log()->info("SamplingIris requires {}/{} particles to be collision free ", bernoulli_threshold, options.particle_batch_size);
+  }
   bool seed_point_made_infeasible = false;
   while (true) {
-    log()->info("IrisInConfigurationSpace iteration {}", iteration);
+    log()->info("SamplingIris iteration {}", iteration);
     int num_constraints = num_initial_constraints;
     best_volume = E.Volume();
     DRAKE_ASSERT(best_volume > 0);
@@ -1085,13 +1122,14 @@ HPolyhedron SampledIrisInConfigurationSpace(
             // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
             collision_particles.emplace_back(i, geomA, geomB);
             this_sample_in_collision = true;
+
           }
         }
         num_samples_in_collision += this_sample_in_collision;
       }
 
       // TODO(cohnt): Actual Bernoulli test exit condition?
-      if (num_samples_in_collision < 0.1 * options.particle_batch_size) {
+      if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
         break;
       }
 
