@@ -1068,11 +1068,18 @@ HPolyhedron SampledIrisInConfigurationSpace(
   //compute termination condition for separating planes step
   double confidence = 1 - options.target_uncertainty;
   double sigma = std::sqrt(options.particle_batch_size * (1-options.target_proportion_in_collision)*options.target_proportion_in_collision);
-  double threshold = inverse_cdf_normal(confidence, options.particle_batch_size * (1.0-options.target_proportion_in_collision), sigma);
+  double mean = options.particle_batch_size * (1.0-options.target_proportion_in_collision);
+  double threshold = inverse_cdf_normal(confidence, mean, sigma);
+  //use conservative rounding
   int bernoulli_threshold = std::min(int(threshold+0.5), options.particle_batch_size);
 
   if(options.verbose){
     log()->info("SamplingIris requires {}/{} particles to be collision free ", bernoulli_threshold, options.particle_batch_size);
+  }
+  if (bernoulli_threshold == options.particle_batch_size){
+    //evaluate cdf at bernoulli threshold to estimate actual probabilty of errors of the 1st kind
+    double cdf = 0.5*(1+std::erf((bernoulli_threshold- mean)/(sigma*std::sqrt(2))));
+    log()->info("Warning requested uncertainty is {} but the minimum achieveable uncertainty is ~ {}, a larger particle_batch_size is required", options.target_uncertainty, 1- cdf);        
   }
   bool seed_point_made_infeasible = false;
   while (true) {
@@ -1213,7 +1220,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
   auto stop = std::chrono::high_resolution_clock::now();
   if (options.verbose) {
     log()->info(
-        "Fast Iris execution time : {} ms",
+        "SamplingIris execution time : {} ms",
         std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
             .count());
   }
