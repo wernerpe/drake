@@ -1041,7 +1041,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
   // For debugging visualization.
   Vector3d point_to_draw = Vector3d::Zero();
-  int num_points_drawn = 0;
   bool do_debugging_visualization = options.meshcat && nq <= 3;
 
   const std::string seed_point_error_msg =
@@ -1129,13 +1128,11 @@ HPolyhedron SampledIrisInConfigurationSpace(
             // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
             collision_particles.emplace_back(i, geomA, geomB);
             this_sample_in_collision = true;
-
           }
         }
         num_samples_in_collision += this_sample_in_collision;
       }
 
-      // TODO(cohnt): Actual Bernoulli test exit condition?
       if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
         break;
       }
@@ -1154,7 +1151,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
             std::string path = fmt::format("iteration{:02}/{:03}/found",
-                                           iteration, num_points_drawn);
+                                           iteration, i);
             options.meshcat->SetObject(path, Sphere(0.01),
                                        geometry::Rgba(0.8, 0.1, 0.8, 1.0));
             options.meshcat->SetTransform(
@@ -1173,7 +1170,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
             std::string path = fmt::format("iteration{:02}/{:03}/closest",
-                                           iteration, num_points_drawn);
+                                           iteration, i);
             options.meshcat->SetObject(path, Sphere(0.01),
                                        geometry::Rgba(0.1, 0.8, 0.8, 1.0));
             options.meshcat->SetTransform(
