@@ -1007,12 +1007,9 @@ HPolyhedron SampledIrisInConfigurationSpace(
     frames.emplace(geom_id, &plant.GetBodyFromFrameId(frame_id)->body_frame());
   }
 
-  auto pairs = inspector.GetCollisionCandidates();
-  const int n = static_cast<int>(pairs.size());
-  auto same_point_constraint =
-      std::make_shared<internal::SamePointConstraint>(&plant, context);
-  std::map<std::pair<GeometryId, GeometryId>, std::vector<VectorXd>>
-      counter_examples;
+  std::set<std::pair<GeometryId, GeometryId>> pairs_set = inspector.GetCollisionCandidates();
+  std::vector<std::pair<GeometryId, GeometryId>> pairs(pairs_set.begin(), pairs_set.end());
+  const int n = ssize(pairs);
 
   // On each iteration, we will build the collision-free polytope represented as
   // {x | A * x <= b}.  Here we pre-allocate matrices with a generous maximum
@@ -1023,9 +1020,21 @@ HPolyhedron SampledIrisInConfigurationSpace(
   A.topRows(P.A().rows()) = P.A();
   b.head(P.A().rows()) = P.b();
   int num_initial_constraints = P.A().rows();
+  int num_constraints = num_initial_constraints;
 
-  std::shared_ptr<CounterExampleConstraint> counter_example_constraint{};
-  std::unique_ptr<CounterExampleProgram> counter_example_prog{};
+  // Set up collision programs
+  std::vector<copyable_unique_ptr<internal::ClosestCollisionProgram>> collision_programs;
+  auto same_point_constraint =
+      std::make_shared<internal::SamePointConstraint>(&plant, context);
+  for (int i = 0; i < n; ++i) {
+    auto geomA = std::get<0>(pairs[i]);
+    auto geomB = std::get<1>(pairs[i]);
+    collision_programs.push_back(copyable_unique_ptr(std::make_unique<internal::ClosestCollisionProgram>(
+        same_point_constraint, *frames.at(geomA),
+        *frames.at(geomB), *sets.at(geomA),
+        *sets.at(geomB), E, A.topRows(num_constraints),
+        b.head(num_constraints))));
+  }
 
   DRAKE_THROW_UNLESS(P.PointInSet(seed, 1e-12));
 
@@ -1081,7 +1090,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
     log()->info("Warning requested uncertainty is {} but the minimum achieveable uncertainty is ~ {}, a larger particle_batch_size is required", options.target_uncertainty, 1- cdf);        
   }
   bool seed_point_made_infeasible = false;
-  int num_constraints = num_initial_constraints;
   while (true) {
     log()->info("SamplingIris iteration {}", iteration);
     best_volume = E.Volume();
@@ -1100,8 +1108,8 @@ HPolyhedron SampledIrisInConfigurationSpace(
       }
 
       // Build list of particles that are in collision, together with their collision pairs
-      // Entries are of the form (particle_index, (geom_A, geom_B))
-      std::vector<std::tuple<int, GeometryId, GeometryId>> collision_particles;
+      // Entries are of the form (particle_index, collision_pair_index)
+      std::vector<std::pair<int, int>> collision_particles;
       int num_samples_in_collision = 0;
       for (int i = 0; i < ssize(particles); ++i) {
         const VectorXd& current_particle = particles.at(i);
@@ -1112,7 +1120,9 @@ HPolyhedron SampledIrisInConfigurationSpace(
                     mutable_context);
 
         bool this_sample_in_collision = false;
-        for (const auto& [geomA, geomB] : pairs) {
+        for (int j = 0; j < ssize(pairs); ++j){
+          const auto& geomA = std::get<0>(pairs[j]);
+          const auto& geomB = std::get<1>(pairs[j]);
           const auto signed_distance_pair = mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
           if (signed_distance_pair.distance < 0.0) {
             // // UNUSED: Machinery to compute initial guess for witness point
@@ -1126,8 +1136,18 @@ HPolyhedron SampledIrisInConfigurationSpace(
             // // Compute the midpoint of the two witness points
             // const auto p_ACc = (p_ACa + p_ACb) / 2
             // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
-            collision_particles.emplace_back(i, geomA, geomB);
+            collision_particles.emplace_back(i, j);
             this_sample_in_collision = true;
+          } else {
+            if (do_debugging_visualization) {
+              point_to_draw.head(nq) = current_particle;
+              std::string path = fmt::format("iteration{:02}/{:03}/discarding",
+                                             iteration, i);
+              options.meshcat->SetObject(path, Sphere(0.01),
+                                         geometry::Rgba(0.5, 0.5, 0.5, 1.0));
+              options.meshcat->SetTransform(
+                  path, RigidTransform<double>(point_to_draw));
+            }
           }
         }
         num_samples_in_collision += this_sample_in_collision;
@@ -1139,14 +1159,9 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
       // Iterate over particles found to be in collision
       for (int i = 0; i < ssize(collision_particles); ++i) {
-        const auto& geomA = std::get<1>(collision_particles[i]);
-        const auto& geomB = std::get<2>(collision_particles[i]);
-        internal::ClosestCollisionProgram prog(
-            same_point_constraint, *frames.at(geomA),
-            *frames.at(geomB), *sets.at(geomA),
-            *sets.at(geomB), E, A.topRows(num_constraints),
-            b.head(num_constraints));
-        bool success = prog.Solve(*solver, particles.at(std::get<0>(collision_particles[i])), &closest);
+        const int program_index = collision_particles[i].second;
+        collision_programs[program_index]->UpdatePolytope(A.topRows(num_constraints), b.head(num_constraints));
+        bool success = collision_programs[program_index]->Solve(*solver, particles.at(collision_particles[i].first), &closest);
         if (success) {
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
