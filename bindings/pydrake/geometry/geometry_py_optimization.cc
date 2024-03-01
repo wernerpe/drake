@@ -541,6 +541,82 @@ void DefineGeometryOptimization(py::module m) {
         cls_doc.prog_with_additional_constraints.doc);
   }
 
+  {
+    const auto& cls_doc = doc.SampledIrisOptions;
+    py::class_<SampledIrisOptions> sampled_iris_options(m, "SampledIrisOptions", cls_doc.doc);
+    sampled_iris_options.def(ParamInit<SampledIrisOptions>())
+        .def_readwrite("starting_ellipse",
+            &SampledIrisOptions::starting_ellipse,
+            cls_doc.starting_ellipse.doc)
+        .def_readwrite("bounding_region", &SampledIrisOptions::bounding_region,
+            cls_doc.bounding_region.doc)
+        .def_readwrite("particle_batch_size",
+            &SampledIrisOptions::particle_batch_size,
+            cls_doc.particle_batch_size.doc)
+        .def_readwrite("target_uncertainty",
+            &SampledIrisOptions::target_uncertainty,
+            cls_doc.target_uncertainty.doc)
+        .def_readwrite("target_proportion_in_collision",
+            &SampledIrisOptions::target_proportion_in_collision,
+            cls_doc.target_proportion_in_collision.doc)
+        .def_readwrite("max_particle_batches",
+            &SampledIrisOptions::max_particle_batches,
+            cls_doc.max_particle_batches.doc)
+        .def_readwrite("max_alternations",
+            &SampledIrisOptions::max_alternations,
+            cls_doc.max_alternations.doc)
+        .def_readwrite("verbose",
+            &SampledIrisOptions::verbose,
+            cls_doc.verbose.doc)
+        .def_readwrite("require_sample_point_is_contained",
+            &SampledIrisOptions::require_sample_point_is_contained,
+            cls_doc.require_sample_point_is_contained.doc)
+        .def_readwrite("configuration_space_margin",
+            &SampledIrisOptions::configuration_space_margin,
+            cls_doc.configuration_space_margin.doc)
+        .def_readwrite("termination_threshold",
+            &SampledIrisOptions::termination_threshold,
+            cls_doc.termination_threshold.doc)
+        .def_readwrite("relative_termination_threshold",
+            &SampledIrisOptions::relative_termination_threshold,
+            cls_doc.relative_termination_threshold.doc)
+        .def_readwrite("random_seed",
+            &SampledIrisOptions::random_seed,
+            cls_doc.random_seed.doc)
+        .def("__repr__", [](const SampledIrisOptions& self) {
+          return py::str(
+              "SampledIrisOptions("
+              "starting_ellipse={}, "
+              "bounding_region={}, "
+              "particle_batch_size={}, "
+              "target_uncertainty={}, "
+              "target_proportion_in_collision={}, "
+              "max_particle_batches={}, "
+              "max_alternations={}, "
+              "verbose={}, "
+              "require_sample_point_is_contained={}, "
+              "configuration_space_margin={}, "
+              "termination_threshold={}, "
+              "relative_termination_threshold={}, "
+              "random_seed={} "
+              ")")
+              .format(self.starting_ellipse,
+                      self.bounding_region,
+                      self.particle_batch_size,
+                      self.target_uncertainty,
+                      self.target_proportion_in_collision,
+                      self.max_particle_batches,
+                      self.max_alternations,
+                      self.verbose,
+                      self.require_sample_point_is_contained,
+                      self.configuration_space_margin,
+                      self.termination_threshold,
+                      self.relative_termination_threshold,
+                      self.random_seed);
+        });
+
+  }
+
   m.def(
       "Iris",
       [](const std::vector<ConvexSet*>& obstacles,
@@ -571,7 +647,12 @@ void DefineGeometryOptimization(py::module m) {
           &IrisInConfigurationSpace),
       py::arg("plant"), py::arg("context"), py::arg("options") = IrisOptions(),
       doc.IrisInConfigurationSpace.doc);
-
+  m.def("SampledIrisInConfigurationSpace",
+      py::overload_cast<const multibody::MultibodyPlant<double>&,
+          const systems::Context<double>&, const SampledIrisOptions&>(
+          &SampledIrisInConfigurationSpace),
+      py::arg("plant"), py::arg("context"), py::arg("options") = SampledIrisOptions(),
+      doc.SampledIrisInConfigurationSpace.doc);
   // TODO(#19597) Deprecate and remove these functions once Python
   // can natively handle the file I/O.
   m.def(
