@@ -1082,9 +1082,9 @@ HPolyhedron SampledIrisInConfigurationSpace(
     log()->info("Warning requested uncertainty is {} but the minimum achieveable uncertainty is ~ {}, a larger particle_batch_size is required", options.target_uncertainty, 1- cdf);        
   }
   bool seed_point_made_infeasible = false;
+  int num_constraints = num_initial_constraints;
   while (true) {
     log()->info("SamplingIris iteration {}", iteration);
-    int num_constraints = num_initial_constraints;
     best_volume = E.Volume();
     DRAKE_ASSERT(best_volume > 0);
 
