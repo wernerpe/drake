@@ -1101,6 +1101,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
         break;
       }
       // Draw samples
+      P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
       particles.at(0) = P.UniformSample(&generator);
       // populate particles by uniform sampling
       for (int i = 1; i < ssize(particles); ++i) {
@@ -1138,22 +1139,23 @@ HPolyhedron SampledIrisInConfigurationSpace(
             // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
             collision_particles.emplace_back(i, j);
             this_sample_in_collision = true;
-          } else {
-            if (do_debugging_visualization) {
-              point_to_draw.head(nq) = current_particle;
-              std::string path = fmt::format("iteration{:02}/{:03}/discarding",
-                                             iteration, i);
-              options.meshcat->SetObject(path, Sphere(0.01),
-                                         geometry::Rgba(0.5, 0.5, 0.5, 1.0));
-              options.meshcat->SetTransform(
-                  path, RigidTransform<double>(point_to_draw));
-            }
+          // } else {
+          //   if (do_debugging_visualization) {
+          //     point_to_draw.head(nq) = current_particle;
+          //     std::string path = fmt::format("iteration{:02}/{:03}/discarding",
+          //                                    iteration, i);
+          //     options.meshcat->SetObject(path, Sphere(0.01),
+          //                                geometry::Rgba(0.5, 0.5, 0.5, 1.0));
+          //     options.meshcat->SetTransform(
+          //         path, RigidTransform<double>(point_to_draw));
+          //   }
           }
         }
         num_samples_in_collision += this_sample_in_collision;
       }
 
       if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
+        log()->info("IrisInConfigurationSpace: Samples passed Bernoulli test on inner iteration {}.", inner_iteration);
         break;
       }
 
@@ -1192,6 +1194,10 @@ HPolyhedron SampledIrisInConfigurationSpace(
                 path, RigidTransform<double>(point_to_draw));
           }
         }
+      }
+
+      if (inner_iteration + 1 == options.max_particle_batches) {
+        log()->info("IrisInConfigurationSpace: Finished drawing particles after {} batches. Last batch still had {} particles in collision.", inner_iteration+1, num_samples_in_collision);
       }
     }
 
