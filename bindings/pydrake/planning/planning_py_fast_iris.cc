@@ -18,15 +18,18 @@ void DefinePlanningFastIris(py::module m) {
     .def_readwrite("num_particles",
         &FastIrisOptions::num_particles,
         cls_doc.num_particles.doc)
+    .def_readwrite("target_uncertainty",
+        &FastIrisOptions::target_uncertainty,
+        cls_doc.target_uncertainty.doc)
+    .def_readwrite("admissible_proportion_in_collision",
+        &FastIrisOptions::admissible_proportion_in_collision,
+        cls_doc.admissible_proportion_in_collision.doc)
     .def_readwrite("containment_points",
         &FastIrisOptions::containment_points,
         cls_doc.containment_points.doc)
     .def_readwrite("force_containment_points",
         &FastIrisOptions::force_containment_points,
         cls_doc.force_containment_points.doc)
-    .def_readwrite("num_consecutive_failures", 
-        &FastIrisOptions::num_consecutive_failures,
-        cls_doc.num_consecutive_failures.doc)
     .def_readwrite("max_iterations",
         &FastIrisOptions::max_iterations,
         cls_doc.max_iterations.doc)

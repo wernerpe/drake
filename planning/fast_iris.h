@@ -28,9 +28,10 @@ struct FastIrisOptions {
   template <typename Archive>
   void Serialize(Archive* a) {
     a->Visit(DRAKE_NVP(num_particles));
+    a->Visit(DRAKE_NVP(target_uncertainty));
+    a->Visit(DRAKE_NVP(admissible_proportion_in_collision));
     a->Visit(DRAKE_NVP(containment_points));
     a->Visit(DRAKE_NVP(force_containment_points));
-    a->Visit(DRAKE_NVP(num_consecutive_failures));
     a->Visit(DRAKE_NVP(max_iterations));
     a->Visit(DRAKE_NVP(max_iterations_separating_planes));
     a->Visit(DRAKE_NVP(max_separating_planes_per_iteration));
@@ -49,6 +50,10 @@ struct FastIrisOptions {
   /** Number of particles used to estimate the closest collision*/
   int num_particles = 1e3;
 
+  double target_uncertainty = 5e-2;
+
+  double admissible_proportion_in_collision = 1e-2;
+
   /** Points that are guaranteed to be contained in the final region
    * provided their convex hull is collision free.*/
   Eigen::MatrixXd containment_points;
@@ -58,9 +63,6 @@ struct FastIrisOptions {
    */
   bool force_containment_points{false};
 
-  /** Number of consecutive failures to find a collision through sampling the
-   * polytope*/
-  int num_consecutive_failures{1};
 
   /** Number of resampling steps for the gradient updates*/
   // int num_resampling_steps = 1;

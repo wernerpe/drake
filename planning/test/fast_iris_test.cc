@@ -357,8 +357,6 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
   // Confirm that the pendulum is colliding with the wall with true kinematics:
   EXPECT_LE(z_test + l * std::cos(theta_test), r);
 
-  options.num_consecutive_failures = 1;
-
   // Turn on meshcat for addition debugging visualizations.
   // This example is truly adversarial for IRIS. After one iteration, the
   // maximum-volume inscribed ellipse is approximately centered in C-free. So
