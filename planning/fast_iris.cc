@@ -1,7 +1,6 @@
 #include "drake/planning/fast_iris.h"
 
 #include <algorithm>
-#include <iostream>
 #include <string>
 
 #include <common_robotics_utilities/parallelism.hpp>
@@ -182,6 +181,8 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   }
 
   while (true) {
+    log()->info("FastIris iteration {}", iteration);
+
     Eigen::MatrixXd ATA = current_ellipsoid_A.transpose() * current_ellipsoid_A;
     // rescaling makes max step computations more stable
     ATA = (dim / ATA.trace()) * ATA;
@@ -410,7 +411,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
               options.max_separating_planes_per_iteration > 0)
             break;
 
-          if (options.verbose) {
+          if (options.verbose && current_num_faces % 100 == 0) {
             log()->info("Face added : {} faces, iter {}", current_num_faces,
                         num_iterations_separating_planes);
           }
@@ -455,30 +456,28 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
     const double volume = current_ellipsoid.Volume();
     const double delta_volume = volume - previous_volume;
     if (delta_volume <= options.termination_threshold) {
-      std::cout << fmt::format("rel delta vol {}, thresh {}", delta_volume,
-                               options.termination_threshold)
-                << std::endl;
+      log()->info("FastIris delta vol {}, threshold {}", delta_volume,
+                  options.termination_threshold);
       break;
     }
     if (delta_volume / (previous_volume + 1e-6) <=
         options.relative_termination_threshold) {
-      std::cout << fmt::format("delta vol {}, thresh {}",
-                               delta_volume / previous_volume,
-                               options.relative_termination_threshold)
-                << std::endl;
+      log()->info("FastIris reldelta vol {}, threshold {}",
+                  delta_volume / previous_volume,
+                  options.relative_termination_threshold);
       break;
     }
     ++iteration;
     if (!(iteration < options.max_iterations)) {
-      std::cout << fmt::format("iter {}, max {}", iteration,
-                               options.max_iterations)
-                << std::endl;
+      log()->info("FastIris iter {}, iter limit {}", iteration,
+                  options.max_iterations);
       break;
     }
 
     if (options.require_sample_point_is_contained) {
       if (!(P.PointInSet(starting_ellipsoid_center))) {
-        std::cout << "initial seed point not contained" << std::endl;
+        log()->info(
+            "FastIris ERROR initial seed point not contained in domain.");
         return P_prev;
       }
     }

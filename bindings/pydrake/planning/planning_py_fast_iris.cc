@@ -67,7 +67,8 @@ void DefinePlanningFastIris(py::module m) {
         return py::str(
             "FastIrisOptions("
             "num_particles={}, "
-            "containment_points={}, "
+            "target_uncertainty={}, "
+            "admissible_proportion_in_collision={}, "
             "force_containment_points={}, "
             "num_consecutive_failures={}, "
             "max_iterations={}, "
@@ -84,8 +85,10 @@ void DefinePlanningFastIris(py::module m) {
             ")")
             .format(self.num_particles,
                 self.containment_points,
+                self.target_uncertainty,
+                self.admissible_proportion_in_collision,
                 self.force_containment_points,
-                self.num_consecutive_failures, self.max_iterations,
+                self.max_iterations,
                 self.max_iterations_separating_planes,
                 self.max_separating_planes_per_iteration,
                 self.bisection_steps,
