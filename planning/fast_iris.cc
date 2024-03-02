@@ -220,13 +220,6 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
         break;
       }
 
-      if (num_iterations_separating_planes %
-                  int(0.2 * options.max_iterations_separating_planes) ==
-              0 &&
-          options.verbose) {
-        log()->info("SeparatingPlanes iteration: {} faces: {}",
-                    num_iterations_separating_planes, current_num_faces);
-      }
 
       // debugging visualization
       // if (options.meshcat && dim <= 3) {
@@ -411,10 +404,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
               options.max_separating_planes_per_iteration > 0)
             break;
 
-          if (options.verbose && current_num_faces % 100 == 0) {
-            log()->info("Face added : {} faces, iter {}", current_num_faces,
-                        num_iterations_separating_planes);
-          }
+          
           // set used particle to redundant
           particle_is_redundant.at(i) = true;
 
@@ -447,6 +437,13 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
         particles[j] = P.UniformSample(&generator, particles[j - 1]);
       }
       ++num_iterations_separating_planes;
+      if (num_iterations_separating_planes -1 %
+                  int(0.2 * options.max_iterations_separating_planes) ==
+              0 &&
+          options.verbose) {
+        log()->info("SeparatingPlanes iteration: {} faces: {}",
+                    num_iterations_separating_planes, current_num_faces);
+      }
     }
 
     Hyperellipsoid current_ellipsoid = P.MaximumVolumeInscribedEllipsoid();
@@ -477,7 +474,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
     if (options.require_sample_point_is_contained) {
       if (!(P.PointInSet(starting_ellipsoid_center))) {
         log()->info(
-            "FastIris ERROR initial seed point not contained in domain.");
+            "FastIris ERROR initial seed point not contained in region.");
         return P_prev;
       }
     }

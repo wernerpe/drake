@@ -84,9 +84,9 @@ void DefinePlanningFastIris(py::module m) {
             "random_seed={} "
             ")")
             .format(self.num_particles,
-                self.containment_points,
                 self.target_uncertainty,
                 self.admissible_proportion_in_collision,
+                self.containment_points,
                 self.force_containment_points,
                 self.max_iterations,
                 self.max_iterations_separating_planes,
