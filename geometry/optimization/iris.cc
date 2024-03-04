@@ -961,9 +961,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
   auto diagram_context_clone = diagram_context.Clone();
   const Context<double>& context{plant.GetMyContextFromRoot(diagram_context)};
 
-  auto collision_time = std::chrono::high_resolution_clock::now() - std::chrono::high_resolution_clock::now();
-  auto optimizer_time = std::chrono::high_resolution_clock::now() - std::chrono::high_resolution_clock::now();
-
   Context<double>& mutable_context =
       plant.GetMyMutableContextFromRoot(diagram_context_clone.get());
 
@@ -1115,7 +1112,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
       // Entries are of the form (particle_index, collision_pair_index)
       std::vector<std::pair<int, int>> collision_particles;
       int num_samples_in_collision = 0;
-      auto t0 = std::chrono::high_resolution_clock::now();
       for (int i = 0; i < ssize(particles); ++i) {
         const VectorXd& current_particle = particles.at(i);
 
@@ -1157,8 +1153,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
         }
         num_samples_in_collision += this_sample_in_collision;
       }
-      auto t1 = std::chrono::high_resolution_clock::now();
-      collision_time += (t1 - t0);
 
       if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
         log()->info("IrisInConfigurationSpace: Samples passed Bernoulli test on inner iteration {}.", inner_iteration);
@@ -1166,7 +1160,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
       }
 
       // Iterate over particles found to be in collision
-      t0 = std::chrono::high_resolution_clock::now();
       for (int i = 0; i < ssize(collision_particles); ++i) {
         const int program_index = collision_particles[i].second;
         collision_programs[program_index]->UpdatePolytope(A.topRows(num_constraints), b.head(num_constraints));
@@ -1202,8 +1195,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
           }
         }
       }
-      t1 = std::chrono::high_resolution_clock::now();
-      optimizer_time += (t1 - t0);
 
       if (inner_iteration + 1 == options.max_particle_batches) {
         log()->info("IrisInConfigurationSpace: Finished drawing particles after {} batches. Last batch still had {} particles in collision.", inner_iteration+1, num_samples_in_collision);
@@ -1249,14 +1240,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
     log()->info(
         "SamplingIris execution time : {} ms",
         std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
-            .count());
-    log()->info(
-        "Collision checking time : {} ms",
-        std::chrono::duration_cast<std::chrono::milliseconds>(collision_time)
-            .count());
-    log()->info(
-        "Optimizer time : {} ms",
-        std::chrono::duration_cast<std::chrono::milliseconds>(optimizer_time)
             .count());
   }
   return P;
