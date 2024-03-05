@@ -321,6 +321,29 @@ TEST_F(MujocoParserTest, GeometryTypes) {
   CheckShape("box_from_sub", "Box");
 }
 
+// Confirm that multiple instances of the same geometry defaults get unique
+// names.
+TEST_F(MujocoParserTest, UniqueGeometryNames) {
+  std::string xml = R"""(
+<mujoco model="test">
+  <default class="default_box">
+    <geom type="box" size="0.1 0.2 0.3"/>
+  </default>
+  <worldbody>
+    <geom class="default_box"/>
+    <geom class="default_box"/>
+  </worldbody>
+</mujoco>
+)""";
+
+  AddModelFromString(xml, "test");
+  const SceneGraphInspector<double>& inspector = scene_graph_.model_inspector();
+  EXPECT_NO_THROW(inspector.GetGeometryIdByName(
+      inspector.world_frame_id(), Role::kProximity, "geom0"));
+  EXPECT_NO_THROW(inspector.GetGeometryIdByName(
+      inspector.world_frame_id(), Role::kProximity, "geom1"));
+}
+
 TEST_F(MujocoParserTest, UnrecognizedGeometryTypes) {
   std::string xml = R"""(
 <mujoco model="test">
@@ -1136,7 +1159,7 @@ TEST_F(MujocoParserTest, Joint) {
 
   const BallRpyJoint<double>& ball_joint =
       plant_.GetJointByName<BallRpyJoint>("ball");
-  EXPECT_EQ(ball_joint.damping(), 0.1);
+  EXPECT_EQ(ball_joint.default_damping(), 0.1);
   EXPECT_TRUE(ball_joint.frame_on_child()
                   .CalcPoseInBodyFrame(*context)
                   .IsNearlyEqualTo(RigidTransformd(pos), 1e-14));
@@ -1146,7 +1169,7 @@ TEST_F(MujocoParserTest, Joint) {
 
   const PrismaticJoint<double>& slide_joint =
       plant_.GetJointByName<PrismaticJoint>("slide");
-  EXPECT_EQ(slide_joint.damping(), 0.2);
+  EXPECT_EQ(slide_joint.default_damping(), 0.2);
   EXPECT_TRUE(slide_joint.frame_on_child()
                   .CalcPoseInBodyFrame(*context)
                   .IsNearlyEqualTo(RigidTransformd(pos), 1e-14));
@@ -1162,7 +1185,7 @@ TEST_F(MujocoParserTest, Joint) {
 
   const RevoluteJoint<double>& hinge_joint =
       plant_.GetJointByName<RevoluteJoint>("hinge");
-  EXPECT_EQ(hinge_joint.damping(), 0.3);
+  EXPECT_EQ(hinge_joint.default_damping(), 0.3);
   EXPECT_TRUE(hinge_joint.frame_on_child()
                   .CalcPoseInBodyFrame(*context)
                   .IsNearlyEqualTo(RigidTransformd(pos), 1e-14));
@@ -1179,7 +1202,7 @@ TEST_F(MujocoParserTest, Joint) {
 
   const RevoluteJoint<double>& hinge_w_joint_defaults_joint =
       plant_.GetJointByName<RevoluteJoint>("hinge_w_joint_defaults");
-  EXPECT_EQ(hinge_w_joint_defaults_joint.damping(), 0.24);
+  EXPECT_EQ(hinge_w_joint_defaults_joint.default_damping(), 0.24);
   EXPECT_TRUE(
       hinge_w_joint_defaults_joint.frame_on_child()
           .CalcPoseInBodyFrame(*context)
@@ -1198,7 +1221,7 @@ TEST_F(MujocoParserTest, Joint) {
 
   const RevoluteJoint<double>& default_joint =
       plant_.GetJointByName<RevoluteJoint>("default");
-  EXPECT_EQ(default_joint.damping(), 0.4);
+  EXPECT_EQ(default_joint.default_damping(), 0.4);
   EXPECT_TRUE(default_joint.frame_on_child()
                   .CalcPoseInBodyFrame(*context)
                   .IsNearlyIdentity(1e-14));
@@ -1216,14 +1239,14 @@ TEST_F(MujocoParserTest, Joint) {
 
   const RevoluteJoint<double>& hinge1_joint =
       plant_.GetJointByName<RevoluteJoint>("hinge1");
-  EXPECT_EQ(hinge1_joint.damping(), 0.5);
+  EXPECT_EQ(hinge1_joint.default_damping(), 0.5);
   EXPECT_TRUE(CompareMatrices(hinge1_joint.revolute_axis(), Vector3d{1, 0, 0}));
   EXPECT_TRUE(hinge1_joint.frame_on_parent()
                   .CalcPoseInBodyFrame(*context)
                   .IsNearlyEqualTo(RigidTransformd(pos), 1e-14));
   const RevoluteJoint<double>& hinge2_joint =
       plant_.GetJointByName<RevoluteJoint>("hinge2");
-  EXPECT_EQ(hinge2_joint.damping(), 0.6);
+  EXPECT_EQ(hinge2_joint.default_damping(), 0.6);
   EXPECT_TRUE(CompareMatrices(hinge2_joint.revolute_axis(), Vector3d{0, 1, 0}));
   EXPECT_TRUE(hinge2_joint.frame_on_child()
                   .CalcPoseInBodyFrame(*context)
