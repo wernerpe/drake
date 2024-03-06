@@ -1110,7 +1110,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
       // Build list of particles that are in collision, together with their collision pairs
       // Entries are of the form (particle_index, collision_pair_index)
-      std::vector<std::pair<int, int>> collision_particles;
+      std::vector<std::tuple<int, int, double>> collision_particles;
       int num_samples_in_collision = 0;
       for (int i = 0; i < ssize(particles); ++i) {
         const VectorXd& current_particle = particles.at(i);
@@ -1137,7 +1137,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
             // // Compute the midpoint of the two witness points
             // const auto p_ACc = (p_ACa + p_ACb) / 2
             // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
-            collision_particles.emplace_back(i, j);
+            collision_particles.emplace_back(i, j, signed_distance_pair.distance);
             this_sample_in_collision = true;
           // } else {
           //   if (do_debugging_visualization) {
@@ -1154,6 +1154,11 @@ HPolyhedron SampledIrisInConfigurationSpace(
         num_samples_in_collision += this_sample_in_collision;
       }
 
+      // Sort collision particles based on distance
+      std::sort(begin(collision_particles), end(collision_particles), [](auto const &t1, auto const &t2) {
+        return std::get<2>(t1) < std::get<2>(t2); // or use a custom compare function
+      });
+
       if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
         log()->info("IrisInConfigurationSpace: Samples passed Bernoulli test on inner iteration {}.", inner_iteration);
         break;
@@ -1161,9 +1166,9 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
       // Iterate over particles found to be in collision
       for (int i = 0; i < ssize(collision_particles); ++i) {
-        const int program_index = collision_particles[i].second;
+        const int program_index = std::get<1>(collision_particles[i]);
         collision_programs[program_index]->UpdatePolytope(A.topRows(num_constraints), b.head(num_constraints));
-        bool success = collision_programs[program_index]->Solve(*solver, particles.at(collision_particles[i].first), &closest);
+        bool success = collision_programs[program_index]->Solve(*solver, particles.at(std::get<0>(collision_particles[i])), &closest);
         if (success) {
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
