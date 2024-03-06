@@ -34,7 +34,7 @@ const double kInf = std::numeric_limits<double>::infinity();
 
 // Helper method for testing FastIris from a urdf string.
 HPolyhedron FastIrisFromUrdf(const std::string urdf,
-                             const Eigen::Ref<const Eigen::VectorXd>& sample,
+                             const Hyperellipsoid& starting_ellipsoid,
                              const FastIrisOptions& options) {
   CollisionCheckerParams params;
   RobotDiagramBuilder<double> builder(0.0);
@@ -50,8 +50,6 @@ HPolyhedron FastIrisFromUrdf(const std::string urdf,
   params.model = builder.Build();
   params.edge_step_size = 0.01;
 
-  Hyperellipsoid starting_ellipsoid =
-      Hyperellipsoid::MakeHypersphere(1e-2, sample);
   HPolyhedron domain = HPolyhedron::MakeBox(
       plant_ptr->GetPositionLowerLimits(), plant_ptr->GetPositionUpperLimits());
 
@@ -80,8 +78,11 @@ GTEST_TEST(FastIrisTest, JointLimits) {
 )";
 
   const Vector1d sample = Vector1d::Zero();
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, sample);
   FastIrisOptions options;
-  HPolyhedron region = FastIrisFromUrdf(limits_urdf, sample, options);
+  HPolyhedron region =
+      FastIrisFromUrdf(limits_urdf, starting_ellipsoid, options);
 
   EXPECT_EQ(region.ambient_dimension(), 1);
 
@@ -149,7 +150,10 @@ GTEST_TEST(FastIrisTest, DoublePendulum) {
   meshcat->Delete("face_pt");
   FastIrisOptions options;
   options.meshcat = meshcat;
-  HPolyhedron region = FastIrisFromUrdf(double_pendulum_urdf, sample, options);
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, sample);
+  HPolyhedron region =
+      FastIrisFromUrdf(double_pendulum_urdf, starting_ellipsoid, options);
 
   EXPECT_EQ(region.ambient_dimension(), 2);
   // Confirm that we've found a substantial region.
@@ -242,7 +246,10 @@ GTEST_TEST(FastIrisTest, BlockOnGround) {
   meshcat->Delete("face_pt");
   FastIrisOptions options;
   options.meshcat = meshcat;
-  HPolyhedron region = FastIrisFromUrdf(block_urdf, sample, options);
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, sample);
+  HPolyhedron region =
+      FastIrisFromUrdf(block_urdf, starting_ellipsoid, options);
 
   EXPECT_EQ(region.ambient_dimension(), 2);
   // Confirm that we've found a substantial region.
@@ -366,8 +373,11 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
   // away from that corner. Open the meshcat visualization to step through the
   // details!
   options.meshcat = meshcat;
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, sample);
   // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  HPolyhedron region = FastIrisFromUrdf(convex_urdf, sample, options);
+  HPolyhedron region =
+      FastIrisFromUrdf(convex_urdf, starting_ellipsoid, options);
   // TODO(russt): Expecting the test point to be outside the verified region is
   // too strong of a requirement right now. If we can improve the algorithm then
   // we should make this EXPECT_FALSE.
@@ -390,6 +400,143 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
     meshcat->SetObject("Test point", Sphere(0.03), Rgba(1, 0, 0));
     meshcat->SetTransform("Test point", math::RigidTransform(Eigen::Vector3d(
                                             z_test, theta_test, 0)));
+
+    MaybePauseForUser();
+  }
+}
+/* A movable sphere with fixed boxes in all corners.
+┌───────────────┐
+│┌────┐   ┌────┐│
+││    │   │    ││
+│└────┘   └────┘│
+│       o       │
+│┌────┐   ┌────┐│
+││    │   │    ││
+│└────┘   └────┘│
+└───────────────┘ */
+const std::string boxes_in_corners_urdf = fmt::format(R"(
+<robot name="boxes">
+  <link name="fixed">
+    <collision name="top_left">
+      <origin rpy="0 0 0" xyz="-1 1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+    <collision name="top_right">
+      <origin rpy="0 0 0" xyz="1 1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+    <collision name="bottom_left">
+      <origin rpy="0 0 0" xyz="-1 -1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+    <collision name="bottom_right">
+      <origin rpy="0 0 0" xyz="1 -1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+  </link>
+  <joint name="fixed_link_weld" type="fixed">
+    <parent link="world"/>
+    <child link="fixed"/>
+  </joint>
+  <link name="movable">
+    <collision name="sphere">
+      <geometry><sphere radius="0.01"/></geometry>
+    </collision>
+  </link>
+  <link name="for_joint"/>
+  <joint name="x" type="prismatic">
+    <axis xyz="1 0 0"/>
+    <limit lower="-2" upper="2"/>
+    <parent link="world"/>
+    <child link="for_joint"/>
+  </joint>
+  <joint name="y" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <limit lower="-2" upper="2"/>
+    <parent link="for_joint"/>
+    <child link="movable"/>
+  </joint>
+</robot>
+)");
+GTEST_TEST(FastIrisTest, ForceContainmentPointsTest) {
+  std::shared_ptr<Meshcat> meshcat;
+  meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Delete("face_pt");
+  meshcat->Delete("True C_free");
+  meshcat->Delete("Test point");
+  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
+                           -3.25, 3.25, -3.25, 3.25);
+  meshcat->SetProperty("/Grid", "visible", true);
+  // Draw the true cspace.
+  Eigen::Matrix3Xd env_points(3, 5);
+  // clang-format off
+        env_points << -2, 2,  2, -2, -2,
+                        2, 2, -2, -2,  2,
+                        0, 0,  0,  0,  0;
+  // clang-format on
+  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
+  Eigen::Matrix3Xd centers(3, 4);
+  double c = 1.0;
+  // clang-format off
+        centers << -c, c,  c, -c,
+                    c, c, -c, -c,
+                    0, 0,  0,  0;
+  // clang-format on
+  Eigen::Matrix3Xd obs_points(3, 5);
+  // approximating offset due to sphere radius with fixed offset
+  double s = 0.7 + 0.01;
+  // clang-format off
+        obs_points << -s, s,  s, -s, -s,
+                        s, s, -s, -s, s,
+                        s, 0,  0,  0,  0;
+  // clang-format on
+  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
+    Eigen::Matrix3Xd obstacle = obs_points;
+    obstacle.colwise() += centers.col(obstacle_idx);
+    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
+                     8.0, Rgba(0, 0, 0));
+  }
+  const Vector2d sample{0.0, 0.0};
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, sample);
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  Eigen::Matrix3Xd cont_points(3, 4);
+  double xw, yw;
+  xw = 0.4;
+  yw = 0.28;
+  // clang-format off
+        cont_points << -xw, xw,  xw, -xw,
+                        yw, yw, -yw, -yw,
+                        0,  0,  0,  0;
+  // clang-format on
+  FastIrisOptions options;
+  options.meshcat = meshcat;
+  options.configuration_space_margin = 0.04;
+  options.containment_points = cont_points.topRows(2);
+  options.force_containment_points = true;
+  HPolyhedron region =
+      FastIrisFromUrdf(boxes_in_corners_urdf, starting_ellipsoid, options);
+  EXPECT_EQ(region.ambient_dimension(), 2);
+  {
+    for (int pt_to_draw = 0; pt_to_draw < cont_points.cols(); ++pt_to_draw) {
+      Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
+      std::string path = fmt::format("cont_pt/{}", pt_to_draw);
+      options.meshcat->SetObject(path, Sphere(0.04),
+                                 geometry::Rgba(1, 0, 0.0, 1.0));
+      point_to_draw.head(2) = cont_points.col(pt_to_draw);
+      options.meshcat->SetTransform(path,
+                                    math::RigidTransform<double>(point_to_draw));
+      EXPECT_TRUE(region.PointInSet(point_to_draw.head(2)));
+    }
+    Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 20);
+
+    VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
+    points.resize(3, vregion.vertices().cols() + 1);
+    points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
+    points.topRightCorner(2, 1) = vregion.vertices().col(0);
+    points.bottomRows<1>().setZero();
+    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
 
     MaybePauseForUser();
   }

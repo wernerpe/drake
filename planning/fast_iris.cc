@@ -1,10 +1,12 @@
 #include "drake/planning/fast_iris.h"
 
 #include <algorithm>
+#include <iostream>
 #include <string>
 
 #include <common_robotics_utilities/parallelism.hpp>
 
+#include "drake/common/fmt_eigen.h"
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
@@ -44,24 +46,33 @@ index_t argsort(values_t const& values) {
 
 Eigen::VectorXd compute_face_tangent_to_dist_cvxh(
     const Eigen::Ref<Eigen::VectorXd>& nearest_particle,
-    // const Eigen::Ref<Eigen::MatrixXd>& ATA,
-    // const Eigen::Ref<Eigen::VectorXd>& current_ellipsoid_center,
-    const VPolytope& cvxh_vpoly) {
-  MathematicalProgram prog;
-  int dim = cvxh_vpoly.ambient_dimension();
-  std::vector<solvers::SolverId> preferred_solvers{
-      solvers::MosekSolver::id(), solvers::ClarabelSolver::id()};
-
-  auto x = prog.NewContinuousVariables(dim);
-  cvxh_vpoly.AddPointInSetConstraints(&prog, x);
-  Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(dim, dim);
-  prog.AddQuadraticErrorCost(identity, nearest_particle, x);
-  auto solver = solvers::MakeFirstAvailableSolver(preferred_solvers);
-  solvers::MathematicalProgramResult result;
-  solver->Solve(prog, std::nullopt, std::nullopt, &result);
-  DRAKE_THROW_UNLESS(result.is_success());
-  Eigen::VectorXd a_face = result.GetSolution(x) - nearest_particle;
-  return a_face;
+    const Eigen::Ref<Eigen::MatrixXd>& ATA,
+    const Eigen::Ref<Eigen::VectorXd>& current_ellipsoid_center,
+    const Eigen::MatrixXd* containment_points, const VPolytope& cvxh_vpoly) {
+  Eigen::VectorXd a_face = ATA * (nearest_particle - current_ellipsoid_center);
+  double b_face = a_face.transpose() * nearest_particle;
+  double worst_case =
+      (a_face.transpose() * *containment_points).maxCoeff() - b_face;
+  // Return standard iris face if either the face does not chopp off any
+  // containment points or collision is in convex hull.
+  if (cvxh_vpoly.PointInSet(nearest_particle) || worst_case <= 0) {
+    return a_face;
+  } else {
+    MathematicalProgram prog;
+    int dim = cvxh_vpoly.ambient_dimension();
+    std::vector<solvers::SolverId> preferred_solvers{
+        solvers::MosekSolver::id(), solvers::ClarabelSolver::id()};
+    auto x = prog.NewContinuousVariables(dim);
+    cvxh_vpoly.AddPointInSetConstraints(&prog, x);
+    Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(dim, dim);
+    prog.AddQuadraticErrorCost(identity, nearest_particle, x);
+    auto solver = solvers::MakeFirstAvailableSolver(preferred_solvers);
+    solvers::MathematicalProgramResult result;
+    solver->Solve(prog, std::nullopt, std::nullopt, &result);
+    DRAKE_THROW_UNLESS(result.is_success());
+    a_face = nearest_particle - result.GetSolution(x);
+    return a_face;
+  }
 }
 
 // Winitzki, S., 2008. A handy approximation for the error function and its
@@ -126,6 +137,24 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
     DRAKE_THROW_UNLESS(domain.ambient_dimension() ==
                        options.containment_points.rows());
     cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
+    
+    std::vector<Eigen::VectorXd> cont_vec;
+    cont_vec.reserve((options.containment_points.cols()));
+
+    for (int col = 0; col < options.containment_points.cols(); ++col) {
+        Eigen::VectorXd conf = options.containment_points.col(col);
+        cont_vec.emplace_back(conf);
+    }
+
+    std::vector<uint8_t> containment_point_col_free =
+        checker.CheckConfigsCollisionFree(cont_vec,
+                                          parallelism);
+    for (const auto col_free : containment_point_col_free) {
+      if (!col_free) {
+        throw std::runtime_error(
+            "One or more containment points are in collision!");
+      }
+    }
   }
   // For debugging visualization.
   Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
@@ -194,6 +223,10 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
     // Separating Planes Step
     int num_iterations_separating_planes = 0;
 
+    // track maximum relaxation of cspace margin if containment of points is
+    // requested
+    double max_relaxation = 0;
+
     while (num_iterations_separating_planes <
            options.max_iterations_separating_planes) {
       particles.at(0) = P.UniformSample(&generator, current_ellipsoid_center);
@@ -219,7 +252,6 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           bernoulli_threshold) {
         break;
       }
-
 
       // debugging visualization
       // if (options.meshcat && dim <= 3) {
@@ -361,11 +393,12 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           Eigen::VectorXd a_face;
           if (options.force_containment_points &&
               options.containment_points.size()) {
-            a_face =
-                compute_face_tangent_to_dist_cvxh(nearest_particle,
-                                                  // ATA,
-                                                  // current_ellipsoid_center,
-                                                  cvxh_vpoly);
+            a_face = compute_face_tangent_to_dist_cvxh(
+                nearest_particle, ATA, current_ellipsoid_center,
+                &options.containment_points, cvxh_vpoly);
+            // std::cout<<fmt::format("qp \n{} old \n{} old ",fmt_eigen(a_face),
+            // fmt_eigen(a_face_test))<< std::endl;
+
           } else {
             a_face = ATA * (nearest_particle - current_ellipsoid_center);
           }
@@ -373,6 +406,17 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           a_face.normalize();
           double b_face = a_face.transpose() * nearest_particle -
                           options.configuration_space_margin;
+
+          // relax cspace margin to contain points
+          if (options.force_containment_points) {
+            Eigen::VectorXd result =
+                a_face.transpose() * options.containment_points;
+            double relaxation = result.maxCoeff() - b_face;
+            if (relaxation > 0) {
+              b_face += relaxation;
+              if (max_relaxation < relaxation) max_relaxation = relaxation;
+            }
+          }
           A.row(current_num_faces) = a_face.transpose();
           b(current_num_faces) = b_face;
           ++current_num_faces;
@@ -404,7 +448,6 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
               options.max_separating_planes_per_iteration > 0)
             break;
 
-          
           // set used particle to redundant
           particle_is_redundant.at(i) = true;
 
@@ -430,15 +473,20 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
 
       // update current polyhedron
       P = HPolyhedron(A.topRows(current_num_faces), b.head(current_num_faces));
-
+      if (max_relaxation > 0) {
+        log()->info(
+            fmt::format("FastIris Warning relaxing cspace margin by {:03} to "
+                        "ensure point containment",
+                        max_relaxation));
+      }
       // resampling particles in current polyhedron for next iteration
       particles[0] = P.UniformSample(&generator);
       for (int j = 1; j < options.num_particles; ++j) {
         particles[j] = P.UniformSample(&generator, particles[j - 1]);
       }
       ++num_iterations_separating_planes;
-      if (num_iterations_separating_planes -1 %
-                  int(0.2 * options.max_iterations_separating_planes) ==
+      if (num_iterations_separating_planes -
+                  1 % int(0.2 * options.max_iterations_separating_planes) ==
               0 &&
           options.verbose) {
         log()->info("SeparatingPlanes iteration: {} faces: {}",
