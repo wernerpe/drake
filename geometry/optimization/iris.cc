@@ -1,6 +1,7 @@
 #include "drake/geometry/optimization/iris.h"
 
 #include <algorithm>
+#include <iostream>
 #include <limits>
 #include <optional>
 #include <tuple>
@@ -8,7 +9,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <iostream>
 
 #include "drake/common/symbolic/expression.h"
 #include "drake/geometry/optimization/affine_ball.h"
@@ -22,6 +22,9 @@
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/ipopt_solver.h"
 #include "drake/solvers/snopt_solver.h"
+#include "drake/solvers/mosek_solver.h"
+#include "drake/solvers/clarabel_solver.h"
+
 
 namespace drake {
 namespace geometry {
@@ -404,6 +407,62 @@ void AddTangentToPolytope(
       (E.A().transpose() * E.A() * (point - E.center())).normalized();
   (*b)[*num_constraints] =
       A->row(*num_constraints) * point - configuration_space_margin;
+  if (A->row(*num_constraints) * E.center() > (*b)[*num_constraints]) {
+    throw std::logic_error(
+        "The current center of the IRIS region is within "
+        "options.configuration_space_margin of being infeasible.  Check your "
+        "sample point and/or any additional constraints you've passed in via "
+        "the options. The configuration space surrounding the sample point "
+        "must have an interior.");
+  }
+  *num_constraints += 1;
+}
+void AddTangentToPolytopeAndRotateIfNeeded(
+    const Hyperellipsoid& E, const Eigen::Ref<const Eigen::VectorXd>& point,
+    const VPolytope& cvxh_vpoly, double configuration_space_margin,
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>* A,
+    Eigen::VectorXd* b, int* num_constraints, float* max_relaxation) {
+  Eigen::VectorXd a_face = E.A().transpose() * E.A() * (point - E.center());
+  double b_face = a_face.transpose() * point;
+  double worst_case =
+      (a_face.transpose() * cvxh_vpoly.vertices()).maxCoeff() - b_face;
+  // Return standard iris face if either the face does not chopp off any
+  // containment points or collision is in convex hull, otherwise compute
+  // rotated face.
+  if (!cvxh_vpoly.PointInSet(point) && worst_case >= 0) {
+    MathematicalProgram prog;
+    int dim = cvxh_vpoly.ambient_dimension();
+    std::vector<solvers::SolverId> preferred_solvers{
+        solvers::MosekSolver::id(), solvers::ClarabelSolver::id()};
+    auto x = prog.NewContinuousVariables(dim);
+    cvxh_vpoly.AddPointInSetConstraints(&prog, x);
+    Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(dim, dim);
+    prog.AddQuadraticErrorCost(identity, point, x);
+    auto solver = solvers::MakeFirstAvailableSolver(preferred_solvers);
+    solvers::MathematicalProgramResult result;
+    solver->Solve(prog, std::nullopt, std::nullopt, &result);
+    DRAKE_THROW_UNLESS(result.is_success());
+    a_face = point - result.GetSolution(x);
+
+    a_face.normalize();
+    b_face = a_face.transpose() * point - configuration_space_margin;
+
+    // relax cspace margin to contain points
+    Eigen::VectorXd dot_prod = a_face.transpose() * cvxh_vpoly.vertices();
+    double relaxation = dot_prod.maxCoeff() - b_face;
+    if (relaxation > 0) {
+      b_face += relaxation;
+      if (*max_relaxation < relaxation) *max_relaxation = relaxation;
+    }
+  }
+  while (*num_constraints >= A->rows()) {
+    // Increase pre-allocated polytope size.
+    A->conservativeResize(A->rows() * 2, A->cols());
+    b->conservativeResize(b->rows() * 2);
+  }
+
+  A->row(*num_constraints) = a_face;
+  (*b)[*num_constraints] = b_face;
   if (A->row(*num_constraints) * E.center() > (*b)[*num_constraints]) {
     throw std::logic_error(
         "The current center of the IRIS region is within "
@@ -926,33 +985,35 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
   return P;
 }
 
-namespace{
-//Winitzki, S., 2008. A handy approximation for the error function and its inverse. A lecture note obtained through private communication.
-double erfc_inv(double p){
-   double x = p-1.;
-   double tt1, tt2, lnx, sgn;
-   sgn = (x < 0) ? 1.0 : -1.0;
-   x = (1 - x)*(1 + x);        // x = 1 - x*x;
-   lnx = std::log(x);
-   double a = 0.15449436008930206298828125;
-   tt1 = 2./(M_PI*a) + 0.5 * lnx;
-   tt2 = 1./(a) * lnx;
-   return sgn*std::sqrt(-tt1 + std::sqrt(tt1*tt1 - tt2)) ;
+namespace {
+// Winitzki, S., 2008. A handy approximation for the error function and its
+// inverse. A lecture note obtained through private communication.
+double erfc_inv(double p) {
+  double x = p - 1.;
+  double tt1, tt2, lnx, sgn;
+  sgn = (x < 0) ? 1.0 : -1.0;
+  x = (1 - x) * (1 + x);  // x = 1 - x*x;
+  lnx = std::log(x);
+  double a = 0.15449436008930206298828125;
+  tt1 = 2. / (M_PI * a) + 0.5 * lnx;
+  tt2 = 1. / (a)*lnx;
+  return sgn * std::sqrt(-tt1 + std::sqrt(tt1 * tt1 - tt2));
 }
 
-//inverse normal probability mass function required to compute the acceptance threshold for the bernoulli test
+// inverse normal probability mass function required to compute the acceptance
+// threshold for the bernoulli test
 double inverse_cdf_normal(double probability, double mean, double std_dev) {
-    if (probability < 0 || probability > 1) {
-        throw std::invalid_argument("Probability must be between 0 and 1");
-    }
-    // Compute the argument for erfc_inv based on the probability
-    double arg = 2 - 2 * probability;
-    // Use erfc_inv to compute the inverse CDF
-    double result = mean + std_dev * std::sqrt(2) * erfc_inv(arg);
-    return result;
+  if (probability < 0 || probability > 1) {
+    throw std::invalid_argument("Probability must be between 0 and 1");
+  }
+  // Compute the argument for erfc_inv based on the probability
+  double arg = 2 - 2 * probability;
+  // Use erfc_inv to compute the inverse CDF
+  double result = mean + std_dev * std::sqrt(2) * erfc_inv(arg);
+  return result;
 }
 
-}
+}  // namespace
 HPolyhedron SampledIrisInConfigurationSpace(
     const multibody::MultibodyPlant<double>& plant,
     const systems::Context<double>& diagram_context,
@@ -1007,8 +1068,10 @@ HPolyhedron SampledIrisInConfigurationSpace(
     frames.emplace(geom_id, &plant.GetBodyFromFrameId(frame_id)->body_frame());
   }
 
-  std::set<std::pair<GeometryId, GeometryId>> pairs_set = inspector.GetCollisionCandidates();
-  std::vector<std::pair<GeometryId, GeometryId>> pairs(pairs_set.begin(), pairs_set.end());
+  std::set<std::pair<GeometryId, GeometryId>> pairs_set =
+      inspector.GetCollisionCandidates();
+  std::vector<std::pair<GeometryId, GeometryId>> pairs(pairs_set.begin(),
+                                                       pairs_set.end());
   const int n = ssize(pairs);
 
   // On each iteration, we will build the collision-free polytope represented as
@@ -1023,17 +1086,18 @@ HPolyhedron SampledIrisInConfigurationSpace(
   int num_constraints = num_initial_constraints;
 
   // Set up collision programs
-  std::vector<copyable_unique_ptr<internal::ClosestCollisionProgram>> collision_programs;
+  std::vector<copyable_unique_ptr<internal::ClosestCollisionProgram>>
+      collision_programs;
   auto same_point_constraint =
       std::make_shared<internal::SamePointConstraint>(&plant, context);
   for (int i = 0; i < n; ++i) {
     auto geomA = std::get<0>(pairs[i]);
     auto geomB = std::get<1>(pairs[i]);
-    collision_programs.push_back(copyable_unique_ptr(std::make_unique<internal::ClosestCollisionProgram>(
-        same_point_constraint, *frames.at(geomA),
-        *frames.at(geomB), *sets.at(geomA),
-        *sets.at(geomB), E, A.topRows(num_constraints),
-        b.head(num_constraints))));
+    collision_programs.push_back(
+        copyable_unique_ptr(std::make_unique<internal::ClosestCollisionProgram>(
+            same_point_constraint, *frames.at(geomA), *frames.at(geomB),
+            *sets.at(geomA), *sets.at(geomB), E, A.topRows(num_constraints),
+            b.head(num_constraints))));
   }
 
   DRAKE_THROW_UNLESS(P.PointInSet(seed, 1e-12));
@@ -1047,6 +1111,34 @@ HPolyhedron SampledIrisInConfigurationSpace(
       {solvers::SnoptSolver::id(), solvers::IpoptSolver::id()});
 
   VectorXd guess = seed;
+
+  VPolytope cvxh_vpoly(options.containment_points);
+  float max_cspace_relaxation = 0;
+
+  if (options.force_containment_points) {
+    DRAKE_THROW_UNLESS(options.containment_points.rows() == nq);
+    cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
+
+    for (int col = 0; col < options.containment_points.cols(); ++col) {
+      Eigen::VectorXd conf = options.containment_points.col(col);
+      plant.SetPositions(&mutable_context, conf);
+      auto mutable_query_object =
+          plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
+              mutable_context);
+
+      for (int j = 0; j < ssize(pairs); ++j) {
+        const auto& geomA = std::get<0>(pairs[j]);
+        const auto& geomB = std::get<1>(pairs[j]);
+        const auto signed_distance_pair =
+            mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA,
+                                                                        geomB);
+        if (signed_distance_pair.distance < 0.0) {
+          throw std::runtime_error(
+              "One or more containment points are in collision!");
+        }
+      }
+    }
+  }
 
   // For debugging visualization.
   Vector3d point_to_draw = Vector3d::Zero();
@@ -1072,22 +1164,33 @@ HPolyhedron SampledIrisInConfigurationSpace(
   for (int i = 0; i < options.particle_batch_size; ++i) {
     particles.emplace_back(Eigen::VectorXd::Zero(nq));
   }
- 
-  //compute termination condition for separating planes step
-  double confidence = 1 - options.target_uncertainty;
-  double sigma = std::sqrt(options.particle_batch_size * (1-options.target_proportion_in_collision)*options.target_proportion_in_collision);
-  double mean = options.particle_batch_size * (1.0-options.target_proportion_in_collision);
-  double threshold = inverse_cdf_normal(confidence, mean, sigma);
-  //use conservative rounding
-  int bernoulli_threshold = std::min(int(threshold+0.5), options.particle_batch_size);
 
-  if(options.verbose){
-    log()->info("SamplingIris requires {}/{} particles to be collision free ", bernoulli_threshold, options.particle_batch_size);
+  // compute termination condition for separating planes step
+  double confidence = 1 - options.target_uncertainty;
+  double sigma = std::sqrt(options.particle_batch_size *
+                           (1 - options.target_proportion_in_collision) *
+                           options.target_proportion_in_collision);
+  double mean = options.particle_batch_size *
+                (1.0 - options.target_proportion_in_collision);
+  double threshold = inverse_cdf_normal(confidence, mean, sigma);
+  // use conservative rounding
+  int bernoulli_threshold =
+      std::min(int(threshold + 0.5), options.particle_batch_size);
+
+  if (options.verbose) {
+    log()->info("SamplingIris requires {}/{} particles to be collision free ",
+                bernoulli_threshold, options.particle_batch_size);
   }
-  if (bernoulli_threshold == options.particle_batch_size){
-    //evaluate cdf at bernoulli threshold to estimate actual probabilty of errors of the 1st kind
-    double cdf = 0.5*(1+std::erf((bernoulli_threshold- mean)/(sigma*std::sqrt(2))));
-    log()->info("Warning requested uncertainty is {} but the minimum achieveable uncertainty is ~ {}, a larger particle_batch_size is required", options.target_uncertainty, 1- cdf);        
+  if (bernoulli_threshold == options.particle_batch_size) {
+    // evaluate cdf at bernoulli threshold to estimate actual probabilty of
+    // errors of the 1st kind
+    double cdf =
+        0.5 *
+        (1 + std::erf((bernoulli_threshold - mean) / (sigma * std::sqrt(2))));
+    log()->info(
+        "Warning requested uncertainty is {} but the minimum achieveable "
+        "uncertainty is ~ {}, a larger particle_batch_size is required",
+        options.target_uncertainty, 1 - cdf);
   }
   bool seed_point_made_infeasible = false;
   while (true) {
@@ -1096,7 +1199,8 @@ HPolyhedron SampledIrisInConfigurationSpace(
     DRAKE_ASSERT(best_volume > 0);
 
     // Find separating hyperplanes
-    for (int inner_iteration = 0; inner_iteration < options.max_particle_batches; ++inner_iteration) {
+    for (int inner_iteration = 0;
+         inner_iteration < options.max_particle_batches; ++inner_iteration) {
       if (seed_point_made_infeasible) {
         break;
       }
@@ -1108,8 +1212,9 @@ HPolyhedron SampledIrisInConfigurationSpace(
         particles.at(i) = P.UniformSample(&generator, particles.at(i - 1));
       }
 
-      // Build list of particles that are in collision, together with their collision pairs
-      // Entries are of the form (particle_index, collision_pair_index)
+      // Build list of particles that are in collision, together with their
+      // collision pairs Entries are of the form (particle_index,
+      // collision_pair_index)
       std::vector<std::tuple<int, int, double>> collision_particles;
       int num_samples_in_collision = 0;
       for (int i = 0; i < ssize(particles); ++i) {
@@ -1117,73 +1222,97 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
         plant.SetPositions(&mutable_context, current_particle);
         auto mutable_query_object =
-                plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
-                    mutable_context);
+            plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
+                mutable_context);
 
         bool this_sample_in_collision = false;
-        for (int j = 0; j < ssize(pairs); ++j){
+        for (int j = 0; j < ssize(pairs); ++j) {
           const auto& geomA = std::get<0>(pairs[j]);
           const auto& geomB = std::get<1>(pairs[j]);
-          const auto signed_distance_pair = mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
+          const auto signed_distance_pair =
+              mutable_query_object.ComputeSignedDistancePairClosestPoints(
+                  geomA, geomB);
           if (signed_distance_pair.distance < 0.0) {
             // // UNUSED: Machinery to compute initial guess for witness point
             // const auto p_ACa = signed_distance_pair.p_ACa;
             // const auto p_BCb = signed_distance_pair.p_BCb;
             // const auto frame_A = frames[geomA];
             // const auto frame_B = frames[geomB];
-            // const auto X_AB = plant.CalcRelativeTransform(context, frame_A, frame_B);
-            // const auto p_ACb = X_AB.multibody(p_BCb);
+            // const auto X_AB = plant.CalcRelativeTransform(context, frame_A,
+            // frame_B); const auto p_ACb = X_AB.multibody(p_BCb);
 
             // // Compute the midpoint of the two witness points
             // const auto p_ACc = (p_ACa + p_ACb) / 2
             // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
-            collision_particles.emplace_back(i, j, signed_distance_pair.distance);
+            collision_particles.emplace_back(i, j,
+                                             signed_distance_pair.distance);
             this_sample_in_collision = true;
-          // } else {
-          //   if (do_debugging_visualization) {
-          //     point_to_draw.head(nq) = current_particle;
-          //     std::string path = fmt::format("iteration{:02}/{:03}/discarding",
-          //                                    iteration, i);
-          //     options.meshcat->SetObject(path, Sphere(0.01),
-          //                                geometry::Rgba(0.5, 0.5, 0.5, 1.0));
-          //     options.meshcat->SetTransform(
-          //         path, RigidTransform<double>(point_to_draw));
-          //   }
+            // } else {
+            //   if (do_debugging_visualization) {
+            //     point_to_draw.head(nq) = current_particle;
+            //     std::string path =
+            //     fmt::format("iteration{:02}/{:03}/discarding",
+            //                                    iteration, i);
+            //     options.meshcat->SetObject(path, Sphere(0.01),
+            //                                geometry::Rgba(0.5, 0.5,
+            //                                0.5, 1.0));
+            //     options.meshcat->SetTransform(
+            //         path, RigidTransform<double>(point_to_draw));
+            //   }
           }
         }
         num_samples_in_collision += this_sample_in_collision;
       }
 
       // Sort collision particles based on distance
-      std::sort(begin(collision_particles), end(collision_particles), [](auto const &t1, auto const &t2) {
-        return std::get<2>(t1) < std::get<2>(t2); // or use a custom compare function
-      });
+      std::sort(begin(collision_particles), end(collision_particles),
+                [](auto const& t1, auto const& t2) {
+                  return std::get<2>(t1) <
+                         std::get<2>(t2);  // or use a custom compare function
+                });
 
-      if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
-        log()->info("IrisInConfigurationSpace: Samples passed Bernoulli test on inner iteration {}.", inner_iteration);
+      if (options.particle_batch_size - num_samples_in_collision >=
+          bernoulli_threshold) {
+        log()->info(
+            "IrisInConfigurationSpace: Samples passed Bernoulli test on inner "
+            "iteration {}.",
+            inner_iteration);
         break;
       }
 
       // Iterate over particles found to be in collision
       for (int i = 0; i < ssize(collision_particles); ++i) {
         const int program_index = std::get<1>(collision_particles[i]);
-        collision_programs[program_index]->UpdatePolytope(A.topRows(num_constraints), b.head(num_constraints));
-        bool success = collision_programs[program_index]->Solve(*solver, particles.at(std::get<0>(collision_particles[i])), &closest);
+        collision_programs[program_index]->UpdatePolytope(
+            A.topRows(num_constraints), b.head(num_constraints));
+        bool success = collision_programs[program_index]->Solve(
+            *solver, particles.at(std::get<0>(collision_particles[i])),
+            &closest);
         if (success) {
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
-            std::string path = fmt::format("iteration{:02}/{:03}/found",
-                                           iteration, i);
+            std::string path =
+                fmt::format("iteration{:02}/{:03}/found", iteration, i);
             options.meshcat->SetObject(path, Sphere(0.01),
                                        geometry::Rgba(0.8, 0.1, 0.8, 1.0));
             options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
-          AddTangentToPolytope(E, closest, options.configuration_space_margin,
-                               &A, &b, &num_constraints);
 
-          // Check to ensure that the seed point is not made infeasible by the new hyperplane.
-          if (options.require_sample_point_is_contained && A.row(num_constraints - 1) * seed > b(num_constraints - 1)) {
+          if (options.force_containment_points &&
+              options.containment_points.size()) {
+            AddTangentToPolytopeAndRotateIfNeeded(
+                E, closest, cvxh_vpoly, options.configuration_space_margin, &A,
+                &b, &num_constraints, &max_cspace_relaxation);
+          } else {
+            AddTangentToPolytope(E, closest, options.configuration_space_margin,
+                                 &A, &b, &num_constraints);
+          }
+
+          // Check to ensure that the seed point is not made infeasible by the
+          // new hyperplane.
+          if (options.require_sample_point_is_contained &&
+              A.row(num_constraints - 1) * seed > b(num_constraints - 1)) {
             --num_constraints;
             seed_point_made_infeasible = true;
             break;
@@ -1191,8 +1320,8 @@ HPolyhedron SampledIrisInConfigurationSpace(
         } else {
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
-            std::string path = fmt::format("iteration{:02}/{:03}/closest",
-                                           iteration, i);
+            std::string path =
+                fmt::format("iteration{:02}/{:03}/closest", iteration, i);
             options.meshcat->SetObject(path, Sphere(0.01),
                                        geometry::Rgba(0.1, 0.8, 0.8, 1.0));
             options.meshcat->SetTransform(
@@ -1202,14 +1331,29 @@ HPolyhedron SampledIrisInConfigurationSpace(
       }
 
       if (inner_iteration + 1 == options.max_particle_batches) {
-        log()->info("IrisInConfigurationSpace: Finished drawing particles after {} batches. Last batch still had {} particles in collision.", inner_iteration+1, num_samples_in_collision);
+        log()->info(
+            "IrisInConfigurationSpace: Finished drawing particles after {} "
+            "batches. Last batch still had {} particles in collision.",
+            inner_iteration + 1, num_samples_in_collision);
       }
     }
 
     P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
-    if (options.require_sample_point_is_contained && seed_point_made_infeasible) {
-      log()->info("IrisInConfigurationSpace: Terminating because the seed point is no longer contained.");
+    if (options.require_sample_point_is_contained &&
+        seed_point_made_infeasible) {
+      log()->info(
+          "SampledIrisInConfigurationSpace: Terminating because the seed point "
+          "is no "
+          "longer contained.");
       break;
+    }
+    if (max_cspace_relaxation > 0) {
+      log()->info(
+          fmt::format("SampledIrisInConfigurationSpace Warning relaxing cspace "
+                      "margin by {} to "
+                      "ensure point containment",
+                      max_cspace_relaxation));
+      max_cspace_relaxation = 0;
     }
 
     iteration++;

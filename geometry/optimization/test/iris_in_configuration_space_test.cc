@@ -1378,6 +1378,141 @@ GTEST_TEST(IrisInConfigurationSpaceTest, DoublePendulumEndEffectorConstraints) {
     MaybePauseForUser();
   }
 }
+/* A movable sphere with fixed boxes in all corners.
+┌───────────────┐
+│┌────┐   ┌────┐│
+││    │   │    ││
+│└────┘   └────┘│
+│       o       │
+│┌────┐   ┌────┐│
+││    │   │    ││
+│└────┘   └────┘│
+└───────────────┘ */
+const std::string boxes_in_corners_urdf = fmt::format(R"(
+<robot name="boxes">
+  <link name="fixed">
+    <collision name="top_left">
+      <origin rpy="0 0 0" xyz="-1 1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+    <collision name="top_right">
+      <origin rpy="0 0 0" xyz="1 1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+    <collision name="bottom_left">
+      <origin rpy="0 0 0" xyz="-1 -1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+    <collision name="bottom_right">
+      <origin rpy="0 0 0" xyz="1 -1 0"/>
+      <geometry><box size="1.4 1.4 1.4"/></geometry>
+    </collision>
+  </link>
+  <joint name="fixed_link_weld" type="fixed">
+    <parent link="world"/>
+    <child link="fixed"/>
+  </joint>
+  <link name="movable">
+    <collision name="sphere">
+      <geometry><sphere radius="0.01"/></geometry>
+    </collision>
+  </link>
+  <link name="for_joint"/>
+  <joint name="x" type="prismatic">
+    <axis xyz="1 0 0"/>
+    <limit lower="-2" upper="2"/>
+    <parent link="world"/>
+    <child link="for_joint"/>
+  </joint>
+  <joint name="y" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <limit lower="-2" upper="2"/>
+    <parent link="for_joint"/>
+    <child link="movable"/>
+  </joint>
+</robot>
+)");
+GTEST_TEST(SampledIrisInConfigurationSpaceTest, ForceContainmentPointsTest) {
+  std::shared_ptr<Meshcat> meshcat;
+  meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Delete("/drake");
+  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
+                           -3.25, 3.25, -3.25, 3.25);
+  meshcat->SetProperty("/Grid", "visible", true);
+  // Draw the true cspace.
+  Eigen::Matrix3Xd env_points(3, 5);
+  // clang-format off
+        env_points << -2, 2,  2, -2, -2,
+                        2, 2, -2, -2,  2,
+                        0, 0,  0,  0,  0;
+  // clang-format on
+  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
+  Eigen::Matrix3Xd centers(3, 4);
+  double c = 1.0;
+  // clang-format off
+        centers << -c, c,  c, -c,
+                    c, c, -c, -c,
+                    0, 0,  0,  0;
+  // clang-format on
+  Eigen::Matrix3Xd obs_points(3, 5);
+  // approximating offset due to sphere radius with fixed offset
+  double s = 0.7 + 0.01;
+  // clang-format off
+        obs_points << -s, s,  s, -s, -s,
+                        s, s, -s, -s, s,
+                        s, 0,  0,  0,  0;
+  // clang-format on
+  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
+    Eigen::Matrix3Xd obstacle = obs_points;
+    obstacle.colwise() += centers.col(obstacle_idx);
+    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
+                     8.0, Rgba(0, 0, 0));
+  }
+  const Vector2d sample{0.0, 0.0};
+
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  Eigen::Matrix3Xd cont_points(3, 4);
+  double xw, yw;
+  xw = 0.4;
+  yw = 0.28;
+  // clang-format off
+        cont_points << -xw, xw,  xw, -xw,
+                        yw, yw, -yw, -yw,
+                        0,  0,  0,  0;
+  // clang-format on
+  SampledIrisOptions options;
+  options.meshcat = meshcat;
+  options.max_alternations = 1;
+  options.configuration_space_margin = 0.04;
+  options.containment_points = cont_points.topRows(2);
+  options.force_containment_points = true;
+  HPolyhedron region =
+      SampledIrisFromUrdf(boxes_in_corners_urdf, sample, options);
+  EXPECT_EQ(region.ambient_dimension(), 2);
+  {
+    for (int pt_to_draw = 0; pt_to_draw < cont_points.cols(); ++pt_to_draw) {
+      Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
+      std::string path = fmt::format("cont_pt/{}", pt_to_draw);
+      options.meshcat->SetObject(path, Sphere(0.04),
+                                 geometry::Rgba(1, 0, 0.0, 1.0));
+      point_to_draw.head(2) = cont_points.col(pt_to_draw);
+      options.meshcat->SetTransform(path,
+                                    math::RigidTransform<double>(point_to_draw));
+      EXPECT_TRUE(region.PointInSet(point_to_draw.head(2)));
+    }
+    Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 20);
+
+    VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
+    points.resize(3, vregion.vertices().cols() + 1);
+    points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
+    points.topRightCorner(2, 1) = vregion.vertices().col(0);
+    points.bottomRows<1>().setZero();
+    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+
+    MaybePauseForUser();
+  }
+}
 
 }  // namespace
 }  // namespace optimization

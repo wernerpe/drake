@@ -317,11 +317,21 @@ struct SampledIrisOptions {
   between iterations is less that this percent of the previous best volume.
   This termination condition can be disabled by setting to a negative value. */
   double relative_termination_threshold{1e-3};  // from rdeits/iris-distro.
-
+  
   /** The only randomization in IRIS is the random sampling done to find
   counter-examples for the additional constraints using in
   IrisInConfigurationSpace. Use this option to set the initial seed. */
   int random_seed{1234};
+
+  /** Points that are guaranteed to be contained in the final region
+   * provided their convex hull is collision free.*/
+  Eigen::MatrixXd containment_points;
+
+   /** If true, sets faces tangent to the sublevelsets of dist(C), where
+   * c is the convex hull of the points passed in `containment_points`.
+   */
+  bool force_containment_points{false};
+
 
   /** Passing a meshcat instance may enable debugging visualizations; this
   currently and when the

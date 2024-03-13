@@ -45,17 +45,17 @@ index_t argsort(values_t const& values) {
 }
 
 Eigen::VectorXd compute_face_tangent_to_dist_cvxh(
-    const Eigen::Ref<Eigen::VectorXd>& nearest_particle,
-    const Eigen::Ref<Eigen::MatrixXd>& ATA,
-    const Eigen::Ref<Eigen::VectorXd>& current_ellipsoid_center,
-    const Eigen::MatrixXd* containment_points, const VPolytope& cvxh_vpoly) {
-  Eigen::VectorXd a_face = ATA * (nearest_particle - current_ellipsoid_center);
-  double b_face = a_face.transpose() * nearest_particle;
+    const Hyperellipsoid& E,
+    const Eigen::Ref<const Eigen::VectorXd>& point,
+    const VPolytope& cvxh_vpoly) {
+
+  Eigen::VectorXd a_face = E.A().transpose()*E.A() * (point - E.center());
+  double b_face = a_face.transpose() * point;
   double worst_case =
-      (a_face.transpose() * *containment_points).maxCoeff() - b_face;
+      (a_face.transpose() * cvxh_vpoly.vertices()).maxCoeff() - b_face;
   // Return standard iris face if either the face does not chopp off any
   // containment points or collision is in convex hull.
-  if (cvxh_vpoly.PointInSet(nearest_particle) || worst_case <= 0) {
+  if (cvxh_vpoly.PointInSet(point) || worst_case <= 0) {
     return a_face;
   } else {
     MathematicalProgram prog;
@@ -65,12 +65,12 @@ Eigen::VectorXd compute_face_tangent_to_dist_cvxh(
     auto x = prog.NewContinuousVariables(dim);
     cvxh_vpoly.AddPointInSetConstraints(&prog, x);
     Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(dim, dim);
-    prog.AddQuadraticErrorCost(identity, nearest_particle, x);
+    prog.AddQuadraticErrorCost(identity, point, x);
     auto solver = solvers::MakeFirstAvailableSolver(preferred_solvers);
     solvers::MathematicalProgramResult result;
     solver->Solve(prog, std::nullopt, std::nullopt, &result);
     DRAKE_THROW_UNLESS(result.is_success());
-    a_face = nearest_particle - result.GetSolution(x);
+    a_face = point - result.GetSolution(x);
     return a_face;
   }
 }
@@ -119,7 +119,8 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   RandomGenerator generator(options.random_seed);
 
   const Eigen::VectorXd starting_ellipsoid_center = starting_ellipsoid.center();
-
+  
+  Hyperellipsoid current_ellipsoid = starting_ellipsoid;
   Eigen::VectorXd current_ellipsoid_center = starting_ellipsoid.center();
   Eigen::MatrixXd current_ellipsoid_A = starting_ellipsoid.A();
   double previous_volume = 0;
@@ -394,8 +395,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           if (options.force_containment_points &&
               options.containment_points.size()) {
             a_face = compute_face_tangent_to_dist_cvxh(
-                nearest_particle, ATA, current_ellipsoid_center,
-                &options.containment_points, cvxh_vpoly);
+                current_ellipsoid, nearest_particle, cvxh_vpoly);
             // std::cout<<fmt::format("qp \n{} old \n{} old ",fmt_eigen(a_face),
             // fmt_eigen(a_face_test))<< std::endl;
 
@@ -494,7 +494,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
       }
     }
 
-    Hyperellipsoid current_ellipsoid = P.MaximumVolumeInscribedEllipsoid();
+    current_ellipsoid = P.MaximumVolumeInscribedEllipsoid();
     current_ellipsoid_A = current_ellipsoid.A();
     current_ellipsoid_center = current_ellipsoid.center();
 
