@@ -507,6 +507,10 @@ void DefineGeometryOptimization(py::module m) {
             cls_doc.num_additional_constraint_infeasible_samples.doc)
         .def_readwrite(
             "random_seed", &IrisOptions::random_seed, cls_doc.random_seed.doc)
+        .def_readwrite(
+            "face_ray_steps", &IrisOptions::face_ray_steps, cls_doc.face_ray_steps.doc)
+        .def_readwrite(
+            "vertex_ray_steps", &IrisOptions::face_ray_steps, cls_doc.face_ray_steps.doc)  
         .def("__repr__", [](const IrisOptions& self) {
           return py::str(
               "IrisOptions("
@@ -519,7 +523,9 @@ void DefineGeometryOptimization(py::module m) {
               "configuration_obstacles {}, "
               "prog_with_additional_constraints {}, "
               "num_additional_constraint_infeasible_samples={}, "
-              "random_seed={}"
+              "random_seed={}, "
+              "face_ray_steps={}, "
+              "vertex_ray_steps={}"
               ")")
               .format(self.require_sample_point_is_contained,
                   self.iteration_limit, self.termination_threshold,
@@ -530,7 +536,9 @@ void DefineGeometryOptimization(py::module m) {
                   self.prog_with_additional_constraints ? "is set"
                                                         : "is not set",
                   self.num_additional_constraint_infeasible_samples,
-                  self.random_seed);
+                  self.random_seed,
+                  self.face_ray_steps,
+                  self.vertex_ray_steps);
         });
 
     DefReadWriteKeepAlive(&iris_options, "prog_with_additional_constraints",
