@@ -546,7 +546,7 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
           fmt::format("The seed point is in configuration obstacle {}", i));
     }
   }
-
+ 
   if (options.prog_with_additional_constraints) {
     DRAKE_DEMAND(options.prog_with_additional_constraints->num_vars() == nq);
     DRAKE_DEMAND(options.num_additional_constraint_infeasible_samples >= 0);
@@ -1145,18 +1145,18 @@ HPolyhedron SampledIrisInConfigurationSpace(
   bool do_debugging_visualization = options.meshcat && nq <= 3;
 
   const std::string seed_point_error_msg =
-      "IrisInConfigurationSpace: require_sample_point_is_contained is true but "
+      "SampledIrisInConfigurationSpace: require_sample_point_is_contained is true but "
       "the seed point exited the initial region. Does the provided "
       "options.starting_ellipse not contain the seed point?";
   const std::string seed_point_msg =
-      "IrisInConfigurationSpace: terminating iterations because the seed point "
+      "SampledIrisInConfigurationSpace: terminating iterations because the seed point "
       "is no longer in the region.";
   const std::string termination_error_msg =
-      "IrisInConfigurationSpace: the termination function returned false on "
+      "SampledIrisInConfigurationSpace: the termination function returned false on "
       "the computation of the initial region. Are the provided "
       "options.starting_ellipse and options.termination_func compatible?";
   const std::string termination_msg =
-      "IrisInConfigurationSpace: terminating iterations because "
+      "SampledIrisInConfigurationSpace: terminating iterations because "
       "options.termination_func returned false.";
 
   std::vector<Eigen::VectorXd> particles;
@@ -1194,7 +1194,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
   }
   bool seed_point_made_infeasible = false;
   while (true) {
-    log()->info("SamplingIris iteration {}", iteration);
+    log()->info("SamplingIris iteration: {}", iteration);
     best_volume = E.Volume();
     DRAKE_ASSERT(best_volume > 0);
 
