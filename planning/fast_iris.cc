@@ -45,11 +45,9 @@ index_t argsort(values_t const& values) {
 }
 
 Eigen::VectorXd compute_face_tangent_to_dist_cvxh(
-    const Hyperellipsoid& E,
-    const Eigen::Ref<const Eigen::VectorXd>& point,
+    const Hyperellipsoid& E, const Eigen::Ref<const Eigen::VectorXd>& point,
     const VPolytope& cvxh_vpoly) {
-
-  Eigen::VectorXd a_face = E.A().transpose()*E.A() * (point - E.center());
+  Eigen::VectorXd a_face = E.A().transpose() * E.A() * (point - E.center());
   double b_face = a_face.transpose() * point;
   double worst_case =
       (a_face.transpose() * cvxh_vpoly.vertices()).maxCoeff() - b_face;
@@ -75,31 +73,8 @@ Eigen::VectorXd compute_face_tangent_to_dist_cvxh(
   }
 }
 
-// Winitzki, S., 2008. A handy approximation for the error function and its
-// inverse. A lecture note obtained through private communication.
-double erfc_inv(double p) {
-  double x = p - 1.;
-  double tt1, tt2, lnx, sgn;
-  sgn = (x < 0) ? 1.0 : -1.0;
-  x = (1 - x) * (1 + x);  // x = 1 - x*x;
-  lnx = std::log(x);
-  double a = 0.15449436008930206298828125;
-  tt1 = 2. / (M_PI * a) + 0.5 * lnx;
-  tt2 = 1. / (a)*lnx;
-  return sgn * std::sqrt(-tt1 + std::sqrt(tt1 * tt1 - tt2));
-}
-
-// inverse normal probability mass function required to compute the acceptance
-// threshold for the bernoulli test
-double inverse_cdf_normal(double probability, double mean, double std_dev) {
-  if (probability < 0 || probability > 1) {
-    throw std::invalid_argument("Probability must be between 0 and 1");
-  }
-  // Compute the argument for erfc_inv based on the probability
-  double arg = 2 - 2 * probability;
-  // Use erfc_inv to compute the inverse CDF
-  double result = mean + std_dev * std::sqrt(2) * erfc_inv(arg);
-  return result;
+int unadaptive_test_samples(double p, double delta, double tau) {
+  return static_cast<int>(-2 * std::log(delta) / (tau * tau * p) + 0.5);
 }
 
 }  // namespace
@@ -119,7 +94,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   RandomGenerator generator(options.random_seed);
 
   const Eigen::VectorXd starting_ellipsoid_center = starting_ellipsoid.center();
-  
+
   Hyperellipsoid current_ellipsoid = starting_ellipsoid;
   Eigen::VectorXd current_ellipsoid_center = starting_ellipsoid.center();
   Eigen::MatrixXd current_ellipsoid_A = starting_ellipsoid.A();
@@ -138,18 +113,17 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
     DRAKE_THROW_UNLESS(domain.ambient_dimension() ==
                        options.containment_points.rows());
     cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
-    
+
     std::vector<Eigen::VectorXd> cont_vec;
     cont_vec.reserve((options.containment_points.cols()));
 
     for (int col = 0; col < options.containment_points.cols(); ++col) {
-        Eigen::VectorXd conf = options.containment_points.col(col);
-        cont_vec.emplace_back(conf);
+      Eigen::VectorXd conf = options.containment_points.col(col);
+      cont_vec.emplace_back(conf);
     }
 
     std::vector<uint8_t> containment_point_col_free =
-        checker.CheckConfigsCollisionFree(cont_vec,
-                                          parallelism);
+        checker.CheckConfigsCollisionFree(cont_vec, parallelism);
     for (const auto col_free : containment_point_col_free) {
       if (!col_free) {
         throw std::runtime_error(
@@ -168,8 +142,16 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   }
 
   std::vector<Eigen::VectorXd> particles;
-  particles.reserve(options.num_particles);
-  for (int i = 0; i < options.num_particles; ++i) {
+
+  // upper bound on number of particles required if we hit max iterations
+  double delta_min = options.delta * 6 /
+                     (M_PI * M_PI * options.max_iterations_separating_planes *
+                      options.max_iterations_separating_planes);
+  int N_max = unadaptive_test_samples(
+      options.admissible_proportion_in_collision, delta_min, options.tau);
+  DRAKE_THROW_UNLESS(N_max <= 100000);
+  particles.reserve(N_max);
+  for (int i = 0; i < N_max; ++i) {
     particles.emplace_back(Eigen::VectorXd::Zero(dim));
   }
 
@@ -178,37 +160,15 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
   HPolyhedron P_prev = domain;
 
   // pre-allocate memory for the polyhedron we are going to construct
-  // TODO(wernerpe): find better soltution than hardcoding 300
+  // TODO(wernerpe): find better solution than hardcoding 300
   Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> A(
       P.A().rows() + 300, dim);
   Eigen::VectorXd b(P.A().rows() + 300);
 
-  double confidence = 1 - options.target_uncertainty;
-  double sigma = std::sqrt(options.num_particles *
-                           (1 - options.admissible_proportion_in_collision) *
-                           options.admissible_proportion_in_collision);
-  double mean = options.num_particles *
-                (1.0 - options.admissible_proportion_in_collision);
-  double threshold = inverse_cdf_normal(confidence, mean, sigma);
-  // use conservative rounding
-  int bernoulli_threshold =
-      std::min(int(threshold + 0.5), options.num_particles);
-
-  if (options.verbose) {
-    log()->info("FastIris requires {}/{} particles to be collision free ",
-                bernoulli_threshold, options.num_particles);
-  }
-  if (bernoulli_threshold == options.num_particles) {
-    // evaluate cdf at bernoulli threshold to estimate actual probabilty of
-    // errors of the 1st kind
-    double cdf =
-        0.5 *
-        (1 + std::erf((bernoulli_threshold - mean) / (sigma * std::sqrt(2))));
-    log()->info(
-        "FastIris Warning requested uncertainty is {} but the minimum "
-        "achieveable uncertainty is ~ {}, a larger num_particles is required",
-        options.target_uncertainty, 1 - cdf);
-  }
+  //   if (options.verbose) {
+  //     log()->info("FastIris requires {}/{} particles to be collision free ",
+  //                 bernoulli_threshold, options.num_particles);
+  //   }
 
   while (true) {
     log()->info("FastIris iteration {}", iteration);
@@ -230,27 +190,38 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
 
     while (num_iterations_separating_planes <
            options.max_iterations_separating_planes) {
+      int k_squared = num_iterations_separating_planes + 1;
+      k_squared *= k_squared;
+      double delta_k = options.delta * 6 / (M_PI * M_PI * k_squared);
+      int N_k = unadaptive_test_samples(
+          options.admissible_proportion_in_collision, delta_k, options.tau);
       particles.at(0) = P.UniformSample(&generator, current_ellipsoid_center);
       // populate particles by uniform sampling
-      for (int i = 1; i < options.num_particles; ++i) {
+      for (int i = 1; i < N_k; ++i) {
         particles.at(i) = P.UniformSample(&generator, particles.at(i - 1));
       }
-
       // Find all particles in collision
       std::vector<uint8_t> particle_col_free =
-          checker.CheckConfigsCollisionFree(particles, parallelism);
+          checker.CheckConfigsCollisionFree(particles, 0, N_k, parallelism);
       std::vector<Eigen::VectorXd> particles_in_collision;
       int number_particles_in_collision = 0;
       for (size_t i = 0; i < particle_col_free.size(); ++i) {
         if (particle_col_free[i] == 0) {
+          // only push back a maximum of num_particles for optimization of the
+          // faces
+          if (options.num_particles > number_particles_in_collision) {
+            // starting index is always 0, therefore particles[i+start]
+            // =particles[i]
+            particles_in_collision.push_back(particles[i]);
+          }
           ++number_particles_in_collision;
-          particles_in_collision.push_back(particles[i]);
         }
       }
 
-      // break if bernoulli threshold is passed
-      if (options.num_particles - number_particles_in_collision >=
-          bernoulli_threshold) {
+      // break if threshold is passed
+      if (number_particles_in_collision <=
+          (1 - options.tau) * options.admissible_proportion_in_collision *
+              N_k) {
         break;
       }
 
@@ -274,7 +245,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
 
       // Update particle positions
       std::vector<Eigen::VectorXd> particles_in_collision_updated;
-      particles_in_collision_updated.reserve(number_particles_in_collision);
+      particles_in_collision_updated.reserve(particles_in_collision.size());
       for (auto p : particles_in_collision) {
         particles_in_collision_updated.emplace_back(p);
       }
@@ -486,7 +457,8 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
       }
       ++num_iterations_separating_planes;
       if (num_iterations_separating_planes -
-                  1 % int(0.2 * options.max_iterations_separating_planes) ==
+                  1 % static_cast<int>(
+                          0.2 * options.max_iterations_separating_planes) ==
               0 &&
           options.verbose) {
         log()->info("SeparatingPlanes iteration: {} faces: {}",

@@ -28,7 +28,8 @@ struct FastIrisOptions {
   template <typename Archive>
   void Serialize(Archive* a) {
     a->Visit(DRAKE_NVP(num_particles));
-    a->Visit(DRAKE_NVP(target_uncertainty));
+    a->Visit(DRAKE_NVP(tau));
+    a->Visit(DRAKE_NVP(delta));
     a->Visit(DRAKE_NVP(admissible_proportion_in_collision));
     a->Visit(DRAKE_NVP(containment_points));
     a->Visit(DRAKE_NVP(force_containment_points));
@@ -50,7 +51,9 @@ struct FastIrisOptions {
   /** Number of particles used to estimate the closest collision*/
   int num_particles = 1e3;
 
-  double target_uncertainty = 5e-2;
+  double tau = 0.5;
+
+  double delta = 5e-2;
 
   double admissible_proportion_in_collision = 1e-2;
 
@@ -63,7 +66,6 @@ struct FastIrisOptions {
    */
   bool force_containment_points{false};
 
-
   /** Number of resampling steps for the gradient updates*/
   // int num_resampling_steps = 1;
 
@@ -71,7 +73,7 @@ struct FastIrisOptions {
   int max_iterations{2};
 
   /** Maximum number of rounds of adding faces to the polytope*/
-  int max_iterations_separating_planes{100};
+  int max_iterations_separating_planes{20};
 
   /** Maximum number of faces to add per round of samples*/
   int max_separating_planes_per_iteration{-1};
