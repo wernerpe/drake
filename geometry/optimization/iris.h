@@ -160,6 +160,74 @@ struct IrisOptions {
   int mixing_steps{10};
 };
 
+
+struct InflateCliqueOptions {
+  /** Passes this object to an Archive.
+  Refer to @ref yaml_serialization "YAML Serialization" for background.
+  Note: This only serializes options that are YAML built-in types. */
+  template <typename Archive>
+  void Serialize(Archive* a) {
+    a->Visit(DRAKE_NVP(configuration_space_margin));
+    a->Visit(DRAKE_NVP(rank_tol_ellipsoid));
+    a->Visit(DRAKE_NVP(smallest_half_axis_ellipsoid));
+    a->Visit(DRAKE_NVP(num_collision_infeasible_samples));
+    a->Visit(DRAKE_NVP(random_seed));
+    a->Visit(DRAKE_NVP(mixing_steps));
+  }
+
+  /** For IRIS in configuration space, we retreat by this margin from each
+  C-space obstacle in order to avoid the possibility of requiring an infinite
+  number of faces to approximate a curved boundary.
+  */
+  double configuration_space_margin{1e-2};
+  
+  double rank_tol_ellipsoid{1e-6};
+
+  double smallest_half_axis_ellipsoid{1e-4};
+
+  /** For each possible collision, IRIS will search for a counter-example by
+  formulating a (likely nonconvex) optimization problem. The initial guess for
+  this optimization is taken by sampling uniformly inside the current IRIS
+  region. This option controls the termination condition for that
+  counter-example search, defining the number of consecutive failures to find a
+  counter-example requested before moving on to the next constraint. */
+  int num_collision_infeasible_samples{5};
+
+  /** For IRIS in configuration space, it can be beneficial to not only specify
+  task-space obstacles (passed in through the plant) but also obstacles that are
+  defined by convex sets in the configuration space. This option can be used to
+  pass in such configuration space obstacles. */
+  ConvexSets configuration_obstacles{};
+
+  /** The initial hyperellipsoid that IRIS will use for calculating hyperplanes
+  in the first iteration. If no hyperellipsoid is provided, a small hypershpere
+  centered at the given sample will be used. */
+  std::optional<Hyperellipsoid> starting_ellipse{};
+
+  /** Optionally allows the caller to restrict the space within which IRIS
+  regions are allowed to grow. By default, IRIS regions are bounded by the
+  `domain` argument in the case of `Iris` or the joint limits of the input
+  `plant` in the case of `IrisInConfigurationSpace`. If this option is
+  specified, IRIS regions will be confined to the intersection between the
+  domain and `bounding_region` */
+  std::optional<HPolyhedron> bounding_region{};
+
+  /** The only randomization in IRIS is the random sampling done to find
+  counter-examples for the additional constraints using in
+  IrisInConfigurationSpace. Use this option to set the initial seed. */
+  int random_seed{1234};
+
+  /** Passing a meshcat instance may enable debugging visualizations; this
+  currently only happens in IrisInConfigurationSpace and when the
+  configuration space is <= 3 dimensional.*/
+  std::shared_ptr<Meshcat> meshcat{};
+
+  /* The `mixing_steps` parameters is passed to HPolyhedron::UniformSample to
+  control the total number of hit-and-run steps taken for each new random
+  sample. */
+  int mixing_steps{10};
+};
+
 /** The IRIS (Iterative Region Inflation by Semidefinite programming) algorithm,
 as described in
 
@@ -194,6 +262,13 @@ HPolyhedron Iris(const ConvexSets& obstacles,
                  const Eigen::Ref<const Eigen::VectorXd>& sample,
                  const HPolyhedron& domain,
                  const IrisOptions& options = IrisOptions());
+
+
+//inflates clique to polytope
+HPolyhedron InflateClique(const ConvexSets& obstacles,
+                          const Eigen::Ref<const Eigen::MatrixXd>& clique_points,
+                          const HPolyhedron& domain,
+                          const InflateCliqueOptions& options = InflateCliqueOptions());
 
 /** Constructs ConvexSet representations of obstacles for IRIS in 3D using the
 geometry from a SceneGraph QueryObject. All geometry in the scene with a

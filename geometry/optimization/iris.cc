@@ -21,6 +21,11 @@
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/ipopt_solver.h"
 #include "drake/solvers/snopt_solver.h"
+#include "drake/solvers/clarabel_solver.h"
+#include "drake/solvers/gurobi_solver.h"
+#include "drake/solvers/mosek_solver.h"
+#include "drake/solvers/solve.h"
+
 
 namespace drake {
 namespace geometry {
@@ -142,6 +147,161 @@ HPolyhedron Iris(const ConvexSets& obstacles, const Ref<const VectorXd>& sample,
     best_volume = volume;
   }
 
+  return P;
+}
+
+namespace {
+
+std::pair<double, std::pair<Eigen::VectorXd, Eigen::VectorXd>>
+ClosestPointOnObstacleToClique(const ConvexSet& obstacle,
+                               const VPolytope& convex_hull_clique) {
+  const int dim = obstacle.ambient_dimension();
+  DRAKE_THROW_UNLESS(obstacle.ambient_dimension() ==
+                     convex_hull_clique.ambient_dimension());
+
+  std::vector<solvers::SolverId> preferred_solvers{
+      solvers::MosekSolver::id(), solvers::GurobiSolver::id(),
+      solvers::ClarabelSolver::id()};
+
+  MathematicalProgram prog;
+  auto x = prog.NewContinuousVariables(dim);
+  auto z = prog.NewContinuousVariables(dim);
+  obstacle.AddPointInSetConstraints(&prog, x);
+  convex_hull_clique.AddPointInSetConstraints(&prog, z);
+  Eigen::MatrixXd A(dim, 2 * dim);
+  A.leftCols(dim).setIdentity();
+  A.rightCols(dim) = -Eigen::MatrixXd::Identity(dim, dim);
+  prog.Add2NormSquaredCost(A, Eigen::VectorXd::Zero(2 * dim), {x, z});
+
+  auto solver = solvers::MakeFirstAvailableSolver(preferred_solvers);
+  solvers::MathematicalProgramResult result;
+  solver->Solve(prog, std::nullopt, std::nullopt, &result);
+
+  if (!result.is_success()) {
+    throw std::runtime_error(fmt::format(
+        "Solver {} failed to solve the `minimum uniform scaling to touch' "
+        "problem; it terminated with SolutionResult {}). The solver likely "
+        "ran into numerical issues.",
+        result.get_solver_id().name(), result.get_solution_result()));
+  }
+
+  std::pair<double, std::pair<VectorXd, VectorXd>> solution;
+  solution.first = std::sqrt(result.get_optimal_cost());
+  solution.second.first = result.GetSolution(x);  // point on obstacle
+  solution.second.second =
+      result.GetSolution(z);  // point on obstacle projected onto convex hull
+
+  return solution;
+}
+
+}  // namespace
+
+HPolyhedron InflateClique(const ConvexSets& obstacles,
+                          const Ref<const MatrixXd>& clique_points,
+                          const HPolyhedron& domain,
+                          const InflateCliqueOptions& options) {
+  const int dim = clique_points.rows();
+  const int N = obstacles.size();
+
+  DRAKE_DEMAND(domain.ambient_dimension() == dim);
+  DRAKE_DEMAND(options.smallest_half_axis_ellipsoid >= 1e-6);
+
+  for (int i = 0; i < N; ++i) {
+    DRAKE_DEMAND(obstacles[i]->ambient_dimension() == dim);
+  }
+  DRAKE_DEMAND(domain.IsBounded());
+  AffineBall AB = AffineBall::MinimumVolumeCircumscribedEllipsoid(
+      clique_points, options.rank_tol_ellipsoid);
+  // Ensure that affine ball is full dimensional
+  MatrixXd Bmat = AB.B();
+  Eigen::JacobiSVD<Eigen::MatrixXd>
+      svd(Bmat,Eigen::ComputeThinU | Eigen::ComputeThinV);
+  VectorXd svalues = svd.singularValues();
+  bool bmat_updated = false;
+  // Threshold singular values
+  for (int i = 0; i < svalues.size(); ++i) {
+    if (svalues(i) < options.smallest_half_axis_ellipsoid) {
+      svalues(i) = options.smallest_half_axis_ellipsoid;
+      bmat_updated = true;
+    }
+  }
+  if (bmat_updated) {
+    Bmat = svd.matrixU() * svalues.asDiagonal() * svd.matrixV().transpose();
+  }
+  MatrixXd Binv = Bmat.inverse();
+  HPolyhedron P = domain;
+
+  if (options.bounding_region) {
+    DRAKE_DEMAND(options.bounding_region->ambient_dimension() == dim);
+    P = P.Intersection(*options.bounding_region);
+  }
+
+  const VPolytope ConvexHullOfClique(clique_points);
+  const int num_initial_constraints = P.A().rows();
+
+  // We will build the collision-free polytope represented as
+  // {x | A * x <= b}.  Here we pre-allocate matrices of the maximum size.
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> A(
+      P.A().rows() + N, dim);
+  VectorXd b(P.A().rows() + N);
+  A.topRows(P.A().rows()) = P.A();
+  b.head(P.A().rows()) = P.b();
+  // Use pairs {scale, index}, so that we can back out the indices after a sort.
+  std::vector<std::pair<double, int>> scaling(N);
+  MatrixXd closest_points_on_obstacle(dim, N);
+  MatrixXd closest_points_on_obstacle_projected(dim, N);
+  MatrixXd tangent_matrix;
+
+  // Find separating hyperplanes
+  for (int i = 0; i < N; ++i) {
+    const auto solution =
+        ClosestPointOnObstacleToClique(*obstacles[i], ConvexHullOfClique);
+    // solution first -> distance, second is point the obstacle closest to the
+    // clique
+    scaling[i].first = solution.first;
+    scaling[i].second = i;
+    closest_points_on_obstacle.col(i) = solution.second.first;
+    closest_points_on_obstacle_projected.col(i) = solution.second.second;
+  }
+  std::sort(scaling.begin(), scaling.end());
+
+  int num_constraints = num_initial_constraints;
+  tangent_matrix = 2.0 * Binv.transpose() * Binv;
+  for (int i = 0; i < N; ++i) {
+    // Only add a constraint if this obstacle still has overlap with the set
+    // that has been constructed so far on this iteration.
+    if (HPolyhedron(A.topRows(num_constraints), b.head(num_constraints))
+            .IntersectsWith(*obstacles[scaling[i].second])) {
+      // Add the tangent to the (scaled) ellipsoid at this point as a
+      // constraint.
+      const VectorXd point = closest_points_on_obstacle.col(scaling[i].second);
+      const VectorXd point_projected_on_cvxhull =
+          closest_points_on_obstacle_projected.col(scaling[i].second);
+      bool point_in_conv_clique = ConvexHullOfClique.PointInSet(point);
+      if (point_in_conv_clique) {
+        log()->info(
+            "Warning: Obstacle {} intersects with the convex hull of the "
+            "clique! The clique can no longer be completely contained in the "
+            "final region.",
+            i);
+        if ((point - AB.center()).norm() == 0) {
+          throw std::runtime_error(
+              "The center of the circumscribing ellipsoid is in collision. "
+              "This error is not handled yet.");
+        }
+        A.row(num_constraints) =
+            (tangent_matrix * (point - AB.center())).normalized();
+        b[num_constraints] = A.row(num_constraints) * point;
+        num_constraints++;
+      } else {
+        A.row(num_constraints) =
+            (point - point_projected_on_cvxhull).normalized();
+        b[num_constraints] = A.row(num_constraints) * point;
+        num_constraints++;
+      }
+    }
+  }
+  P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
   return P;
 }
 
