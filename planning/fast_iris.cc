@@ -203,12 +203,12 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
         particles.at(i) = P.UniformSample(&generator, particles.at(i - 1));
       }
 
-      //copy top slice of particles, TODO(wernerpe): improve this 
-      std::vector<Eigen::VectorXd> particles_step(particles.begin(), particles.begin() + N_k);
+    //   //copy top slice of particles, TODO(wernerpe): improve this 
+    //   std::vector<Eigen::VectorXd> particles_step(particles.begin(), particles.begin() + N_k);
 
       // Find all particles in collision
       std::vector<uint8_t> particle_col_free =
-          checker.CheckConfigsCollisionFree(particles_step, parallelism);
+          checker.CheckConfigsCollisionFree(particles, 0, N_k, parallelism);
       std::vector<Eigen::VectorXd> particles_in_collision;
       int number_particles_in_collision_unadaptive_test = 0;
       int number_particles_in_collision = 0;
@@ -219,7 +219,7 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           if (options.num_particles > number_particles_in_collision) {
             // starting index is always 0, therefore particles[i+start]
             // =particles[i]
-            particles_in_collision.push_back(particles_step[i]);
+            particles_in_collision.push_back(particles[i]);
             ++number_particles_in_collision;
           }
           ++number_particles_in_collision_unadaptive_test;
