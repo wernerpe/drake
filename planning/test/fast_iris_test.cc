@@ -81,6 +81,7 @@ GTEST_TEST(FastIrisTest, JointLimits) {
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
   FastIrisOptions options;
+  options.verbose = true;
   HPolyhedron region =
       FastIrisFromUrdf(limits_urdf, starting_ellipsoid, options);
 
@@ -149,6 +150,7 @@ GTEST_TEST(FastIrisTest, DoublePendulum) {
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
   FastIrisOptions options;
+  options.verbose = true;
   options.meshcat = meshcat;
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
@@ -245,6 +247,7 @@ GTEST_TEST(FastIrisTest, BlockOnGround) {
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
   FastIrisOptions options;
+  options.verbose = true;
   options.meshcat = meshcat;
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
@@ -373,6 +376,7 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
   // away from that corner. Open the meshcat visualization to step through the
   // details!
   options.meshcat = meshcat;
+  options.verbose = true;
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
   // std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -414,7 +418,7 @@ GTEST_TEST(FastIrisTest, ConvexConfigurationSpace) {
 ││    │   │    ││
 │└────┘   └────┘│
 └───────────────┘ */
-const std::string boxes_in_corners_urdf = fmt::format(R"(
+const char boxes_in_corners_urdf[] = R"(
 <robot name="boxes">
   <link name="fixed">
     <collision name="top_left">
@@ -457,7 +461,7 @@ const std::string boxes_in_corners_urdf = fmt::format(R"(
     <child link="movable"/>
   </joint>
 </robot>
-)");
+)";
 GTEST_TEST(FastIrisTest, ForceContainmentPointsTest) {
   std::shared_ptr<Meshcat> meshcat;
   meshcat = geometry::GetTestEnvironmentMeshcat();
@@ -511,6 +515,7 @@ GTEST_TEST(FastIrisTest, ForceContainmentPointsTest) {
                         0,  0,  0,  0;
   // clang-format on
   FastIrisOptions options;
+  options.verbose = true;
   options.meshcat = meshcat;
   options.configuration_space_margin = 0.04;
   options.containment_points = cont_points.topRows(2);
@@ -525,8 +530,8 @@ GTEST_TEST(FastIrisTest, ForceContainmentPointsTest) {
       options.meshcat->SetObject(path, Sphere(0.04),
                                  geometry::Rgba(1, 0, 0.0, 1.0));
       point_to_draw.head(2) = cont_points.col(pt_to_draw);
-      options.meshcat->SetTransform(path,
-                                    math::RigidTransform<double>(point_to_draw));
+      options.meshcat->SetTransform(
+          path, math::RigidTransform<double>(point_to_draw));
       EXPECT_TRUE(region.PointInSet(point_to_draw.head(2)));
     }
     Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 20);

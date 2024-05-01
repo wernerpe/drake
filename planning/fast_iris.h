@@ -85,7 +85,7 @@ struct FastIrisOptions {
   bool parallelize{true};
 
   /* Enables print statements indicating the progress of fast iris**/
-  bool verbose{true};
+  bool verbose{false};
 
   /** The initial polytope is guaranteed to contain the point if that point is
   collision-free. However, the IRIS alternation objectives do not include (and

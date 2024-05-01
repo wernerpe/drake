@@ -18,9 +18,12 @@ void DefinePlanningFastIris(py::module m) {
     .def_readwrite("num_particles",
         &FastIrisOptions::num_particles,
         cls_doc.num_particles.doc)
-    .def_readwrite("target_uncertainty",
-        &FastIrisOptions::target_uncertainty,
-        cls_doc.target_uncertainty.doc)
+    .def_readwrite("tau",
+        &FastIrisOptions::tau,
+        cls_doc.tau.doc)
+    .def_readwrite("delta",
+        &FastIrisOptions::delta,
+        cls_doc.delta.doc)
     .def_readwrite("admissible_proportion_in_collision",
         &FastIrisOptions::admissible_proportion_in_collision,
         cls_doc.admissible_proportion_in_collision.doc)
@@ -67,7 +70,8 @@ void DefinePlanningFastIris(py::module m) {
         return py::str(
             "FastIrisOptions("
             "num_particles={}, "
-            "target_uncertainty={}, "
+            "tau={}, "
+            "delta={}, "
             "admissible_proportion_in_collision={}, "
             "force_containment_points={}, "
             "num_consecutive_failures={}, "
@@ -84,7 +88,8 @@ void DefinePlanningFastIris(py::module m) {
             "random_seed={} "
             ")")
             .format(self.num_particles,
-                self.target_uncertainty,
+                self.tau,
+                self.delta,
                 self.admissible_proportion_in_collision,
                 self.containment_points,
                 self.force_containment_points,

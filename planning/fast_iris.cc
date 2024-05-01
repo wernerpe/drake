@@ -149,8 +149,16 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
                       options.max_iterations_separating_planes);
   int N_max = unadaptive_test_samples(
       options.admissible_proportion_in_collision, delta_min, options.tau);
-  log()->info("FastIris N_max {}", N_max);
-  DRAKE_THROW_UNLESS(N_max <= 100000);
+
+  if (options.verbose) {
+    log()->info(
+        "FastIris finding region that is {} collision free with {} certainty "
+        "using {} particles.",
+        options.admissible_proportion_in_collision, 1 - options.delta,
+        options.num_particles);
+    log()->info("FastIris worst case test requires {} samples.", N_max);
+  }
+
   particles.reserve(N_max);
   for (int i = 0; i < N_max; ++i) {
     particles.emplace_back(Eigen::VectorXd::Zero(dim));
@@ -203,12 +211,13 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
         particles.at(i) = P.UniformSample(&generator, particles.at(i - 1));
       }
 
-    //   //copy top slice of particles, TODO(wernerpe): improve this 
-    //   std::vector<Eigen::VectorXd> particles_step(particles.begin(), particles.begin() + N_k);
+      //   //copy top slice of particles, TODO(wernerpe): improve this
+      //   std::vector<Eigen::VectorXd> particles_step(particles.begin(),
+      //   particles.begin() + N_k);
 
       // Find all particles in collision
       std::vector<uint8_t> particle_col_free =
-          checker.CheckConfigsCollisionFree(particles, 0, N_k, parallelism);
+          checker.CheckConfigSliceCollisionFree(particles, 0, N_k, parallelism);
       std::vector<Eigen::VectorXd> particles_in_collision;
       int number_particles_in_collision_unadaptive_test = 0;
       int number_particles_in_collision = 0;
@@ -225,13 +234,26 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
           ++number_particles_in_collision_unadaptive_test;
         }
       }
-      log()->info("FastIris N_k {}, N_col {}, thresh {}", N_k, number_particles_in_collision_unadaptive_test, (1 - options.tau) * options.admissible_proportion_in_collision *
-              N_k);
+      if (options.verbose) {
+        log()->info("FastIris N_k {}, N_col {}, thresh {}", N_k,
+                    number_particles_in_collision_unadaptive_test,
+                    (1 - options.tau) *
+                        options.admissible_proportion_in_collision * N_k);
+      }
+
       // break if threshold is passed
       if (number_particles_in_collision_unadaptive_test <=
           (1 - options.tau) * options.admissible_proportion_in_collision *
               N_k) {
         break;
+      }
+      // warn user if test fails on last iteration
+      if (num_iterations_separating_planes ==
+          options.max_iterations_separating_planes - 1) {
+        log()->warn(
+            "FastIris WARNING, separating planes hit max iterations without "
+            "passing the bernoulli test, this voids the probabilistic "
+            "guarantees!");
       }
 
       // debugging visualization
@@ -299,13 +321,11 @@ HPolyhedron FastIris(const planning::CollisionChecker& checker,
             //}
             particles_in_collision_updated[point_idx] = current_point;
           };
-      log()->info("FastIris pre update");
       // update all particles in parallel
       DynamicParallelForIndexLoop(DegreeOfParallelism(num_threads_to_use), 0,
                                   number_particles_in_collision,
                                   particle_update_work,
                                   ParallelForBackend::BEST_AVAILABLE);
-      log()->info("FastIris post update");
       // debugging visualization
       // if (options.meshcat && dim <= 3) {
 
