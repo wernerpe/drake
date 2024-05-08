@@ -152,7 +152,7 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   //   θ₀, θ₁, θ₂, described in this class's documentation, at entries
   //   angles(0), angles(1) and angles(2), respectively.
   // @returns a constant reference to this mobilizer.
-  const RpyFloatingMobilizer<T>& set_angles(
+  const RpyFloatingMobilizer<T>& SetAngles(
       systems::Context<T>* context, const Vector3<T>& angles) const;
 
   // Stores in context the position p_FM of M in F.
@@ -162,8 +162,18 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   // @param[in] p_FM
   //   Position of F in M.
   // @returns a constant reference to this mobilizer.
-  const RpyFloatingMobilizer<T>& set_translation(
+  const RpyFloatingMobilizer<T>& SetTranslation(
       systems::Context<T>* context, const Vector3<T>& p_FM) const;
+
+  // Sets the distribution governing the random samples of the rpy angles
+  // component of the mobilizer state.
+  void set_random_angles_distribution(
+      const Vector3<symbolic::Expression>& angles);
+
+  // Sets the distribution governing the random samples of the translation
+  // component of the mobilizer state.
+  void set_random_translation_distribution(
+      const Vector3<symbolic::Expression>& p_FM);
 
   // Sets in context the state for this mobilizer so that the angular
   // velocity of the outboard frame M in the inboard frame F is w_FM.

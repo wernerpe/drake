@@ -9,12 +9,15 @@
 #include "drake/multibody/contact_solvers/contact_solver_utils.h"
 #include "drake/multibody/contact_solvers/sap/sap_contact_problem.h"
 #include "drake/multibody/contact_solvers/sap/sap_friction_cone_constraint.h"
+#include "drake/multibody/contact_solvers/sap/sap_pd_controller_constraint.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver_results.h"
 #include "drake/multibody/plant/compliant_contact_manager.h"
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/multibody/plant/test/compliant_contact_manager_tester.h"
 #include "drake/multibody/plant/test/spheres_stack.h"
+#include "drake/multibody/plant/test_utilities/multibody_plant_remodeling.h"
+#include "drake/multibody/tree/multibody_tree_indexes.h"
 #include "drake/multibody/tree/revolute_joint.h"
 #include "drake/multibody/tree/rigid_body.h"
 
@@ -25,19 +28,35 @@ using drake::multibody::contact_solvers::internal::ContactSolverResults;
 using drake::multibody::contact_solvers::internal::MergeNormalAndTangent;
 using drake::multibody::contact_solvers::internal::SapContactProblem;
 using drake::multibody::contact_solvers::internal::SapFrictionConeConstraint;
+using drake::multibody::contact_solvers::internal::SapPdControllerConstraint;
 using drake::multibody::contact_solvers::internal::SapSolver;
 using drake::multibody::contact_solvers::internal::SapSolverParameters;
 using drake::multibody::contact_solvers::internal::SapSolverResults;
+using drake::multibody::internal::CompliantContactManager;
 using drake::multibody::internal::DiscreteContactPair;
 using drake::systems::Context;
 using Eigen::MatrixXd;
+using Eigen::Vector2d;
 using Eigen::Vector3d;
+using Eigen::Vector4d;
 using Eigen::VectorXd;
 
 // TODO(amcastro-tri): Implement AutoDiffXd testing.
 
 namespace drake {
 namespace multibody {
+
+class MultibodyPlantTester {
+ public:
+  static CompliantContactManager<double>& manager(
+      const MultibodyPlant<double>& plant) {
+    auto* manager = dynamic_cast<CompliantContactManager<double>*>(
+        plant.discrete_update_manager_.get());
+    DRAKE_DEMAND(manager != nullptr);
+    return *manager;
+  }
+};
+
 namespace internal {
 
 constexpr double kEps = std::numeric_limits<double>::epsilon();
@@ -122,18 +141,6 @@ class SpheresStackTest : public SpheresStack, public ::testing::Test {
   const internal::MultibodyTreeTopology& topology() const {
     return CompliantContactManagerTester::topology(*contact_manager_);
   }
-
-  const DiscreteContactData<DiscreteContactPair<double>>&
-  EvalDiscreteContactPairs(const Context<double>& context) const {
-    return CompliantContactManagerTester::EvalDiscreteContactPairs(
-        *contact_manager_, context);
-  }
-
-  DiscreteContactData<ContactPairKinematics<double>> CalcContactKinematics(
-      const Context<double>& context) const {
-    return CompliantContactManagerTester::CalcContactKinematics(
-        *contact_manager_, context);
-  }
 };
 
 // This test verifies that the SapContactProblem built by the driver is
@@ -146,9 +153,9 @@ TEST_F(SpheresStackTest, EvalContactProblemCache) {
   const std::vector<drake::math::RotationMatrix<double>>& R_WC =
       problem_cache.R_WC;
 
-  const DiscreteContactData<DiscreteContactPair<double>>& pairs =
-      EvalDiscreteContactPairs(*plant_context_);
-  const int num_contacts = pairs.size();
+  const DiscreteContactData<DiscreteContactPair<double>>& contact_pairs =
+      contact_manager_->EvalDiscreteContactPairs(*plant_context_);
+  const int num_contacts = contact_pairs.size();
 
   // Verify sizes.
   EXPECT_EQ(problem.num_cliques(), topology().num_trees());
@@ -165,25 +172,21 @@ TEST_F(SpheresStackTest, EvalContactProblemCache) {
   EXPECT_EQ(problem.dynamics_matrix(), A);
 
   // Verify each of the contact constraints.
-  const DiscreteContactData<ContactPairKinematics<double>> contact_kinematics =
-      CalcContactKinematics(*plant_context_);
-  for (int i = 0; i < contact_kinematics.size(); ++i) {
-    const DiscreteContactPair<double>& discrete_pair = pairs[i];
-    const ContactPairKinematics<double>& pair_kinematics =
-        contact_kinematics[i];
+  for (int i = 0; i < contact_pairs.size(); ++i) {
+    const DiscreteContactPair<double>& discrete_pair = contact_pairs[i];
     const auto* constraint =
         dynamic_cast<const SapFrictionConeConstraint<double>*>(
             &problem.get_constraint(i));
     // In this test we do know all constraints are contact constraints.
     ASSERT_NE(constraint, nullptr);
-    EXPECT_EQ(constraint->num_cliques(), pair_kinematics.jacobian.size());
-    EXPECT_EQ(constraint->first_clique(), pair_kinematics.jacobian[0].tree);
+    EXPECT_EQ(constraint->num_cliques(), discrete_pair.jacobian.size());
+    EXPECT_EQ(constraint->first_clique(), discrete_pair.jacobian[0].tree);
     EXPECT_EQ(constraint->first_clique_jacobian().MakeDenseMatrix(),
-              pair_kinematics.jacobian[0].J.MakeDenseMatrix());
+              discrete_pair.jacobian[0].J.MakeDenseMatrix());
     if (constraint->num_cliques() == 2) {
-      EXPECT_EQ(constraint->second_clique(), pair_kinematics.jacobian[1].tree);
+      EXPECT_EQ(constraint->second_clique(), discrete_pair.jacobian[1].tree);
       EXPECT_EQ(constraint->second_clique_jacobian().MakeDenseMatrix(),
-                pair_kinematics.jacobian[1].J.MakeDenseMatrix());
+                discrete_pair.jacobian[1].J.MakeDenseMatrix());
     }
     EXPECT_EQ(constraint->parameters().mu, discrete_pair.friction_coefficient);
     EXPECT_EQ(constraint->parameters().stiffness, discrete_pair.stiffness);
@@ -196,13 +199,11 @@ TEST_F(SpheresStackTest, EvalContactProblemCache) {
     EXPECT_EQ(constraint->parameters().sigma, 1.0e-3);
 
     // Verify contact configuration.
-    const contact_solvers::internal::ContactConfiguration<double>&
-        configuration = pair_kinematics.configuration;
-    EXPECT_EQ(constraint->configuration().objectA, configuration.objectA);
-    EXPECT_EQ(constraint->configuration().objectB, configuration.objectB);
-    EXPECT_EQ(constraint->configuration().p_ApC_W, configuration.p_ApC_W);
-    EXPECT_EQ(constraint->configuration().p_BqC_W, configuration.p_BqC_W);
-    EXPECT_EQ(constraint->configuration().phi, configuration.phi);
+    EXPECT_EQ(constraint->configuration().objectA, discrete_pair.object_A);
+    EXPECT_EQ(constraint->configuration().objectB, discrete_pair.object_B);
+    EXPECT_EQ(constraint->configuration().p_ApC_W, discrete_pair.p_ApC_W);
+    EXPECT_EQ(constraint->configuration().p_BqC_W, discrete_pair.p_BqC_W);
+    EXPECT_EQ(constraint->configuration().phi, discrete_pair.phi0);
     EXPECT_EQ(constraint->configuration().R_WC.matrix(), R_WC[i].matrix());
   }
 }
@@ -305,9 +306,9 @@ TEST_F(SpheresStackTest, PackContactSolverResults) {
 
   // We form an arbitrary set of SAP results consistent with the contact
   // kinematics for the configuration of our model.
-  const DiscreteContactData<ContactPairKinematics<double>> contact_kinematics =
-      CalcContactKinematics(*plant_context_);
-  const int num_contacts = contact_kinematics.size();
+  const DiscreteContactData<DiscreteContactPair<double>> contact_pairs =
+      contact_manager_->EvalDiscreteContactPairs(*plant_context_);
+  const int num_contacts = contact_pairs.size();
   const int nv = plant_->num_velocities();
   SapSolverResults<double> sap_results;
   sap_results.Resize(nv, 3 * num_contacts);
@@ -336,7 +337,7 @@ TEST_F(SpheresStackTest, PackContactSolverResults) {
       CompareMatrices(vc, sap_results.vc, kEps, MatrixCompareType::relative));
   const MatrixXd J_AcBc_C =
       CompliantContactManagerTester::CalcDenseJacobianMatrixInContactFrame(
-          *contact_manager_, contact_kinematics);
+          *contact_manager_, contact_pairs);
   const VectorXd tau_expected =
       J_AcBc_C.transpose() * sap_results.gamma / plant_->time_step();
   EXPECT_TRUE(CompareMatrices(contact_results.tau_contact, tau_expected,
@@ -505,6 +506,59 @@ GTEST_TEST(SapDriverTest, ConstraintActiveStatus) {
     EXPECT_EQ(problem.get_constraint(1).num_constraint_equations(), 1);
     EXPECT_EQ(problem.get_constraint(2).num_constraint_equations(), 3);
     EXPECT_EQ(problem.get_constraint(3).num_constraint_equations(), 6);
+  }
+}
+
+TEST_F(MultibodyPlantRemodeling, AddPdControllerConstraints) {
+  // Set up actuators with pd controllers.
+  for (JointActuatorIndex actuator_index : plant_->GetJointActuatorIndices()) {
+    JointActuator<double>& actuator =
+        plant_->get_mutable_joint_actuator(actuator_index);
+    actuator.set_controller_gains({100, 10});
+  }
+
+  FinalizeAndBuild();
+
+  // Actuator with index 1 has been removed, so these are the feed forward
+  // torques and desired state for the 2 remaining actuators.
+  const Vector2d u_feed_forward(1.0, 2.0);
+  const Vector4d x_desired(3.0, 4.0, 5.0, 6.0);
+
+  // This is hardcoded based on internal knowledge of the model.
+  // -1 signifies the actuator at that index has been removed.
+  const std::vector<int> dof_to_actuator_input_start{0, -1, 1};
+
+  const systems::InputPort<double>& u_input =
+      plant_->get_actuation_input_port();
+  u_input.FixValue(plant_context_, u_feed_forward);
+
+  const systems::InputPort<double>& x_desired_input =
+      plant_->get_desired_state_input_port(default_model_instance());
+  x_desired_input.FixValue(plant_context_, x_desired);
+
+  // Test that AddPdControllerConstraints uses the correct indices into 'u'
+  // using JointActuator::input_start().
+  const SapDriver<double>& sap_driver =
+      CompliantContactManagerTester::sap_driver(
+          MultibodyPlantTester::manager(*plant_));
+  const ContactProblemCache<double>& problem_cache =
+      SapDriverTest::EvalContactProblemCache(sap_driver, *plant_context_);
+  const SapContactProblem<double>& problem = *problem_cache.sap_problem;
+
+  EXPECT_EQ(problem_cache.num_pd_controller_constraints, 2);
+
+  for (int i = 0; i < problem_cache.num_pd_controller_constraints; ++i) {
+    const int constraint_id = problem_cache.pd_controller_constraints_start + i;
+    const SapPdControllerConstraint<double>& pd_constraint =
+        dynamic_cast<const SapPdControllerConstraint<double>&>(
+            problem.get_constraint(constraint_id));
+    const auto configuration = pd_constraint.configuration();
+    const int actuator_input_start =
+        dof_to_actuator_input_start[configuration.clique_dof];
+    EXPECT_EQ(configuration.qd, x_desired(actuator_input_start));
+    EXPECT_EQ(configuration.vd,
+              x_desired(actuator_input_start + plant_->num_actuated_dofs()));
+    EXPECT_EQ(configuration.u0, u_feed_forward(actuator_input_start));
   }
 }
 

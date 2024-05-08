@@ -146,10 +146,10 @@ int DoMain() {
   // Parse the gripper and spatula models.
   multibody::Parser parser(&plant, &scene_graph);
   parser.AddModelsFromUrl(
-      "package://drake/examples/hydroelastic/spatula_slip_control/models/"
+      "package://drake_models/wsg_50_description/sdf/"
       "schunk_wsg_50_hydro_bubble.sdf");
   parser.AddModelsFromUrl(
-      "package://drake/examples/hydroelastic/spatula_slip_control/models/"
+      "package://drake/examples/hydroelastic/spatula_slip_control/"
       "spatula.sdf");
   // Pose the gripper and weld it to the world.
   const math::RigidTransform<double> X_WF0 = math::RigidTransform<double>(
@@ -253,8 +253,9 @@ int main(int argc, char* argv[]) {
       "The example poses the spatula in the closed grip of the gripper and\n"
       "uses an open loop square wave controller to perform a controlled\n"
       "rotational slip of the spatula while maintaining the spatula in\n"
-      "the gripper's grasp. Launch drake_visualizer before running this\n"
-      "example. See the README.md file for more information.\n");
+      "the gripper's grasp. Use the MeshCat URL from the console log\n"
+      "messages for visualization. See the README.md file for more\n"
+      "information.\n");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   return drake::examples::spatula_slip_control::DoMain();
 }

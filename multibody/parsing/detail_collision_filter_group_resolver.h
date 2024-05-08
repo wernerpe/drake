@@ -10,6 +10,8 @@
 #include "drake/common/drake_copyable.h"
 #include "drake/common/sorted_pair.h"
 #include "drake/geometry/geometry_set.h"
+#include "drake/multibody/parsing/collision_filter_groups.h"
+#include "drake/multibody/parsing/detail_strongly_connected_components.h"
 #include "drake/multibody/plant/multibody_plant.h"
 
 namespace drake {
@@ -58,9 +60,11 @@ class CollisionFilterGroupResolver {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(CollisionFilterGroupResolver)
 
-  // The @p plant parameter is aliased, and must outlive the resolver.
+  // Both parameters are aliased, and must outlive the resolver.
   // @pre plant is not nullptr.
-  explicit CollisionFilterGroupResolver(MultibodyPlant<double>* plant);
+  // @pre group_output is not nullptr.
+  CollisionFilterGroupResolver(MultibodyPlant<double>* plant,
+                               CollisionFilterGroups* group_output);
 
   ~CollisionFilterGroupResolver();
 
@@ -70,13 +74,16 @@ class CollisionFilterGroupResolver {
   }
 
   // Adds a collision filter group. Locates bodies by name immediately, and
-  // emits errors for illegal names, empty groups, or missing bodies.
+  // emits errors for illegal names, empty groups, missing bodies, or duplicate
+  // group definition attempts.
   //
-  // @param diagnostic     The error-reporting channel.
-  // @param group_name     The name of the group being defined.
-  // @param body_names     The names of the bodies that are group members.
-  // @param model_instance The current model, for scoping purposes.
-  //                       @see model_instance note above.
+  // @param diagnostic          The error-reporting channel.
+  // @param group_name          The name of the group being defined.
+  // @param body_names          The names of the bodies that are group members.
+  // @param member_group_names  The names of groups whose member bodies are
+  //                            group members.
+  // @param model_instance      The current model, for scoping purposes.
+  //                            @see model_instance note above.
   //
   // @pre group_name is not empty.
   // @pre no member strings of body_names are empty.
@@ -86,6 +93,7 @@ class CollisionFilterGroupResolver {
       const drake::internal::DiagnosticPolicy& diagnostic,
       const std::string& group_name,
       const std::set<std::string>& body_names,
+      const std::set<std::string>& member_group_names,
       std::optional<ModelInstanceIndex> model_instance);
 
   // Adds a group pair. Emits diagnostics for illegal names.  Two distinct
@@ -115,20 +123,29 @@ class CollisionFilterGroupResolver {
   void Resolve(const drake::internal::DiagnosticPolicy& diagnostic);
 
  private:
+  struct GroupData {
+    std::set<std::string> body_names;
+    geometry::GeometrySet geometries;
+  };
+
   std::string FullyQualify(
       const std::string& name,
       std::optional<ModelInstanceIndex> model_instance) const;
 
-  const geometry::GeometrySet* FindGroup(
+  const GroupData* FindGroup(
       const drake::internal::DiagnosticPolicy& diagnostic,
       const std::string& group_name) const;
 
   const RigidBody<double>* FindBody(std::string_view name,
-                                    ModelInstanceIndex model_instance);
+                                    ModelInstanceIndex model_instance) const;
 
   MultibodyPlant<double>* const plant_;
-  std::map<std::string, geometry::GeometrySet> groups_;
+  CollisionFilterGroups* const group_output_;
+
+  std::map<std::string, GroupData> groups_;
   std::set<SortedPair<std::string>> pairs_;
+
+  DirectedGraph<std::string> group_insertion_graph_;
   bool is_resolved_{false};
   ModelInstanceIndex minimum_model_instance_index_{};
 };

@@ -93,7 +93,7 @@ class Joint : public MultibodyElement<T> {
   ///   The frame M attached on the child body connected by this joint.
   /// @param[in] damping
   ///   A vector of viscous damping coefficients, of size num_velocities().
-  ///   See damping_vector() for details.
+  ///   See default_damping_vector() for details.
   /// @param[in] pos_lower_limits
   ///   A vector storing the lower limit for each generalized position.
   ///   It must have the same size as `pos_upper_limit`.
@@ -454,11 +454,66 @@ class Joint : public MultibodyElement<T> {
     default_positions_ = default_positions;
     do_set_default_positions(default_positions);
   }
+
+  // TODO(sherm1) Consider implementing SetDefaultPose() for every joint type,
+  //  with the joint responsible for making a "best effort" to match the pose if
+  //  it can't do so exactly. Simbody has that feature and it has proven very
+  //  useful in practice.
+
+  /// Sets this %Joint's default generalized positions q₀ such that the pose
+  /// of the child frame M in the parent frame F best matches the given pose.
+  /// The pose is given by a RigidTransform `X_FM`, but a %Joint will
+  /// represent pose differently.
+  /// @note Currently this is implemented only for floating (6 dof) joints
+  /// which can represent any pose.
+  /// @throws std::exception if called for any %Joint type that does not
+  /// implement this function.
+  /// @see get_default_positions() to see the resulting q₀ after this call.
+  /// @see SetDefaultPosePair() for an alternative using a quaternion
+  void SetDefaultPose(const math::RigidTransform<double>& X_FM) {
+    SetDefaultPosePair(X_FM.rotation().ToQuaternion(), X_FM.translation());
+  }
+
+  /// Returns this %Joint's default pose as a RigidTransform X_FM.
+  /// @note Currently this is implemented only for floating (6 dof) joints
+  /// which can represent any pose.
+  /// @throws std::exception if called for any %Joint type that does not
+  /// implement this function.
+  /// @retval X_FM The default pose as a rigid transform.
+  /// @see get_default_positions() to see the generalized positions q₀ that this
+  ///      joint used to generate the returned transform.
+  math::RigidTransform<double> GetDefaultPose() const {
+    auto pose_pair = GetDefaultPosePair();
+    return math::RigidTransform(pose_pair.first, pose_pair.second);
+  }
+
+  // BTW These are implemented with a (quaternion,vector) pair rather than a
+  // rigid transform so that we can guarantee to preserve bit-perfect results
+  // when mapping a floating body default pose to the default positions of its
+  // inboard quaternion floating joint. Users should prefer the above versions.
+
+  /// (Advanced) This is the same as SetDefaultPose() except it takes the
+  /// pose as a (quaternion, translation vector) pair.
+  /// @see SetDefaultPose() for more information
+  void SetDefaultPosePair(const Quaternion<double>& q_FM,
+                          const Vector3<double>& p_FM) {
+    DoSetDefaultPosePair(q_FM, p_FM);
+  }
+
+  /// (Advanced) This is the same as GetDefaultPose() except it returns this
+  /// %Joint's default pose as a (quaternion, translation vector) pair.
+  /// @retval q_FM,p_FM The default pose as a (quaternion, translation) pair.
+  /// @see GetDefaultPose() for more information
+  std::pair<Eigen::Quaternion<double>, Vector3<double>> GetDefaultPosePair()
+      const {
+    return DoGetDefaultPosePair();
+  }
+
   /// @}
 
-  /// Returns all damping coefficients for joints that model viscous damping, of
-  /// size num_velocities(). Joints that do not model damping return a zero
-  /// vector of size num_velocities(). If vj is the vector of generalized
+  /// Returns all default damping coefficients for joints that model viscous
+  /// damping, of size num_velocities(). Joints that do not model damping return
+  /// a zero vector of size num_velocities(). If vj is the vector of generalized
   /// velocities for this joint, of size num_velocities(), viscous damping
   /// models a generalized force at the joint of the form tau = -diag(dj)⋅vj,
   /// with dj the vector returned by this function. The units of the
@@ -466,12 +521,21 @@ class Joint : public MultibodyElement<T> {
   /// revolute joint where vj is an angular velocity with units of rad/s and tau
   /// having units of N⋅m, the coefficient of viscous damping has units of
   /// N⋅m⋅s. Refer to each joint's documentation for further details.
-  const VectorX<double>& damping_vector() const {
-    return damping_;
+  const VectorX<double>& default_damping_vector() const { return damping_; }
+
+  DRAKE_DEPRECATED("2024-06-01", "Use default_damping_vector() instead.")
+  const VectorX<double>& damping_vector() const { return damping_; }
+
+  /// Returns the Context dependent damping coefficients stored as parameters in
+  /// `context`. Refer to default_damping_vector() for details.
+  /// @param[in] context The context storing the state and parameters for the
+  /// model to which `this` joint belongs.
+  const VectorX<T>& GetDampingVector(const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(damping_parameter_index_).value();
   }
 
   /// Sets the default value of the viscous damping coefficients for this joint.
-  /// Refer to damping_vector() for details.
+  /// Refer to default_damping_vector() for details.
   /// @throws std::exception if damping.size() != num_velocities().
   /// @throws std::exception if any of the damping coefficients is negative.
   /// @pre the MultibodyPlant must not be finalized.
@@ -480,6 +544,28 @@ class Joint : public MultibodyElement<T> {
     DRAKE_THROW_UNLESS((damping.array() >= 0).all());
     DRAKE_DEMAND(!this->get_parent_tree().topology_is_valid());
     damping_ = damping;
+  }
+
+  /// Sets the value of the viscous damping coefficients for this joint, stored
+  /// as parameters in `context`. Refer to default_damping_vector() for details.
+  /// @param[out] context The context storing the state and parameters for the
+  /// model to which `this` joint belongs.
+  /// @param[in] damping The vector of damping values.
+  /// @throws std::exception if damping.size() != num_velocities().
+  /// @throws std::exception if any of the damping coefficients is negative.
+  /// @note Some multi-dof joints may have specific semantics for their damping
+  /// vector that are not enforced here. For instance, QuaternionFloatingJoint
+  /// assumes identical damping values for all 3 angular velocity components and
+  /// identical damping values for all 3 translational velocity components. It
+  /// will thus use `angular_damping = damping[0]` and `translational_damping =
+  /// damping[3]`. Refer to the particular subclass for more semantic
+  /// information.
+  void SetDampingVector(systems::Context<T>* context,
+                        const VectorX<T>& damping) const {
+    DRAKE_THROW_UNLESS(damping.size() == num_velocities());
+    DRAKE_THROW_UNLESS((damping.array() >= 0).all());
+    context->get_mutable_numeric_parameter(damping_parameter_index_)
+        .set_value(damping);
   }
 
   // Hide the following section from Doxygen.
@@ -601,12 +687,41 @@ class Joint : public MultibodyElement<T> {
 
   /// Implementation of the NVI set_default_positions(), see
   /// set_default_positions() for details. It is the responsibility of the
-  /// subclass to ensure that their joint implementation, should they have one,
-  /// is updated with @p default_positions.
+  /// subclass to ensure that its joint implementation (i.e., mobilizer), should
+  /// it have one, is updated with @p default_positions. Note that the
+  /// %Joint base class also stores default_positions (as a VectorX); the
+  /// implementing mobilizer should have the same value but as a fixed-size
+  /// vector.
   /// @note Implementations must meet the styleguide requirements for snake_case
   /// accessor methods.
   virtual void do_set_default_positions(
       const VectorX<double>& default_positions) = 0;
+
+  /// Implementation of the NVI SetDefaultPose(). This is optional for %Joint
+  /// subclasses _except_ for floating (6 dof) Joints. The subclass
+  /// should convert the input to the closest equivalent in generalized
+  /// coordinates and invoke set_default_positions() to record them. If the
+  /// subclass already uses (quaternion, translation) as generalized coordinates
+  /// (i.e. it's a quaternion_floating_joint) it must store those exactly.
+  virtual void DoSetDefaultPosePair(const Quaternion<double>& q_FM,
+                                    const Vector3<double>& p_FM) {
+    unused(q_FM, p_FM);
+    throw std::logic_error(fmt::format(
+        "SetDefaultPose(): not implemented for joint type {}.", type_name()));
+  }
+
+  /// Implementation of the NVI GetDefaultPose(). This is optional for %Joint
+  /// subclasses _except_ for floating (6 dof) Joints. The subclass should
+  /// convert its default_positions to pose X_FM and return that as a
+  /// (quaternion, translation) pair. If the subclass already uses
+  /// (quaternion, translation) as generalized coordinates (i.e. it's a
+  /// quaternion_floating_joint) it must return those exactly (don't
+  /// convert to a transform first).
+  virtual std::pair<Eigen::Quaternion<double>, Vector3<double>>
+  DoGetDefaultPosePair() const {
+    throw std::logic_error(fmt::format(
+        "GetDefaultPose(): not implemented for joint type {}.", type_name()));
+  }
 
   /// Implementation of the NVI GetOnePosition() that must only be implemented
   /// by those joint subclasses that have a single degree of freedom.
@@ -711,6 +826,22 @@ class Joint : public MultibodyElement<T> {
     implementation_ = std::move(implementation);
   }
 
+  // Implementation for MultibodyElement::DoDeclareParameters().
+  void DoDeclareParameters(
+      internal::MultibodyTreeSystem<T>* tree_system) final {
+    // Declare a parameter for damping.
+    damping_parameter_index_ = this->DeclareNumericParameter(
+        tree_system, systems::BasicVector<T>(damping_.size()));
+  }
+
+  // Implementation for MultibodyElement::DoSetDefaultParameters().
+  void DoSetDefaultParameters(systems::Parameters<T>* parameters) const final {
+    // Set default damping.
+    systems::BasicVector<T>& damping_parameter =
+        parameters->get_mutable_numeric_parameter(damping_parameter_index_);
+    damping_parameter.set_value(VectorX<T>(damping_));
+  }
+
   std::string name_;
   const Frame<T>& frame_on_parent_;
   const Frame<T>& frame_on_child_;
@@ -737,6 +868,9 @@ class Joint : public MultibodyElement<T> {
 
   // The Joint<T> implementation:
   std::unique_ptr<JointImplementation> implementation_;
+
+  // System parameter indices.
+  systems::NumericParameterIndex damping_parameter_index_;
 };
 
 }  // namespace multibody

@@ -1,3 +1,5 @@
+load("//tools/install:install.bzl", "install", "install_files")
+load("//tools/lint:lint.bzl", "add_lint_tests")
 load(
     "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
@@ -9,8 +11,6 @@ load(
     "//tools/skylark:drake_py.bzl",
     "drake_py_binary",
 )
-load("//tools/install:install.bzl", "install", "install_files")
-load("//tools/lint:lint.bzl", "add_lint_tests")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -20,7 +20,6 @@ drake_cc_package_library(
     deps = [
         ":collision_filter_declaration",
         ":collision_filter_manager",
-        ":deformable_mesh",
         ":deformable_mesh_with_bvh",
         ":drake_visualizer",
         ":drake_visualizer_params",
@@ -36,6 +35,7 @@ drake_cc_package_library(
         ":internal_geometry",
         ":kinematics_vector",
         ":make_mesh_for_deformable",
+        ":mesh_deformation_interpolator",
         ":meshcat",
         ":meshcat_animation",
         ":meshcat_graphviz",
@@ -47,6 +47,7 @@ drake_cc_package_library(
         ":read_obj",
         ":rgba",
         ":scene_graph",
+        ":scene_graph_config",
         ":scene_graph_inspector",
         ":shape_specification",
         ":shape_to_string",
@@ -116,22 +117,13 @@ drake_cc_library(
 )
 
 drake_cc_library(
-    name = "deformable_mesh",
-    srcs = ["deformable_mesh.cc"],
-    hdrs = ["deformable_mesh.h"],
-    deps = [
-        "//geometry/proximity:mesh_deformer",
-    ],
-)
-
-drake_cc_library(
     name = "deformable_mesh_with_bvh",
     srcs = ["deformable_mesh_with_bvh.cc"],
     hdrs = ["deformable_mesh_with_bvh.h"],
     deps = [
-        ":deformable_mesh",
         "//geometry/proximity:bvh",
         "//geometry/proximity:bvh_updater",
+        "//geometry/proximity:volume_mesh",
     ],
 )
 
@@ -270,8 +262,11 @@ drake_cc_library(
         ":internal_frame",
         ":internal_geometry",
         ":kinematics_vector",
+        ":mesh_deformation_interpolator",
         ":proximity_engine",
+        ":scene_graph_config",
         ":utilities",
+        "//geometry/proximity:make_convex_hull_mesh",
         "//geometry/render:render_engine",
         "//math:gradient",
     ],
@@ -283,9 +278,21 @@ drake_cc_library(
     hdrs = ["make_mesh_for_deformable.h"],
     deps = [
         ":shape_specification",
+        "//common:overloaded",
         "//geometry/proximity:make_mesh_from_vtk",
         "//geometry/proximity:make_sphere_mesh",
         "//geometry/proximity:volume_mesh",
+    ],
+)
+
+drake_cc_library(
+    name = "mesh_deformation_interpolator",
+    srcs = ["mesh_deformation_interpolator.cc"],
+    hdrs = ["mesh_deformation_interpolator.h"],
+    deps = [
+        "//geometry/proximity:triangle_surface_mesh",
+        "//geometry/proximity:volume_mesh",
+        "//geometry/proximity:volume_to_surface_mesh",
     ],
 )
 
@@ -296,6 +303,16 @@ drake_cc_library(
     deps = [
         ":geometry_roles",
         "//multibody/plant:coulomb_friction",
+    ],
+)
+
+drake_cc_library(
+    name = "scene_graph_config",
+    srcs = ["scene_graph_config.cc"],
+    hdrs = ["scene_graph_config.h"],
+    deps = [
+        ":proximity_properties",
+        "//common:name_value",
     ],
 )
 
@@ -351,6 +368,7 @@ drake_cc_library(
         ":shape_specification",
         "//common:copyable_unique_ptr",
         "//common:essential",
+        "//geometry/proximity:polygon_surface_mesh",
         "//geometry/proximity:volume_mesh",
         "//math:geometric_transform",
     ],
@@ -374,12 +392,17 @@ drake_cc_library(
     name = "shape_specification",
     srcs = ["shape_specification.cc"],
     hdrs = ["shape_specification.h"],
-    deps = [
+    interface_deps = [
         "//common:essential",
+        "//geometry/proximity:polygon_surface_mesh",
+        "//math:geometric_transform",
+    ],
+    deps = [
         "//common:nice_type_name",
+        "//common:overloaded",
+        "//geometry/proximity:make_convex_hull_mesh_impl",
         "//geometry/proximity:meshing_utilities",
         "//geometry/proximity:obj_to_surface_mesh",
-        "//math:geometric_transform",
     ],
 )
 
@@ -459,6 +482,7 @@ drake_cc_library(
     srcs = ["meshcat_animation.cc"],
     hdrs = ["meshcat_animation.h"],
     deps = [
+        "//common:string_container",
         "//math:geometric_transform",
     ],
 )
@@ -478,21 +502,27 @@ drake_cc_library(
         "meshcat.cc",
         "meshcat_file_storage_internal.cc",
         "meshcat_internal.cc",
+        "meshcat_recording_internal.cc",
     ],
     hdrs = [
         "meshcat.h",
         "meshcat_file_storage_internal.h",
         "meshcat_internal.h",
+        "meshcat_params.h",
+        "meshcat_recording_internal.h",
         "meshcat_types_internal.h",
     ],
     data = [":meshcat_resources"],
     install_hdrs_exclude = [
         "meshcat_internal.h",
+        "meshcat_recording_internal.h",
         "meshcat_types_internal.h",
     ],
     interface_deps = [
+        ":geometry_ids",
         ":meshcat_animation",
         ":rgba",
+        ":scene_graph_inspector",
         ":shape_specification",
         "//common:essential",
         "//common:name_value",
@@ -506,6 +536,7 @@ drake_cc_library(
         "//common:network_policy",
         "//common:scope_exit",
         "//common:sha256",
+        "//geometry/proximity:polygon_to_triangle_mesh",
         "@common_robotics_utilities",
         "@msgpack_internal//:msgpack",
         "@nlohmann_internal//:nlohmann",
@@ -521,10 +552,11 @@ drake_cc_binary(
     data = [
         ":environment_maps",
         "//examples/kuka_iiwa_arm:models",
+        "//examples/scene_graph:models",
         "//geometry/render:test_models",
-        "//manipulation/models/iiwa_description:models",
-        "//manipulation/models/ycb:models",
         "//multibody/meshcat:models",
+        "@drake_models//:iiwa_description",
+        "@drake_models//:ycb",
     ],
     visibility = ["//visibility:private"],
     deps = [
@@ -580,8 +612,27 @@ drake_cc_googletest(
         "//geometry/render:test_models",
     ],
     deps = [
+        ":geometry_instance",
         ":meshcat",
+        ":scene_graph",
+        ":shape_specification",
+        "//math:geometric_transform",
         "@nlohmann_internal//:nlohmann",
+    ],
+)
+
+drake_cc_googletest(
+    name = "meshcat_recording_internal_test",
+    deps = [
+        ":meshcat",
+    ],
+)
+
+drake_cc_googletest(
+    name = "meshcat_params_test",
+    deps = [
+        ":meshcat",
+        "//common/yaml:yaml_io",
     ],
 )
 
@@ -657,6 +708,7 @@ drake_cc_library(
         ":rgba",
         ":scene_graph",
         "//common:essential",
+        "//geometry/proximity:polygon_to_triangle_mesh",
         "//math:geometric_transform",
         "//systems/analysis:instantaneous_realtime_rate_calculator",
         "//systems/framework:context",
@@ -665,12 +717,24 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "vtk_opengl_init",
+    srcs = ["vtk_opengl_init.cc"],
+    internal = True,
+    visibility = ["//geometry:__subpackages__"],
+    deps = [
+        "@vtk_internal//:vtkCommonCore",
+        "@vtk_internal//:vtkRenderingOpenGL2",
+    ],
+    alwayslink = True,
+)
+
 drake_cc_googletest(
     name = "meshcat_visualizer_test",
     data = [
         "//geometry/render:test_models",
-        "//manipulation/models/iiwa_description:models",
         "//multibody/meshcat:models",
+        "@drake_models//:iiwa_description",
     ],
     deps = [
         ":meshcat_visualizer",
@@ -686,11 +750,21 @@ drake_cc_googletest(
 # -----------------------------------------------------
 
 filegroup(
+    name = "test_gltf_files",
+    testonly = 1,
+    srcs = [
+        "test/cube_with_hole.bin",
+        "test/cube_with_hole.gltf",
+    ],
+)
+
+filegroup(
     name = "test_obj_files",
     testonly = 1,
     srcs = [
         "test/convex.obj",
-        "test/extruded_u.obj",
+        "test/cube_corners.obj",
+        "test/cube_with_hole.obj",
         "test/forbidden_two_cubes.obj",
         "test/non_convex_mesh.obj",
         "test/octahedron.mtl",
@@ -705,7 +779,7 @@ filegroup(
     testonly = 1,
     srcs = [
         "test/cube_as_6_squares.vtk",
-        "test/extruded_u_volume_mesh.vtk",
+        "test/cube_as_volume.vtk",
         "test/non_convex_mesh.vtk",
         "test/one_negative_tetrahedron.vtk",
         "test/one_tetrahedron.vtk",
@@ -752,15 +826,6 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
-    name = "deformable_mesh_test",
-    deps = [
-        ":deformable_mesh",
-        "//common/test_utilities:eigen_matrix_compare",
-        "//geometry/proximity:make_box_mesh",
-    ],
-)
-
-drake_cc_googletest(
     name = "deformable_mesh_with_bvh_test",
     deps = [
         ":deformable_mesh_with_bvh",
@@ -771,8 +836,10 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "drake_visualizer_test",
+    data = ["//geometry/render:test_models"],
     deps = [
         ":drake_visualizer",
+        "//common:find_resource",
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_throws_message",
         "//lcm",
@@ -855,6 +922,7 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "geometry_state_test",
+    data = ["//geometry:test_obj_files"],
     deps = [
         ":geometry_state",
         "//common/test_utilities",
@@ -876,6 +944,16 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "mesh_deformation_interpolator_test",
+    deps = [
+        ":mesh_deformation_interpolator",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
+        "//geometry/proximity:make_sphere_mesh",
+    ],
+)
+
+drake_cc_googletest(
     name = "proximity_properties_test",
     deps = [
         ":geometry_roles",
@@ -892,6 +970,15 @@ drake_cc_googletest(
         "//common/test_utilities:expect_no_throw",
         "//common/test_utilities:expect_throws_message",
         "//geometry/proximity:make_sphere_mesh",
+    ],
+)
+
+drake_cc_googletest(
+    name = "scene_graph_config_test",
+    deps = [
+        ":scene_graph_config",
+        "//common/test_utilities:expect_throws_message",
+        "//common/yaml",
     ],
 )
 
@@ -925,6 +1012,23 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "shape_specification_thread_test",
+    data = [
+        "//examples/multibody/deformable:torus_tet_mesh",
+        "@drake_models//:dishes",
+        "@drake_models//:tri_homecart",
+    ],
+    tags = [
+        "cpus:4",
+    ],
+    deps = [
+        ":shape_specification",
+        "//common:find_resource",
+        "//common:find_runfiles",
+    ],
+)
+
+drake_cc_googletest(
     name = "shape_specification_test",
     data = [
         ":test_obj_files",
@@ -934,6 +1038,7 @@ drake_cc_googletest(
     deps = [
         ":shape_specification",
         "//common:find_resource",
+        "//common:overloaded",
         "//common/test_utilities",
     ],
 )

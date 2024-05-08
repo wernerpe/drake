@@ -22,7 +22,7 @@ from pydrake.math import RigidTransform, RotationMatrix
 from pydrake.multibody.meshcat import JointSliders
 from pydrake.multibody.tree import (
     FixedOffsetFrame,
-    SpatialInertia,
+    FrameIndex,
     default_model_instance,
 )
 from pydrake.planning import RobotDiagramBuilder
@@ -45,8 +45,7 @@ from pydrake.visualization._triad import (
 
 class ModelVisualizer:
     """
-    Visualizes models from a file or string buffer in MeshCat, Meldis,
-    or the legacy ``drake_visualizer`` application of days past.
+    Visualizes models from a file or string buffer in MeshCat or Meldis.
 
     To use this class to visualize model(s), create an instance with
     any desired options, add any models, and then call Run()::
@@ -266,21 +265,15 @@ class ModelVisualizer:
             raise RuntimeError("Finalize has already been called.")
 
         if self._visualize_frames:
-            # Find all the frames and draw them.
-            # The frames are drawn using the parsed length.
-            # The world frame is drawn thicker than the rest.
-            inspector = self._builder.scene_graph().model_inspector()
-            for frame_id in inspector.GetAllFrameIds():
-                world_id = self._builder.scene_graph().world_frame_id()
-                radius = self._triad_radius * (
-                    3 if frame_id == world_id else 1
-                    )
+            # Find all the frames (except the world frame) and draw them.
+            # The frames are drawn using the configured length.
+            for i in range(1, self._builder.plant().num_frames()):
                 AddFrameTriadIllustration(
                     plant=self._builder.plant(),
                     scene_graph=self._builder.scene_graph(),
-                    frame_id=frame_id,
+                    frame_index=FrameIndex(i),
                     length=self._triad_length,
-                    radius=radius,
+                    radius=self._triad_radius,
                     opacity=self._triad_opacity,
                 )
 
@@ -294,8 +287,7 @@ class ModelVisualizer:
                     model_instance=default_model_instance()))
             sensor_body = self._builder.plant().AddRigidBody(
                 name="$rgbd_sensor_body",
-                model_instance=default_model_instance(),
-                M_BBo_B=SpatialInertia())
+                model_instance=default_model_instance())
             self._builder.plant().WeldFrames(
                 frame_on_parent_F=sensor_offset_frame,
                 frame_on_child_M=sensor_body.body_frame())
@@ -316,7 +308,7 @@ class ModelVisualizer:
             self._reload_button_name = "Reload Model Files"
             self._meshcat.AddButton(self._reload_button_name)
 
-        # Connect to drake_visualizer, meldis, and meshcat.
+        # Connect to meldis and meshcat.
         # Meldis and meshcat provide simultaneous visualization of
         # illustration and proximity geometry.
         ApplyVisualizationConfig(

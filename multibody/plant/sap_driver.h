@@ -13,7 +13,7 @@
 #include "drake/multibody/contact_solvers/sap/sap_contact_problem.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver_results.h"
-#include "drake/multibody/plant/contact_pair_kinematics.h"
+#include "drake/multibody/plant/discrete_contact_pair.h"
 #include "drake/multibody/tree/multibody_forces.h"
 #include "drake/multibody/tree/multibody_tree_topology.h"
 #include "drake/systems/framework/context.h"
@@ -57,7 +57,7 @@ struct ContactProblemCache {
       sap_problem_locked;
 
   // TODO(amcastro-tri): consider removing R_WC from the contact problem cache
-  // and instead cache ContactPairKinematics separately.
+  // and instead cache DiscreteContactPair separately.
   std::vector<math::RotationMatrix<T>> R_WC;
 
   contact_solvers::internal::ReducedMapping mapping;
@@ -286,9 +286,6 @@ class SapDriver {
   const double near_rigid_threshold_;
   systems::CacheIndex contact_problem_;
   systems::CacheIndex sap_results_;
-  // Vector of joint damping coefficients, of size plant().num_velocities().
-  // This information is extracted during the call to ExtractModelInfo().
-  VectorX<T> joint_damping_;
   // Parameters for SAP.
   contact_solvers::internal::SapSolverParameters sap_parameters_;
 };

@@ -1,3 +1,4 @@
+load("//tools/lint:lint.bzl", "add_lint_tests")
 load(
     "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
@@ -8,9 +9,8 @@ load(
     "//tools/vector_gen:vector_gen.bzl",
     "drake_cc_vector_gen_library",
 )
-load("//tools/lint:lint.bzl", "add_lint_tests")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//visibility:private"])
 
 drake_cc_vector_gen_library(
     name = "rod2d_state_vector",
@@ -41,6 +41,7 @@ drake_cc_library(
     hdrs = [
         "rod2d.h",
     ],
+    visibility = ["//multibody/constraint:__pkg__"],
     deps = [
         ":rod2d_state_vector",
         "//common:essential",

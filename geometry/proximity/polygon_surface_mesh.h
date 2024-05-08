@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -20,6 +21,9 @@ namespace geometry {
 // Forward declaration for friendship.
 template <typename T>
 class PolygonSurfaceMesh;
+// Forward declaration of PolygonSurfaceMeshTest<T> for friend access.
+template <typename T>
+class PolygonSurfaceMeshTest;
 
 /** Representation of a polygonal face in a SurfacePolygon. */
 class SurfacePolygon {
@@ -300,7 +304,33 @@ class PolygonSurfaceMesh {
         "be provided at construction.");
   }
 
+  /** Like CalcGradientVectorOfLinearField above, this is a stub method,
+   provided for compatibility with MeshFieldLinear. The empty return value
+   here will cause the caller to report errors. */
+  template <typename FieldValue>
+  std::optional<Vector3<FieldValue>> MaybeCalcGradientVectorOfLinearField(
+      const std::array<FieldValue, 3>&, int) const {
+    return {};
+  }
+
+  /** Updates the position of all vertices in the mesh. Each sequential triple
+   in p_MVs (e.g., 3i, 3i + 1, 3i + 2), i ∈ ℤ, is interpreted as a position
+   vector associated with the iᵗʰ vertex. The position values are interpreted to
+   be measured and expressed in the same frame as the mesh to be deformed.
+
+   @param p_MVs  Vertex positions for the mesh's N vertices flattened into a
+                 vector (where each position vector is measured and expressed in
+                 the mesh's original frame).
+   @throws std::exception if p_MVs.size() != 3 * num_vertices() */
+  void SetAllPositions(const Eigen::Ref<const VectorX<T>>& p_MVs);
+
  private:
+  friend class PolygonSurfaceMeshTest<T>;
+
+  /* Calculates and sets the area, normal, and centroid of all polygon faces.
+   Also computes and sets the centroid of the entire surface. */
+  void ComputePositionDependentQuantities();
+
   // TODO(DamrongGuoy): Make CalcAreaNormalAndCentroid() return area, normal
   //  vector, and centroid instead of accumulating them into member
   //  variables. Therefore, the function would become publicly accessible, and
@@ -337,7 +367,8 @@ class PolygonSurfaceMesh {
    cᵢ, ..., cₘ entries for M polygons in the mesh. */
   std::vector<int> poly_indices_;
 
-  /* The vertices referenced by the mesh's polygons. */
+  /* The vertices referenced by the mesh's polygons, measured and expressed in
+   the mesh's frame M. */
   std::vector<Vector3<T>> vertices_M_;
 
   /* Derived quantities of the mesh -- computed as elements are added. */

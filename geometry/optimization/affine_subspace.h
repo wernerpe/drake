@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "drake/common/drake_deprecated.h"
 #include "drake/geometry/optimization/convex_set.h"
 
 namespace drake {
@@ -55,7 +56,7 @@ class AffineSubspace final : public ConvexSet {
   that dimension. If their displacement along that dimension is larger than tol,
   then the vector connecting the points is added as a basis vector.
   @pre !set.IsEmpty() */
-  explicit AffineSubspace(const ConvexSet& set, double tol = 0);
+  explicit AffineSubspace(const ConvexSet& set, double tol = 1e-12);
 
   ~AffineSubspace() final;
 
@@ -86,6 +87,9 @@ class AffineSubspace final : public ConvexSet {
   should be a vector in the ambient space, and the corresponding column of the
   output will be its projection onto the affine subspace.
   @pre x.rows() == ambient_dimension() */
+  DRAKE_DEPRECATED(
+      "2024-08-01",
+      "Projection has moved to `ConvexSet`; use `Projection()` instead.")
   Eigen::MatrixXd Project(const Eigen::Ref<const Eigen::MatrixXd>& x) const;
 
   /** Given a point x in the standard basis of the ambient space, returns the
@@ -123,11 +127,11 @@ class AffineSubspace final : public ConvexSet {
   bool ContainedIn(const AffineSubspace& other, double tol = 1e-15) const;
 
   /** Returns true if the two AffineSubspaces describe the same set, by checking
-   * that each set is contained in the other. */
+  that each set is contained in the other. */
   bool IsNearlyEqualTo(const AffineSubspace& other, double tol = 1e-15) const;
 
-  /** Returns an orthonormal basis of the vector subspace which is perpendicular
-   * to this AffineSubspace.*/
+  /** Returns an orthonormal basis of the vector subspace which is orthogonal
+  to this AffineSubspace.*/
   Eigen::MatrixXd OrthogonalComplementBasis() const;
 
  private:
@@ -141,8 +145,8 @@ class AffineSubspace final : public ConvexSet {
 
   std::optional<Eigen::VectorXd> DoMaybeGetFeasiblePoint() const final;
 
-  bool DoPointInSet(const Eigen::Ref<const Eigen::VectorXd>& x,
-                    double tol) const final;
+  std::optional<bool> DoPointInSetShortcut(
+      const Eigen::Ref<const Eigen::VectorXd>& x, double tol) const final;
 
   std::pair<VectorX<symbolic::Variable>,
             std::vector<solvers::Binding<solvers::Constraint>>>
@@ -169,6 +173,10 @@ class AffineSubspace final : public ConvexSet {
       const final;
 
   double DoCalcVolume() const final;
+
+  std::vector<std::optional<double>> DoProjectionShortcut(
+      const Eigen::Ref<const Eigen::MatrixXd>& points,
+      EigenPtr<Eigen::MatrixXd> projected_points) const final;
 
   // Note, we store the original basis as given, plus the QR decomposition, for
   // later use in many of the associated methods. We do not store this if

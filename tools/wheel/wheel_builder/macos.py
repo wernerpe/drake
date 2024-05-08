@@ -86,7 +86,7 @@ def _provision(python_targets):
 
     host_keys = ''
     known_hosts_path = os.path.join(resource_root, 'image', 'known_hosts')
-    with open(known_hosts_path) as f:
+    with open(known_hosts_path, 'rt', encoding='utf-8') as f:
         for line in f:
             host, key_type, key = line.strip().split()
             if key_type in _find_host_key_types(host):
@@ -95,7 +95,8 @@ def _provision(python_targets):
             host_keys += line
 
     if host_keys:
-        with open(os.path.expanduser('~/.ssh/known_hosts'), 'a') as f:
+        known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+        with open(known_hosts_path, 'at', encoding='utf-8') as f:
             f.write(''.join(host_keys))
             os.fchmod(f.fileno(), 0o600)
 
@@ -178,6 +179,9 @@ def build(options):
     # setting SDKROOT to the appropriate path.
     sdk_path = subprocess.check_output(['xcrun', '--show-sdk-path'], text=True)
     environment['SDKROOT'] = sdk_path.strip()
+
+    # Inject the build version into the environment.
+    environment['DRAKE_VERSION'] = options.version
 
     # Build the wheel dependencies.
     if options.dependencies:

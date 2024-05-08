@@ -93,7 +93,7 @@ Vector3<T> RpyFloatingMobilizer<T>::get_translational_velocity(
 }
 
 template <typename T>
-const RpyFloatingMobilizer<T>& RpyFloatingMobilizer<T>::set_angles(
+const RpyFloatingMobilizer<T>& RpyFloatingMobilizer<T>::SetAngles(
     systems::Context<T>* context, const Vector3<T>& angles) const {
   auto q = this->GetMutablePositions(context).template head<3>();
   q = angles;
@@ -102,8 +102,8 @@ const RpyFloatingMobilizer<T>& RpyFloatingMobilizer<T>::set_angles(
 
 template <typename T>
 const RpyFloatingMobilizer<T>&
-RpyFloatingMobilizer<T>::set_translation(systems::Context<T>* context,
-                                         const Vector3<T>& p_FM) const {
+RpyFloatingMobilizer<T>::SetTranslation(systems::Context<T>* context,
+                                        const Vector3<T>& p_FM) const {
   auto q = this->GetMutablePositions(context).template tail<3>();
   q = p_FM;
   return *this;
@@ -131,9 +131,35 @@ template <typename T>
 const RpyFloatingMobilizer<T>&
 RpyFloatingMobilizer<T>::SetFromRigidTransform(
     systems::Context<T>* context, const math::RigidTransform<T>& X_FM) const {
-  set_angles(context, math::RollPitchYaw<T>(X_FM.rotation()).vector());
-  set_translation(context, X_FM.translation());
+  SetAngles(context, math::RollPitchYaw<T>(X_FM.rotation()).vector());
+  SetTranslation(context, X_FM.translation());
   return *this;
+}
+
+template <typename T>
+void RpyFloatingMobilizer<T>::set_random_angles_distribution(
+    const Vector3<symbolic::Expression>& angles) {
+  Vector<symbolic::Expression, 6> q;
+  if (this->get_random_state_distribution()) {
+    q = this->get_random_state_distribution()->template head<6>();
+  } else {
+    q = this->get_zero_position().template cast<symbolic::Expression>();
+  }
+  q.template head<3>() = angles;
+  MobilizerBase::set_random_position_distribution(q);
+}
+
+template <typename T>
+void RpyFloatingMobilizer<T>::set_random_translation_distribution(
+    const Vector3<symbolic::Expression>& p_FM) {
+  Vector<symbolic::Expression, 6> q;
+  if (this->get_random_state_distribution()) {
+    q = this->get_random_state_distribution()->template head<6>();
+  } else {
+    q = this->get_zero_position().template cast<symbolic::Expression>();
+  }
+  q.template tail<3>() = p_FM;
+  MobilizerBase::set_random_position_distribution(q);
 }
 
 template <typename T>

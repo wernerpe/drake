@@ -1,10 +1,13 @@
-load("//tools/workspace/rust_toolchain:lock/archives.bzl", "ARCHIVES")
 load("//tools/workspace:metadata.bzl", "generate_repository_metadata")
+load("//tools/workspace/rust_toolchain:lock/archives.bzl", "ARCHIVES")
 
 def _rust_toolchain_downloads_impl(repo_ctx):
     # TODO(jwnimmer-tri) It's not clear to me yet whether we really need to
     # mirror the (giant) rust compiler binaries. For now, we'll leave the
     # mirroring infrastructure in place but not actually employ it.
+    #
+    # When/if this changes, it may be necessary to manually enumerate these
+    # repositories in tools/workspace/metadata.py.
     downloads = json.decode(repo_ctx.attr.downloads)
     for item in downloads:
         repo_ctx.download_and_extract(**item)

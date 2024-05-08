@@ -23,10 +23,6 @@ DEFAULT_MIRRORS = {
         "https://drake-mirror.csail.mit.edu/crates.io/{archive}",
         "https://s3.amazonaws.com/drake-mirror/crates.io/{archive}",
     ],
-    "director": [
-        "https://drake-packages.csail.mit.edu/director/{archive}",
-        "https://s3.amazonaws.com/drake-packages/director/{archive}",
-    ],
     "doxygen": [
         "https://drake-packages.csail.mit.edu/doxygen/{archive}",
         "https://s3.amazonaws.com/drake-packages/doxygen/{archive}",
@@ -49,5 +45,10 @@ DEFAULT_MIRRORS = {
         "https://repo1.maven.org/maven2/{fulljar}",
         # N.B. ibiblio doesn't offer https.
         "http://maven.ibiblio.org/maven2/{fulljar}",
+    ],
+    "mosek": [
+        "https://download.mosek.com/{path}",
+        "https://drake-mirror.csail.mit.edu/mosek/{path}",
+        "https://s3.amazonaws.com/drake-mirror/mosek/{path}",
     ],
 }

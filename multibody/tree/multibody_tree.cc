@@ -74,7 +74,7 @@ MultibodyTree<T>::MultibodyTree() {
   DRAKE_DEMAND(world_instance == world_model_instance());
 
   world_rigid_body_ = &AddRigidBody("world", world_model_instance(),
-                                    SpatialInertia<double>());
+                                    SpatialInertia<double>::NaN());
 
   // `default_model_instance()` hardcodes the returned index.  Make sure it's
   // correct.
@@ -118,6 +118,15 @@ const RigidBody<T>& MultibodyTree<T>::AddRigidBody(
   }
 
   return AddRigidBody(name, default_model_instance(), M_BBo_B);
+}
+
+template <typename T>
+void MultibodyTree<T>::RemoveJointActuator(const JointActuator<T>& actuator) {
+  DRAKE_MBT_THROW_IF_FINALIZED();
+  actuator.HasThisParentTreeOrThrow(this);
+  JointActuatorIndex actuator_index = actuator.index();
+  actuators_.Remove(actuator_index);
+  topology_.RemoveJointActuator(actuator_index);
 }
 
 template <typename T>
@@ -203,7 +212,7 @@ const auto& GetElementByIndex(
 
 // Shorthand type name for our name_to_index multimaps.
 template <typename ElementIndex>
-using NameToIndex = std::unordered_multimap<StringViewMapKey, ElementIndex>;
+using NameToIndex = string_unordered_multimap<ElementIndex>;
 
 // In service of error messages, returns a string listing the names of all
 // model instances that contain an element of the given name.
@@ -309,8 +318,7 @@ const auto& GetElementByName(
         names_by_model_instance;
     for (const auto& [element_name, element_index] : name_to_index) {
       const auto& element = GetElementByIndex(tree, element_index);
-      names_by_model_instance[element.model_instance()].push_back(
-          element_name.view());
+      names_by_model_instance[element.model_instance()].push_back(element_name);
     }
     if (names_by_model_instance.empty()) {
       message =
@@ -418,7 +426,7 @@ bool MultibodyTree<T>::HasJointActuatorNamed(
 
 template <typename T>
 bool MultibodyTree<T>::HasModelInstanceNamed(std::string_view name) const {
-  return model_instances_.names_map().count(name) > 0;
+  return model_instances_.names_map().contains(name);
 }
 
 template <typename T>
@@ -577,7 +585,7 @@ ModelInstanceIndex MultibodyTree<T>::GetModelInstanceByName(
     std::vector<std::string_view> valid_names;
     valid_names.reserve(names.size());
     for (const auto& [valid_name, _] : names) {
-      valid_names.push_back(valid_name.view());
+      valid_names.push_back(valid_name);
     }
     std::sort(valid_names.begin(), valid_names.end());
     throw std::logic_error(fmt::format(
@@ -833,17 +841,9 @@ void MultibodyTree<T>::FinalizeInternals() {
     auto& joint = joints_.get_mutable_element(i);
     const RigidBody<T>& body = joint.child_body();
     if (body.is_floating()) {
-      // Set default positions for the floating joints.
-      // TODO(xuchenhan-tri): This assumes that the only type of floating
-      //  joint is the quaternion floating joint. This may change pending
-      //  the resolution of #14949.
-      auto* quaternion_floating_joint =
-          dynamic_cast<QuaternionFloatingJoint<T>*>(&joint);
-      DRAKE_DEMAND(quaternion_floating_joint != nullptr);
       const auto [quaternion, translation] =
           GetDefaultFreeBodyPoseAsQuaternionVec3Pair(body);
-      quaternion_floating_joint->set_default_quaternion(quaternion);
-      quaternion_floating_joint->set_default_position(translation);
+      joint.SetDefaultPosePair(quaternion, translation);
       default_body_poses_[body.index()] = joint.index();
     }
   }
@@ -1010,13 +1010,13 @@ RigidTransform<T> MultibodyTree<T>::GetFreeBodyPoseOrThrow(
   const QuaternionFloatingMobilizer<T>& mobilizer =
       GetFreeBodyMobilizerOrThrow(body);
   return RigidTransform<T>(mobilizer.get_quaternion(context),
-                           mobilizer.get_position(context));
+                           mobilizer.get_translation(context));
 }
 
 template <typename T>
 void MultibodyTree<T>::SetDefaultFreeBodyPose(
     const RigidBody<T>& body, const RigidTransform<double>& X_WB) {
-  if (default_body_poses_.count(body.index()) == 0 ||
+  if (!default_body_poses_.contains(body.index()) ||
       std::holds_alternative<
           std::pair<Eigen::Quaternion<double>, Vector3<double>>>(
           default_body_poses_.at(body.index()))) {
@@ -1031,7 +1031,7 @@ void MultibodyTree<T>::SetDefaultFreeBodyPose(
   DRAKE_DEMAND(quaternion_floating_joint != nullptr);
   quaternion_floating_joint->set_default_quaternion(
       X_WB.rotation().ToQuaternion());
-  quaternion_floating_joint->set_default_position(X_WB.translation());
+  quaternion_floating_joint->set_default_translation(X_WB.translation());
 }
 
 template <typename T>
@@ -1046,7 +1046,7 @@ template <typename T>
 std::pair<Eigen::Quaternion<double>, Vector3<double>>
 MultibodyTree<T>::GetDefaultFreeBodyPoseAsQuaternionVec3Pair(
     const RigidBody<T>& body) const {
-  if (default_body_poses_.count(body.index()) == 0) {
+  if (!default_body_poses_.contains(body.index())) {
     return std::make_pair(Eigen::Quaternion<double>::Identity(),
                           Vector3<double>::Zero());
   }
@@ -1054,11 +1054,7 @@ MultibodyTree<T>::GetDefaultFreeBodyPoseAsQuaternionVec3Pair(
   if (std::holds_alternative<JointIndex>(default_body_pose)) {
     const auto& joint =
         joints_.get_element(std::get<JointIndex>(default_body_pose));
-    const QuaternionFloatingJoint<T>* quaternion_floating_joint =
-        dynamic_cast<const QuaternionFloatingJoint<T>*>(&joint);
-    DRAKE_DEMAND(quaternion_floating_joint != nullptr);
-    return std::make_pair(quaternion_floating_joint->get_default_quaternion(),
-                          quaternion_floating_joint->get_default_position());
+    return joint.GetDefaultPosePair();
   }
   return std::get<std::pair<Eigen::Quaternion<double>, Vector3<double>>>(
       default_body_pose);
@@ -1089,8 +1085,8 @@ void MultibodyTree<T>::SetFreeBodyPoseOrThrow(
   const QuaternionFloatingMobilizer<T>& mobilizer =
       GetFreeBodyMobilizerOrThrow(body);
   const RotationMatrix<T>& R_WB = X_WB.rotation();
-  mobilizer.set_quaternion(context, R_WB.ToQuaternion(), state);
-  mobilizer.set_position(context, X_WB.translation(), state);
+  mobilizer.SetQuaternion(context, R_WB.ToQuaternion(), state);
+  mobilizer.SetTranslation(context, X_WB.translation(), state);
 }
 
 template <typename T>
@@ -1105,12 +1101,13 @@ void MultibodyTree<T>::SetFreeBodySpatialVelocityOrThrow(
 }
 
 template <typename T>
-void MultibodyTree<T>::SetFreeBodyRandomPositionDistributionOrThrow(
-    const RigidBody<T>& body, const Vector3<symbolic::Expression>& position) {
+void MultibodyTree<T>::SetFreeBodyRandomTranslationDistributionOrThrow(
+    const RigidBody<T>& body,
+    const Vector3<symbolic::Expression>& translation) {
   DRAKE_MBT_THROW_IF_NOT_FINALIZED();
   QuaternionFloatingMobilizer<T>& mobilizer =
       get_mutable_variant(GetFreeBodyMobilizerOrThrow(body));
-  mobilizer.set_random_position_distribution(position);
+  mobilizer.set_random_translation_distribution(translation);
 }
 
 template <typename T>
@@ -1257,13 +1254,25 @@ void MultibodyTree<T>::CalcReflectedInertia(
                      num_velocities());
 
   // See JointActuator::reflected_inertia().
-  *reflected_inertia = VectorX<double>::Zero(num_velocities());
+  reflected_inertia->setZero();
 
   for (const JointActuator<T>* actuator : actuators_.elements()) {
     const int joint_velocity_index =
         actuator->joint().velocity_start();  // within v
     (*reflected_inertia)(joint_velocity_index) =
         actuator->calc_reflected_inertia(context);
+  }
+}
+
+template <typename T>
+void MultibodyTree<T>::CalcJointDamping(const systems::Context<T>& context,
+                                        VectorX<T>* joint_damping) const {
+  DRAKE_THROW_UNLESS(joint_damping != nullptr);
+  DRAKE_THROW_UNLESS(ssize(*joint_damping) == num_velocities());
+
+  for (const Joint<T>* joint : joints_.elements()) {
+    joint_damping->segment(joint->velocity_start(), joint->num_velocities()) =
+        joint->GetDampingVector(context);
   }
 }
 
@@ -3602,7 +3611,7 @@ MatrixX<double> MultibodyTree<T>::MakeActuatorSelectorMatrix(
       MatrixX<double>::Zero(num_actuated_dofs(), num_selected_actuators);
   int user_index = 0;
   for (JointActuatorIndex actuator_index : user_to_actuator_index_map) {
-    Su(int{actuator_index}, user_index) = 1.0;
+    Su(get_joint_actuator(actuator_index).input_start(), user_index) = 1.0;
     ++user_index;
   }
 
@@ -3615,8 +3624,7 @@ MatrixX<double> MultibodyTree<T>::MakeActuatorSelectorMatrix(
   DRAKE_MBT_THROW_IF_NOT_FINALIZED();
 
   std::vector<JointActuatorIndex> joint_to_actuator_index(num_joints());
-  for (JointActuatorIndex actuator_index(0);
-       actuator_index < num_actuators(); ++actuator_index) {
+  for (JointActuatorIndex actuator_index : GetJointActuatorIndices()) {
     const auto& actuator = get_joint_actuator(actuator_index);
     joint_to_actuator_index[actuator.joint().index()] = actuator_index;
   }
@@ -3723,7 +3731,7 @@ VectorX<double> MultibodyTree<T>::GetEffortLowerLimits() const {
   DRAKE_MBT_THROW_IF_NOT_FINALIZED();
   Eigen::VectorXd lower = Eigen::VectorXd::Constant(
       num_actuated_dofs(), -std::numeric_limits<double>::infinity());
-  for (JointActuatorIndex i{0}; i < num_actuators(); ++i) {
+  for (JointActuatorIndex i : GetJointActuatorIndices()) {
     const auto& actuator = get_joint_actuator(i);
     for (int j = actuator.input_start();
          j < actuator.input_start() + actuator.num_inputs(); ++j) {
@@ -3739,7 +3747,7 @@ VectorX<double> MultibodyTree<T>::GetEffortUpperLimits() const {
   DRAKE_MBT_THROW_IF_NOT_FINALIZED();
   Eigen::VectorXd upper = Eigen::VectorXd::Constant(
       num_actuated_dofs(), std::numeric_limits<double>::infinity());
-  for (JointActuatorIndex i{0}; i < num_actuators(); ++i) {
+  for (JointActuatorIndex i : GetJointActuatorIndices()) {
     const auto& actuator = get_joint_actuator(i);
     for (int j = actuator.input_start();
          j < actuator.input_start() + actuator.num_inputs(); ++j) {

@@ -10,8 +10,8 @@ def curl_internal_repository(
         In case of a cmake_configure_file build error when upgrading curl,
         update cmakedefines.bzl to match the new upstream definitions.
         """,
-        commit = "curl-8_5_0",
-        sha256 = "8117d24a8c29a0c3aa160703eb487694f3d4aa72ea2067b45beb439ea4d47668",  # noqa
+        commit = "curl-8_7_1",
+        sha256 = "0e46c856f517602c347bb5fe5b73174f8ee798bc87f1a97235c95761f75fcc28",  # noqa
         build_file = ":package.BUILD.bazel",
         mirrors = mirrors,
     )

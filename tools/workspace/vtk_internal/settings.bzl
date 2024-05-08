@@ -132,6 +132,8 @@ MODULE_SETTINGS = {
             "CMake/vtkVersion.cmake",
         ],
         "cmake_defines": [
+            # Emulate the concatenation found in the root CMakeLists.txt.
+            "VTK_VERSION=@VTK_MAJOR_VERSION@.@VTK_MINOR_VERSION@.@VTK_BUILD_VERSION@",  # noqa
             # ABI
             "VTK_HAS_ABI_NAMESPACE=1",
             "VTK_ABI_NAMESPACE_NAME=drake_vendor",
@@ -252,8 +254,10 @@ MODULE_SETTINGS = {
             "Filters/Core/vtkAppendPolyData.cxx",
             "Filters/Core/vtkDecimatePro.cxx",
             "Filters/Core/vtkGlyph3D.cxx",
+            "Filters/Core/vtkOrientPolyData.cxx",
             "Filters/Core/vtkPolyDataNormals.cxx",
             "Filters/Core/vtkPolyDataTangents.cxx",
+            "Filters/Core/vtkSplitSharpEdgesPolyData.cxx",
             "Filters/Core/vtkTriangleFilter.cxx",
         ],
     },

@@ -149,7 +149,7 @@ SourceId SceneGraph<T>::RegisterSource(const std::string& name) {
 
 template <typename T>
 bool SceneGraph<T>::SourceIsRegistered(SourceId id) const {
-  return input_source_ids_.count(id) > 0;
+  return input_source_ids_.contains(id);
 }
 
 template <typename T>
@@ -381,12 +381,13 @@ void SceneGraph<T>::AssignRole(Context<T>* context, SourceId source_id,
                                GeometryId geometry_id,
                                IllustrationProperties properties,
                                RoleAssign assign) const {
+  // TODO(#20962) We have deleted drake_visualizer. This warning is probably no
+  // longer accurate.
   static const logging::Warn one_time(
       "Due to a bug (see issue #13597), changing the illustration roles or "
-      "properties in the context will not have any apparent effect in, at "
-      "least, the legacy `drake_visualizer` application of days past. Please "
-      "change the illustration role in the model prior to allocating the "
-      "Context.");
+      "properties in the context will not have any apparent effect in "
+      "some viewer applications. Please change the illustration role in the "
+      "model prior to allocating the Context.");
   auto& g_state = mutable_geometry_state(context);
   g_state.AssignRole(source_id, geometry_id, std::move(properties), assign);
 }
@@ -443,7 +444,7 @@ void SceneGraph<T>::SetDefaultParameters(const Context<T>& context,
 template <typename T>
 void SceneGraph<T>::MakeSourcePorts(SourceId source_id) {
   // This will fail only if the source generator starts recycling source ids.
-  DRAKE_ASSERT(input_source_ids_.count(source_id) == 0);
+  DRAKE_ASSERT(!input_source_ids_.contains(source_id));
   // Create and store the input ports for this source id.
   SourcePorts& source_ports = input_source_ids_[source_id];
   source_ports.pose_port =
@@ -565,9 +566,14 @@ void SceneGraph<T>::CalcConfigurationUpdate(const Context<T>& context,
     }
   }
 
-  state.FinalizeConfigurationUpdate(kinematics_data,
-                                    &state.mutable_proximity_engine(),
-                                    state.GetMutableRenderEngines());
+  for (const auto role : std::vector<Role>{
+           Role::kIllustration, Role::kPerception, Role::kProximity}) {
+    state.mutable_driven_mesh_data(role).SetControlMeshPositions(
+        kinematics_data.q_WGs);
+  }
+  state.FinalizeConfigurationUpdate(
+      kinematics_data, state.mutable_driven_mesh_data(Role::kPerception),
+      &state.mutable_proximity_engine(), state.GetMutableRenderEngines());
 }
 
 template <typename T>

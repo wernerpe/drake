@@ -1,7 +1,6 @@
 #include "drake/bindings/pydrake/common/cpp_template_pybind.h"
 #include "drake/bindings/pydrake/common/default_scalars_pybind.h"
 #include "drake/bindings/pydrake/common/deprecation_pybind.h"
-#include "drake/bindings/pydrake/common/eigen_geometry_pybind.h"
 #include "drake/bindings/pydrake/common/eigen_pybind.h"
 #include "drake/bindings/pydrake/common/identifier_pybind.h"
 #include "drake/bindings/pydrake/common/serialize_pybind.h"
@@ -225,6 +224,8 @@ void DoScalarDependentDefinitions(py::module m, T) {
             py_rvp::reference_internal, py::arg("name"), py::arg("joint"),
             py::arg("effort_limit") = std::numeric_limits<double>::infinity(),
             cls_doc.AddJointActuator.doc)
+        .def("RemoveJointActuator", &Class::RemoveJointActuator,
+            py::arg("actuator"), cls_doc.RemoveJointActuator.doc)
         .def(
             "AddFrame",
             [](Class * self, std::unique_ptr<Frame<T>> frame) -> auto& {
@@ -242,12 +243,14 @@ void DoScalarDependentDefinitions(py::module m, T) {
                 const SpatialInertia<double>& s) -> auto& {
               return self->AddRigidBody(name, s);
             },
-            py::arg("name"), py::arg("M_BBo_B"), py_rvp::reference_internal,
-            cls_doc.AddRigidBody.doc_2args)
+            py::arg("name"),
+            py::arg("M_BBo_B") = SpatialInertia<double>::Zero(),
+            py_rvp::reference_internal, cls_doc.AddRigidBody.doc_2args)
         .def("AddRigidBody",
             py::overload_cast<const std::string&, ModelInstanceIndex,
                 const SpatialInertia<double>&>(&Class::AddRigidBody),
-            py::arg("name"), py::arg("model_instance"), py::arg("M_BBo_B"),
+            py::arg("name"), py::arg("model_instance"),
+            py::arg("M_BBo_B") = SpatialInertia<double>::Zero(),
             py_rvp::reference_internal, cls_doc.AddRigidBody.doc_3args)
         .def("WeldFrames", &Class::WeldFrames, py::arg("frame_on_parent_F"),
             py::arg("frame_on_child_M"),
@@ -487,6 +490,14 @@ void DoScalarDependentDefinitions(py::module m, T) {
             py::arg("context"), py::arg("body"),
             cls_doc.EvalBodyPoseInWorld.doc)
         .def(
+            "EvalBodySpatialAccelerationInWorld",
+            [](const Class* self, const Context<T>& context,
+                const RigidBody<T>& body_B) {
+              return self->EvalBodySpatialAccelerationInWorld(context, body_B);
+            },
+            py::arg("context"), py::arg("body"),
+            cls_doc.EvalBodySpatialAccelerationInWorld.doc)
+        .def(
             "EvalBodySpatialVelocityInWorld",
             [](const Class* self, const Context<T>& context,
                 const RigidBody<T>& body_B) {
@@ -655,6 +666,9 @@ void DoScalarDependentDefinitions(py::module m, T) {
             cls_doc.CalcGeneralizedForces.doc)
         .def("MakeActuationMatrix", &Class::MakeActuationMatrix,
             cls_doc.MakeActuationMatrix.doc)
+        .def("MakeActuationMatrixPseudoinverse",
+            &Class::MakeActuationMatrixPseudoinverse,
+            cls_doc.MakeActuationMatrixPseudoinverse.doc)
         .def(
             "MakeActuatorSelectorMatrix",
             [](const Class* self, const std::vector<JointActuatorIndex>&
@@ -717,6 +731,8 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("get_mutable_joint", &Class::get_mutable_joint,
             py::arg("joint_index"), py_rvp::reference_internal,
             cls_doc.get_mutable_joint.doc)
+        .def("has_joint_actuator", &Class::has_joint_actuator,
+            py::arg("actuator_index"), cls_doc.has_joint_actuator.doc)
         .def("get_joint_actuator", &Class::get_joint_actuator,
             py::arg("actuator_index"), py_rvp::reference_internal,
             cls_doc.get_joint_actuator.doc)
@@ -736,8 +752,15 @@ void DoScalarDependentDefinitions(py::module m, T) {
             py::arg("model_instance"), cls_doc.is_gravity_enabled.doc)
         .def("GetJointIndices", &Class::GetJointIndices,
             py::arg("model_instance"), cls_doc.GetJointIndices.doc)
-        .def("GetJointActuatorIndices", &Class::GetJointActuatorIndices,
-            py::arg("model_instance"), cls_doc.GetJointActuatorIndices.doc)
+        .def("GetJointActuatorIndices",
+            overload_cast_explicit<const std::vector<JointActuatorIndex>&>(
+                &Class::GetJointActuatorIndices),
+            cls_doc.GetJointActuatorIndices.doc_0args)
+        .def("GetJointActuatorIndices",
+            overload_cast_explicit<std::vector<JointActuatorIndex>,
+                ModelInstanceIndex>(&Class::GetJointActuatorIndices),
+            py::arg("model_instance"),
+            cls_doc.GetJointActuatorIndices.doc_1args)
         .def("GetActuatedJointIndices", &Class::GetActuatedJointIndices,
             py::arg("model_instance"), cls_doc.GetActuatedJointIndices.doc)
         .def("GetModelInstanceName",
@@ -907,6 +930,9 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("GetBodyFrameIdIfExists", &Class::GetBodyFrameIdIfExists,
             py::arg("body_index"), py_rvp::reference_internal,
             cls_doc.GetBodyFrameIdIfExists.doc)
+        .def("GetVisualGeometriesForBody", &Class::GetVisualGeometriesForBody,
+            py::arg("body"), py_rvp::reference_internal,
+            cls_doc.GetVisualGeometriesForBody.doc)
         .def("GetCollisionGeometriesForBody",
             &Class::GetCollisionGeometriesForBody, py::arg("body"),
             py_rvp::reference_internal,

@@ -70,7 +70,7 @@ void VerifyCollisionFilters(
       SCOPED_TRACE(fmt::format("{} vs {}", names.first(), names.second()));
       auto contains =
           [&expected_filters](const CollisionPair& key) {
-            return expected_filters.count(key) > 0;
+            return expected_filters.contains(key);
           };
       EXPECT_EQ(inspector.CollisionFiltered(ids[m], ids[n]),
                 contains(names));
@@ -310,8 +310,9 @@ GTEST_TEST(ProcessModelDirectivesTest, CollisionFilterGroupSmokeTest) {
   // pieces.
   DiagramBuilder<double> builder;
   auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.);
+  auto parser = make_parser(&plant);
   ProcessModelDirectives(directives, &plant,
-                         nullptr, make_parser(&plant).get());
+                         nullptr, parser.get());
 
   // Make sure the plant is not finalized such that the Finalize() default
   // filtering has not taken into effect yet. This guarantees that the
@@ -328,8 +329,38 @@ GTEST_TEST(ProcessModelDirectivesTest, CollisionFilterGroupSmokeTest) {
     {"model3::collision",             "nested::sub_model2::collision"},
     // From group 'across_sub_models'.
     {"nested::sub_model1::collision", "nested::sub_model2::collision"},
+    // From composite group 'group_4567'.
+    {"model4::collision", "model5::collision"},
+    {"model4::collision", "model6::collision"},
+    {"model4::collision", "model7::collision"},
+    {"model5::collision", "model6::collision"},
+    {"model5::collision", "model7::collision"},
+    {"model6::collision", "model7::collision"},
   };
   VerifyCollisionFilters(scene_graph, expected_filters);
+
+  // Verify parser-level collision filter reporting.
+  CollisionFilterGroups expected_report;
+  expected_report.AddGroup("across_models", {"model1::base", "model2::base"});
+  expected_report.AddGroup("group_45", {"model4::base", "model5::base"});
+  expected_report.AddGroup("group_4567",
+                           {"model4::base", "model5::base",
+                            "model6::base", "model7::base"});
+  expected_report.AddGroup("group_67", {"model6::base", "model7::base"});
+  expected_report.AddGroup("nested::across_sub_models",
+                           {"nested::sub_model1::base",
+                            "nested::sub_model2::base"});
+  expected_report.AddGroup("nested_group", {"model3::base"});
+  expected_report.AddGroup("nested_members",
+                           {"model1::base", "nested::sub_model2::base"});
+  expected_report.AddExclusionPair({"across_models", "across_models"});
+  expected_report.AddExclusionPair({"group_4567", "group_4567"});
+  expected_report.AddExclusionPair(
+      {"nested::across_sub_models", "nested::across_sub_models"});
+  expected_report.AddExclusionPair(
+      {"nested::across_sub_models", "nested_group"});
+  expected_report.AddExclusionPair({"nested_members", "nested_members"});
+  EXPECT_EQ(parser->collision_filter_groups(), expected_report);
 }
 
 // Test collision filter groups in ModelDirectives.
@@ -338,12 +369,45 @@ GTEST_TEST(ProcessModelDirectivesTest, CollisionFilterGroupNoSceneGraph) {
       FindResourceOrThrow(std::string(kTestDir) +
                           "/collision_filter_group.dmd.yaml"));
 
-
   MultibodyPlant<double> plant(0.0);
   ASSERT_FALSE(plant.geometry_source_is_registered());
   DRAKE_EXPECT_NO_THROW(
       ProcessModelDirectives(directives, &plant,
                              nullptr, make_parser(&plant).get()));
+}
+
+// Duplicate definition of collision filter groups raises an error.
+GTEST_TEST(ProcessModelDirectivesTest, CollisionFilterGroupDuplicateGroups) {
+  std::string kDmdYaml = R"""(
+directives:
+
+- add_model:
+    name: model1
+    file: package://process_model_directives_test/simple_model.sdf
+
+- add_model:
+    name: model2
+    file: package://process_model_directives_test/simple_model.sdf
+
+- add_collision_filter_group:
+    name: bad_repeated
+    members: [model1::base]
+    ignored_collision_filter_groups: [bad_repeated]
+
+- add_collision_filter_group:
+    name: bad_repeated
+    members: [model2::base]
+    ignored_collision_filter_groups: [bad_repeated]
+)""";
+
+  ModelDirectives directives = LoadModelDirectivesFromString(kDmdYaml);
+
+  DiagramBuilder<double> builder;
+  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, 0.);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      ProcessModelDirectives(directives, &plant,
+                             nullptr, make_parser(&plant).get()),
+      ".*'bad_repeated'.*already.*defined.*");
 }
 
 // Test collision filter groups in ModelDirectives.

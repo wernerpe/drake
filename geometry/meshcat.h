@@ -11,6 +11,7 @@
 #include "drake/common/drake_copyable.h"
 #include "drake/common/name_value.h"
 #include "drake/geometry/meshcat_animation.h"
+#include "drake/geometry/meshcat_params.h"
 #include "drake/geometry/proximity/triangle_surface_mesh.h"
 #include "drake/geometry/rgba.h"
 #include "drake/geometry/shape_specification.h"
@@ -21,51 +22,12 @@
 namespace drake {
 namespace geometry {
 
-/** The set of parameters for configuring Meshcat. */
-struct MeshcatParams {
-  /** Passes this object to an Archive.
-  Refer to @ref yaml_serialization "YAML Serialization" for background. */
-  template <typename Archive>
-  void Serialize(Archive* a) {
-    a->Visit(DRAKE_NVP(host));
-    a->Visit(DRAKE_NVP(port));
-    a->Visit(DRAKE_NVP(web_url_pattern));
-    a->Visit(DRAKE_NVP(show_stats_plot));
-  }
-
-  /** Meshcat will listen only on the given hostname (e.g., "localhost").
-  If "*" is specified, then it will listen on all interfaces.
-  If empty, an appropriate default value will be chosen (currently "*"). */
-  std::string host{"*"};
-
-  /** Meshcat will listen on the given http `port`. If no port is specified,
-  then it will listen on the first available port starting at 7000 (up to 7999).
-  If port 0 is specified, it will listen on an arbitrary "ephemeral" port.
-  @pre We require `port` == 0 || `port` >= 1024. */
-  std::optional<int> port{std::nullopt};
-
-  /** The `web_url_pattern` may be used to change the web_url() (and therefore
-  the ws_url()) reported by Meshcat. This may be useful in case %Meshcat sits
-  behind a firewall or proxy.
-
-  The pattern follows the
-  <a href="https://en.cppreference.com/w/cpp/utility/format">std::format</a>
-  specification language, except that `arg-id` substitutions are performed
-  using named arguments instead of positional indices.
-
-  There are two arguments available to the pattern:
-  - `{port}` will be substituted with the %Meshcat server's listen port number;
-  - `{host}` will be substituted with this params structure's `host` field, or
-    else with "localhost" in case the `host` was one of the placeholders for
-    "all interfaces".
-  */
-  std::string web_url_pattern{"http://{host}:{port}"};
-
-  /** Determines whether or not to display the stats plot widget in the Meshcat
-  user interface. This plot including realtime rate and WebGL render
-  statistics. */
-  bool show_stats_plot{true};
-};
+// Forward-declare a helper class from meshcat_recording_internal.h.
+#ifndef DRAKE_DOXYGEN_CXX
+namespace internal {
+class MeshcatRecording;
+}  // namespace internal
+#endif
 
 /** Provides an interface to %Meshcat (https://github.com/meshcat-dev/meshcat).
 
@@ -560,9 +522,9 @@ class Meshcat {
 
   @pydrake_mkdoc_identifier{RigidTransform}
   */
-  void SetTransform(
-      std::string_view path, const math::RigidTransformd& X_ParentPath,
-      const std::optional<double>& time_in_recording = std::nullopt);
+  void SetTransform(std::string_view path,
+                    const math::RigidTransformd& X_ParentPath,
+                    std::optional<double> time_in_recording = std::nullopt);
 
   /** Set the homogeneous transform for a given path in the scene tree relative
   to its parent path. An object's pose is the concatenation of all of the
@@ -623,9 +585,8 @@ class Meshcat {
 
   @pydrake_mkdoc_identifier{bool}
   */
-  void SetProperty(
-      std::string_view path, std::string property, bool value,
-      const std::optional<double>& time_in_recording = std::nullopt);
+  void SetProperty(std::string_view path, std::string property, bool value,
+                   std::optional<double> time_in_recording = std::nullopt);
 
   /** Sets a single named property of the object at the given path. For example,
   @verbatim
@@ -645,9 +606,8 @@ class Meshcat {
 
   @pydrake_mkdoc_identifier{double}
   */
-  void SetProperty(
-      std::string_view path, std::string property, double value,
-      const std::optional<double>& time_in_recording = std::nullopt);
+  void SetProperty(std::string_view path, std::string property, double value,
+                   std::optional<double> time_in_recording = std::nullopt);
 
   /** Sets a single named property of the object at the given path. For example,
   @verbatim
@@ -667,10 +627,9 @@ class Meshcat {
 
   @pydrake_mkdoc_identifier{vector_double}
   */
-  void SetProperty(
-      std::string_view path, std::string property,
-      const std::vector<double>& value,
-      const std::optional<double>& time_in_recording = std::nullopt);
+  void SetProperty(std::string_view path, std::string property,
+                   const std::vector<double>& value,
+                   std::optional<double> time_in_recording = std::nullopt);
 
   /** Sets the *environment* texture. For objects with physically-based
    rendering (PBR) material properties (e.g., metallic surfaces), this defines
@@ -881,12 +840,12 @@ class Meshcat {
   the visualizer immediately (because meshcat animations do not support
   SetObject).
   */
-  void StartRecording(double frames_per_second = 32.0,
+  void StartRecording(double frames_per_second = 64.0,
                       bool set_visualizations_while_recording = true);
 
   /** Sets a flag to pause/stop recording.  When stopped, publish events will
   not add frames to the animation. */
-  void StopRecording() { recording_ = false; }
+  void StopRecording();
 
   /** Sends the recording to Meshcat as an animation. The published animation
   only includes transforms and properties; the objects that they modify must be
@@ -899,16 +858,16 @@ class Meshcat {
   *not* currently remove the animation from Meshcat. */
   void DeleteRecording();
 
-  /** Returns a mutable pointer to this Meshcat's unique MeshcatAnimation
-  object, if it exists, in which the frames will be recorded. This pointer can
-  be used to set animation properties (like autoplay, the loop mode, number of
-  repetitions, etc).
+  /** Returns a const reference to this Meshcat's MeshcatAnimation object. This
+  can be used to check animation properties (e.g., autoplay). The return value
+  will only remain valid for the lifetime of `this` or until DeleteRecording()
+  is called. */
+  const MeshcatAnimation& get_recording() const;
 
-  The MeshcatAnimation object will only remain valid for the lifetime of `this`
-  or until DeleteRecording() is called.
-
-  @throws std::exception if meshcat does not have a recording.
-  */
+  /** Returns a mutable reference to this Meshcat's MeshcatAnimation object.
+  This can be used to set animation properties (like autoplay, the loop mode,
+  number of repetitions, etc). The return value will only remain valid for the
+  lifetime of `this` or until DeleteRecording() is called. */
   MeshcatAnimation& get_mutable_recording();
 
   /* These remaining public methods are intended to primarily for testing. These
@@ -974,14 +933,8 @@ class Meshcat {
   // impl() accessors are always used.
   void* const impl_{};
 
-  /* MeshcatAnimation object for recording. It must be mutable to allow the set
-  methods to be otherwise const. */
-  std::unique_ptr<MeshcatAnimation> animation_;
-
-  /* Recording status.  True means that each new Publish event will record a
-  frame in the animation. */
-  bool recording_{false};
-  bool set_visualizations_while_recording_{true};
+  /* Encapsulated recording logic. The value is never nullptr. */
+  std::unique_ptr<internal::MeshcatRecording> recording_;
 };
 
 }  // namespace geometry

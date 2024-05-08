@@ -2,15 +2,15 @@ r"""Re-package a Drake .tar.gz archive into a Debian archive.
 
 This script assumes that the Ubuntu distribution the .tar.gz archive was built
 for is the same as what is running the script.  For example, a
-drake-latest-focal.tar.gz must be re-packaged on a focal machine.
+drake-latest-noble.tar.gz must be re-packaged on a noble machine.
 
 Command line arguments should specify absolute paths, e.g.,
 
     bazel run //tools/release_engineering:repack_deb -- \
-        --tgz "$PWD/drake-latest-focal.tar.gz" \
+        --tgz "$PWD/drake-latest-noble.tar.gz" \
         --output-dir "$PWD/drake_deb"
 
-will repackage the file drake-latest-focal.tar.gz in the current directory,
+will repackage the file drake-latest-noble.tar.gz in the current directory,
 and copy the final re-packaged debian archive to the directory $PWD/drake_deb.
 """
 
@@ -25,7 +25,7 @@ import tempfile
 
 import lsb_release
 
-from bazel_tools.tools.python.runfiles import runfiles
+from python import runfiles
 
 
 def _rlocation(relative_path):
@@ -61,11 +61,7 @@ def _run(args):
 
     version_tokens = version_txt.split()
     assert len(version_tokens) == 2, version_txt
-    yyyymmddhhmmss, git_sha = version_tokens
-    if args.version is not None:
-        debian_version = args.version
-    else:
-        debian_version = f'0.0.{yyyymmddhhmmss}'
+    drake_version, git_sha = version_tokens
 
     # Compute the new control.  The `packages_txt` will have one package-name
     # per line; transform this to an indented and comma separated list.
@@ -78,7 +74,7 @@ def _run(args):
     # Compute the new changelog.
     with open(deb_changelog_in, encoding='utf-8') as f:
         deb_changelog_contents = f.read().format(
-            debian_version=debian_version,
+            drake_version=drake_version,
             git_sha=git_sha,
             date=email.utils.formatdate(version_mtime),
         )
@@ -91,7 +87,7 @@ def _run(args):
         '/usr/bin/alien',
         '--to-deb',
         '--single',
-        f'--version={debian_version}',
+        f'--version={drake_version}',
         '--keep-version',
         # NOTE: the extracted permissions particularly for directories are not
         # appropriate, --fixperms results in debian/rules having `dh_fixperms`
@@ -108,8 +104,8 @@ def _run(args):
     # documentation, it appears to depend on both the name of the archive and
     # the --version argument.  Some examples:
     #
-    # - drake-latest-focal.tar.gz => drake-latest-focal-0.0.20220513083006
-    # - drake-20220512-focal.tar.gz => drake-0.0.20220512082823
+    # - drake-latest-noble.tar.gz => drake-latest-noble-0.0.20220513083006
+    # - drake-20220512-noble.tar.gz => drake-0.0.20220512082823
     # - foo.tar.gz => foo-0.0.20220513083006
     #
     # It appears to keep the original name _until_ it finds numbers e.g.
@@ -137,7 +133,7 @@ def _run(args):
     # Create the deb.
     subprocess.check_call(['fakeroot', 'debian/rules', 'binary'],
                           cwd=package_dir)
-    shutil.move(f'{cwd}/drake-dev_{debian_version}-1_amd64.deb',
+    shutil.move(f'{cwd}/drake-dev_{drake_version}-1_amd64.deb',
                 f'{args.output_dir}/')
 
 
@@ -154,12 +150,6 @@ def main():
     parser.add_argument(
         '--output-dir', metavar='DIR', default=output_default,
         help=f'directory to place *.deb output (default: {output_default})')
-    parser.add_argument(
-        '--version', type=str, required=False, default=None,
-        help=(
-            'version number to package (e.g., "1.3.0"); if not specified the '
-            'date timestamp YYYYMMDD found in the foo.tar.gz file '
-            'drake/share/doc/drake/VERSION.TXT will be used'))
     args = parser.parse_args()
     args.tgz = os.path.realpath(args.tgz)
     args.output_dir = os.path.realpath(args.output_dir)

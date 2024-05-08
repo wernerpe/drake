@@ -43,6 +43,14 @@ DeformableBodyId DeformableModel<T>::RegisterDeformableBody(
   SourceId source_id = plant_->get_source_id().value();
   /* All deformable bodies are registered with the world frame at the moment. */
   const FrameId world_frame_id = scene_graph.world_frame_id();
+  // TODO(xuchenhan-tri): Consider allowing users to opt out of illustration
+  // property for the deformable body if that's ever useful.
+  /* If the geometry doesn't have illustration properties, add an empty one so
+   that it can at least be visualized. */
+  if (geometry_instance->illustration_properties() == nullptr) {
+    geometry_instance->set_illustration_properties(
+        geometry::IllustrationProperties{});
+  }
   GeometryId geometry_id = scene_graph.RegisterDeformableGeometry(
       source_id, world_frame_id, std::move(geometry_instance), resolution_hint);
 
@@ -230,7 +238,7 @@ GeometryId DeformableModel<T>::GetGeometryId(DeformableBodyId id) const {
 template <typename T>
 DeformableBodyId DeformableModel<T>::GetBodyId(
     geometry::GeometryId geometry_id) const {
-  if (geometry_id_to_body_id_.count(geometry_id) == 0) {
+  if (!geometry_id_to_body_id_.contains(geometry_id)) {
     throw std::runtime_error(
         fmt::format("The given GeometryId {} does not correspond to a "
                     "deformable body registered with this model.",

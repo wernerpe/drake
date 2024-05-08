@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -12,7 +13,6 @@
 #include "drake/multibody/contact_solvers/schur_complement.h"
 #include "drake/multibody/fem/discrete_time_integrator.h"
 #include "drake/multibody/fem/fem_solver.h"
-#include "drake/multibody/plant/contact_pair_kinematics.h"
 #include "drake/multibody/plant/deformable_contact_info.h"
 #include "drake/multibody/plant/deformable_model.h"
 #include "drake/multibody/plant/discrete_contact_data.h"
@@ -140,19 +140,12 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   void AppendLinearDynamicsMatrix(const systems::Context<T>& context,
                                   std::vector<MatrixX<T>>* A) const;
 
-  /* Given the configuration stored in `context`, appends discrete pairs in
-   which one of the body in contact is deformable to the given `pairs`.
-   @pre pairs != nullptr. */
+  /* Appends discrete contact pairs where at least one of the bodies in contact
+   is deformable.
+   @pre result != nullptr. */
   void AppendDiscreteContactPairs(
       const systems::Context<T>& context,
-      DiscreteContactData<DiscreteContactPair<T>>* pairs) const;
-
-  /* Appends the contact kinematics information for each contact pair where at
-   least one of the body in contact is deformable.
-   @pre result != nullptr. */
-  void AppendContactKinematics(
-      const systems::Context<T>& context,
-      DiscreteContactData<ContactPairKinematics<T>>* result) const;
+      DiscreteContactData<DiscreteContactPair<T>>* result) const;
 
   /* Appends the constraint kinematics information for each deformable rigid
    fixed constraint.
@@ -207,6 +200,58 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     systems::CacheIndex participating_velocities;
     systems::CacheIndex participating_free_motion_velocities;
   };
+
+  /* Struct to hold intermediate data from one of the two geometries in contact
+   when computing DiscreteContactPair. */
+  struct ContactData {
+    /* The world frame position of the relative-to point for reporting the
+     contact results. See DiscreteContactPair::p_ApC_W and
+     DiscreteContactPair::p_BqC_W. `p_WG` is coincident with P and Q (and as
+     they are all measured and expressed in the world frame, they will all
+     have the same values). */
+    Vector3<T> p_WG;
+    /* Contact Jacobians for the kinematic tree corresponding to the object
+     participating in the contact. `jacobian[i]` stores the contact Jacobian for
+     the i-th contact point. This is empty if the geometry is rigid and welded
+     to World. */
+    std::vector<typename DiscreteContactPair<T>::JacobianTreeBlock> jacobian;
+    /* Velocity (in the world frame) of the point Gc affixed to the geometry
+     that is coincident with the contact point C. `v_WGc[i]` stores the
+     world-frame velocity of the i-th contact point. This is empty if the
+     geometry is rigid and welded to World. */
+    std::vector<Vector3<T>> v_WGc;
+    /* Name of the geometry in contact. */
+    std::string name;
+  };
+
+  /* Computes the contact data for a deformable geometry G participating in
+   contact.
+   @param[in] context          Context of the MultibodyPlant owning this driver.
+   @param[in] contact_surface  The contact surface between two geometries with
+                               one of the geometries being geometry G.
+   @param[in] is_A             True if geometry G is labeled as geometry A in
+                               the given `contact_surface`. See class
+                               documentation for
+                               geometry::internal::DeformableContactSurface for
+                               details. */
+  ContactData ComputeContactDataForDeformable(
+      const systems::Context<T>& context,
+      const geometry::internal::DeformableContactSurface<T>& contact_surface,
+      bool is_A) const;
+
+  /* Computes the contact data for a rigid geometry G participating in contact.
+   @param[in] context          Context of the MultibodyPlant owning this driver.
+   @param[in] contact_surface  The contact surface between two geometries with
+                               one of the geometries being geometry G.
+   @note Unlike ComputeContactDataForDeformable where we need to determine
+   whether geometry G is labeled as geometry A or B in DeformableContactSurface,
+   by convention, a rigid geometry is always labeled as geometry B in
+   DeformableContactSurface if it participates in deformable contact. */
+  ContactData ComputeContactDataForRigid(
+      const systems::Context<T>& context,
+      const geometry::internal::DeformableContactSurface<T>& contact_surface)
+      const;
+
   /* Copies the state of the deformable body with `id` in the given `context`
    to the `fem_state`.
    @pre fem_state != nullptr and has size compatible with the state of the

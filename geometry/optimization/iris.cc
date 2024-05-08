@@ -377,10 +377,11 @@ class CounterExampleProgram {
   // Sets `closest` to an optimizing solution q*, if a solution is found.
   bool Solve(const solvers::SolverInterface& solver,
              const Eigen::Ref<const Eigen::VectorXd>& q_guess,
+             const std::optional<solvers::SolverOptions>& solver_options,
              VectorXd* closest) {
     prog_.SetInitialGuess(q_, q_guess);
     solvers::MathematicalProgramResult result;
-    solver.Solve(prog_, std::nullopt, std::nullopt, &result);
+    solver.Solve(prog_, std::nullopt, solver_options, &result);
     if (result.is_success()) {
       *closest = result.GetSolution(q_);
       return true;
@@ -763,8 +764,10 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
   VectorXd guess = seed;
 
   // For debugging visualization.
-  // Vector3d point_to_draw = Vector3d::Zero();
-  // int num_points_drawn = 0;
+  Vector3d point_to_draw = Vector3d::Zero();
+  int num_points_drawn = 0;
+  bool do_debugging_visualization = options.meshcat && nq <= 3;
+
   const std::string seed_point_error_msg =
       "IrisInConfigurationSpace: require_sample_point_is_contained is true but "
       "the seed point exited the initial region. Does the provided "
@@ -797,7 +800,8 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
     // }
     log()->info("IrisInConfigurationSpace iteration {}", iteration);
     int num_constraints = num_initial_constraints;
-    HPolyhedron P_candidate = P_initial;
+    HPolyhedron P_candidate = HPolyhedron(A.topRows(num_initial_constraints),
+                                          b.head(num_initial_constraints));
     DRAKE_ASSERT(best_volume > 0);
 
     // program for sampling vertices
@@ -1171,7 +1175,8 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
                                             falsify_lower_bound);
             while (consecutive_failures <
                    options.num_additional_constraint_infeasible_samples) {
-              if (counter_example_prog->Solve(*solver, guess, &closest)) {
+              if (counter_example_prog->Solve(
+                      *solver, guess, options.solver_options, &closest)) {
                 consecutive_failures = 0;
                 AddTangentToPolytope(E, closest,
                                      options.configuration_space_margin, &A, &b,
@@ -1200,7 +1205,8 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
               } else {
                 ++consecutive_failures;
               }
-              guess = P_candidate.UniformSample(&generator, guess);
+              guess = P_candidate.UniformSample(&generator, guess,
+                                                options.mixing_steps);
             }
           }
         }

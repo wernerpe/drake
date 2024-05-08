@@ -67,9 +67,9 @@ _SCRIPTED_RULE_TYPE = "scripted"
 
 # We'll skip these repositories when making suggestions.
 _IGNORED_REPOSITORIES = [
-    # We don't know how to check non-default branches yet.
-    "clang_cindex_python3_internal",
-    "pybind11",
+    "clang_cindex_python3_internal",  # Uses a non-default branch.
+    "mosek",  # Requires special, non-automated care during upgrades.
+    "pybind11",  # Uses a non-default branch.
     "usockets_internal",  # Pinned due to upstream regression.
     "uwebsockets_internal",  # Pinned due to upstream regression.
 ]
@@ -89,12 +89,11 @@ _OVERLOOK_RELEASE_REPOSITORIES = {
     "github3_py_internal": r"^(\d+.)",
     "gz_math_internal": r"^(gz)",
     "gz_utils_internal": r"^(gz)",
-    "intel_realsense_ros_internal": r"^(\d+\.\d+\.)",
     "petsc": r"^(v)",
     "pycodestyle": "",
     "qhull_internal": r"^(2)",
-    "ros_xacro_internal": r"^(\d+\.\d+\.)",
     "sdformat_internal": "",
+    "xmlrunner_py": "",
 }
 
 # Packages in these cohorts should be upgraded together (in a single commit).

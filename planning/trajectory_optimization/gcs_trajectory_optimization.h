@@ -41,6 +41,21 @@ to facilitate multi-modal motion planning such as: Subgraph A: find a
 collision-free trajectory for the robot to a grasping posture, Subgraph B: find
 a collision-free trajectory for the robot with the object in its hand to a
 placing posture, etc.
+
+@anchor continuous_revolute_joints
+### Continuous Revolute Joints
+
+This class also supports robots with continuous revolute joints (revolute joints
+that don't have any joint limits) and mobile bases. Adding or subtracting 2π to
+such a joint's angle leaves it unchanged; this logic is implemented behind the
+scenes. To use it, one should specify the joint indices that don't have limits,
+and ensure all sets satisfy the "convexity radius" property -- their width along
+a dimension corresponding to a continuous revolute joint must be less than π.
+This can be enforced when constructing the convex sets, or after the fact with
+`geometry::optimization::PartitionConvexSet`. The `GcsTrajectoryOptimization`
+methods `AddRegions` and `AddEdges` will handle all of the intersection checks
+behind the scenes, including applying the appropriate logic to connect sets that
+"wrap around" 2π.
 */
 class GcsTrajectoryOptimization final {
  public:
@@ -84,6 +99,28 @@ class GcsTrajectoryOptimization final {
 
     /** Returns the number of vertices in the subgraph. */
     int size() const { return vertices_.size(); }
+
+    /** Returns constant reference to a vector of mutable pointers to the
+    vertices stored in the subgraph. The order of the vertices is the same as
+    the order the regions were added.*/
+    const std::vector<geometry::optimization::GraphOfConvexSets::Vertex*>&
+    Vertices() {
+      return vertices_;
+    }
+
+    /** Returns pointers to the vertices stored in the subgraph.
+    The order of the vertices is the same as the order the regions were added.
+    @exclude_from_pydrake_mkdoc{This overload is not bound in pydrake.} */
+    std::vector<const geometry::optimization::GraphOfConvexSets::Vertex*>
+    Vertices() const {
+      std::vector<const geometry::optimization::GraphOfConvexSets::Vertex*>
+          vertices;
+      vertices.reserve(vertices_.size());
+      for (const auto& v : vertices_) {
+        vertices.push_back(v);
+      }
+      return vertices;
+    }
 
     /** Returns the regions associated with this subgraph before the
     CartesianProduct. */
@@ -222,6 +259,19 @@ class GcsTrajectoryOptimization final {
     void AddVelocityBounds(const Eigen::Ref<const Eigen::VectorXd>& lb,
                            const Eigen::Ref<const Eigen::VectorXd>& ub);
 
+    /** Enforces zero derivatives on the control point connecting the subgraphs.
+
+    For velocity, acceleration, jerk, etc. enforcing zero-derivative on the
+    trajectory q(t) is equivalent to enforcing zero-derivative on the trajectory
+    r(s). Hence this constraint is convex.
+    @param derivative_order is the order of the derivative to be constrained.
+
+    @throws std::exception if the derivative order < 1.
+    @throws std::exception if both subgraphs order is less than the desired
+    derivative order.
+    */
+    void AddZeroDerivativeConstraints(int derivative_order);
+
     /** Enforces derivative continuity constraints on the edges between the
     subgraphs.
      @param continuity_order is the order of the continuity constraint.
@@ -256,7 +306,10 @@ class GcsTrajectoryOptimization final {
     bool RegionsConnectThroughSubspace(
         const geometry::optimization::ConvexSet& A,
         const geometry::optimization::ConvexSet& B,
-        const geometry::optimization::ConvexSet& subspace);
+        const geometry::optimization::ConvexSet& subspace,
+        std::optional<const Eigen::VectorXd> maybe_set_B_offset = std::nullopt,
+        std::optional<const Eigen::VectorXd> maybe_subspace_offset =
+            std::nullopt);
 
     /* Extracts the control points variables from an edge. */
     Eigen::Map<const MatrixX<symbolic::Variable>> GetControlPointsU(
@@ -275,8 +328,8 @@ class GcsTrajectoryOptimization final {
         const geometry::optimization::GraphOfConvexSets::Edge& e) const;
 
     GcsTrajectoryOptimization& traj_opt_;
-    const int from_subgraph_order_;
-    const int to_subgraph_order_;
+    const Subgraph& from_subgraph_;
+    const Subgraph& to_subgraph_;
 
     trajectories::BezierCurve<double> ur_trajectory_;
     trajectories::BezierCurve<double> vr_trajectory_;
@@ -373,6 +426,13 @@ class GcsTrajectoryOptimization final {
   Subgraph& AddRegions(const geometry::optimization::ConvexSets& regions,
                        int order, double h_min = 0, double h_max = 20,
                        std::string name = "");
+
+  /** Remove a subgraph and all associated edges found in the subgraph and
+  to and from other subgraphs.
+  @pre The subgraph must have been created from a call to AddRegions() on this
+    object.
+  */
+  void RemoveSubgraph(const Subgraph& subgraph);
 
   /** Connects two subgraphs with directed edges.
   @param from_subgraph is the subgraph to connect from. Must have been created
@@ -499,11 +559,47 @@ class GcsTrajectoryOptimization final {
       const Subgraph& source, const Subgraph& target,
       const geometry::optimization::GraphOfConvexSetsOptions& options = {});
 
+  /** Solves a trajectory optimization problem through specific vertices.
+
+  This method allows for targeted optimization by considering only selected
+  active vertices, reducing the problem's complexity.
+  See geometry::optimization::GraphOfConvexSets::SolveConvexRestriction().
+  This API prefers a sequence of vertices over edges, as a user may know which
+  regions the solution should pass through.
+  GcsTrajectoryOptimization::AddRegions() automatically manages edge creation
+  and intersection checks, which makes passing a sequence of edges less
+  convenient.
+
+  @param active_vertices A sequence of ordered vertices of subgraphs to be
+    included in the problem.
+  @param options include all settings for solving the shortest path problem.
+
+  @pre There must be at least two vertices in active_vertices.
+  @throws std::exception if the vertices are not connected.
+  @throws std::exception if two vertices are connected by multiple edges. This
+    may happen if one connects two graphs through multiple subspaces, which is
+    currently not supported with this method.
+  @throws std::exception if the program cannot be written as a convex
+  optimization consumable by one of the standard solvers.*/
+  std::pair<trajectories::CompositeTrajectory<double>,
+            solvers::MathematicalProgramResult>
+  SolveConvexRestriction(
+      const std::vector<
+          const geometry::optimization::GraphOfConvexSets::Vertex*>&
+          active_vertices,
+      const geometry::optimization::GraphOfConvexSetsOptions& options = {});
+
   /** Provide a heuristic estimate of the complexity of the underlying
   GCS mathematical program, for regression testing purposes.
   Here we sum the total number of variable appearances in our costs and
   constraints as a rough approximation of the complexity of the subproblems. */
   double EstimateComplexity() const;
+
+  /** Returns a vector of all subgraphs. */
+  std::vector<Subgraph*> GetSubgraphs() const;
+
+  /** Returns a vector of all edges between subgraphs. */
+  std::vector<EdgesBetweenSubgraphs*> GetEdgesBetweenSubgraphs() const;
 
   /** Getter for the underlying GraphOfConvexSets. This is intended primarily
   for inspecting the resulting programs. */
@@ -524,9 +620,52 @@ class GcsTrajectoryOptimization final {
   static trajectories::CompositeTrajectory<double> NormalizeSegmentTimes(
       const trajectories::CompositeTrajectory<double>& trajectory);
 
+  /** Unwraps a trajectory with continuous revolute joints into a continuous
+   trajectory in the Euclidean space. Trajectories produced by
+   GcsTrajectoryOptimization for robotic systems with continuous revolute joints
+   may include apparent discontinuities, where a multiple of 2π is
+   instantaneously added to a joint value at the boundary between two adjacent
+   segments of the trajectory. This function removes such discontinuities by
+   adding or subtracting the appropriate multiple of 2π, "unwrapping" the
+   trajectory into a continuous representation suitable for downstream tasks
+   that do not take the joint wraparound into account.
+   @param gcs_trajectory The trajectory to unwrap.
+   @param continuous_revolute_joints The indices of the continuous revolute
+   joints.
+   @param starting_rounds A vector of integers that sets the starting rounds for
+   each continuous revolute joint. Given integer k for the starting_round of a
+   joint, its initial position will be wrapped into [2πk , 2π(k+1)). If the
+   starting rounds are not provided, the initial position of @p trajectory will
+   be unchanged.
+
+   @returns an unwrapped (continous in Euclidean space) CompositeTrajectory.
+
+   @throws std::exception if
+   starting_rounds.size()!=continuous_revolute_joints.size().
+   @throws std::exception if continuous_revolute_joints contain repeated indices
+   and/or indices outside the range [0, gcs_trajectory.rows()).
+   @throws std::exception if the gcs_trajectory is not continuous on the
+   manifold defined by the continuous_revolute_joints, i.e., the shift between
+   two consecutive segments is not an integer multiple of 2π (within a tolerance
+   of 1e-10 radians).
+   @throws std::exception if all the segments are not of type BezierCurve.
+   Other types are not supported yet. Note that currently the output of
+   GcsTrajectoryOptimization::SolvePath() is a CompositeTrajectory of
+   BezierCurves.
+    */
+  static trajectories::CompositeTrajectory<double> UnwrapToContinousTrajectory(
+      const trajectories::CompositeTrajectory<double>& gcs_trajectory,
+      std::vector<int> continuous_revolute_joints,
+      std::optional<std::vector<int>> starting_rounds = std::nullopt);
+
  private:
   const int num_positions_;
   const std::vector<int> continuous_revolute_joints_;
+
+  trajectories::CompositeTrajectory<double>
+  ReconstructTrajectoryFromSolutionPath(
+      std::vector<const geometry::optimization::GraphOfConvexSets::Edge*> edges,
+      const solvers::MathematicalProgramResult& result);
 
   // Adds a Edge to gcs_ with the name "{u.name} -> {v.name}".
   geometry::optimization::GraphOfConvexSets::Edge* AddEdge(

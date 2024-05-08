@@ -102,7 +102,7 @@ class DummyRenderEngine : public render::RenderEngine, private ShapeReifier {
 
   /* Reports `true` if the given id is registered with `this` engine.  */
   bool is_registered(GeometryId id) const {
-    return registered_geometries_.count(id) > 0;
+    return registered_geometries_.contains(id);
   }
 
   // These six functions (and supporting members) facilitate testing while there
@@ -153,9 +153,6 @@ class DummyRenderEngine : public render::RenderEngine, private ShapeReifier {
   const math::RigidTransformd& last_updated_X_WC() const { return X_WC_; }
 
   // Promote these to be public to facilitate testing.
-  using RenderEngine::GetColorDFromLabel;
-  using RenderEngine::GetColorIFromLabel;
-  using RenderEngine::LabelFromColor;
   using RenderEngine::MakeLabelFromRgb;
   using RenderEngine::MakeRgbFromLabel;
 
@@ -189,12 +186,9 @@ class DummyRenderEngine : public render::RenderEngine, private ShapeReifier {
       std::vector<VectorXd> initial_positions;
       std::vector<VectorXd> initial_normals;
       for (int i = 0; i < ssize(render_meshes); ++i) {
-        VectorXd flat_positions =
-            Eigen::Map<const VectorXd>(render_meshes[i].positions.data(),
-                                       render_meshes[i].positions.size());
+        VectorXd flat_positions = EigenMapView(render_meshes[i].positions);
         initial_positions.push_back(std::move(flat_positions));
-        VectorXd flat_normals = Eigen::Map<const VectorXd>(
-            render_meshes[i].normals.data(), render_meshes[i].normals.size());
+        VectorXd flat_normals = EigenMapView(render_meshes[i].normals);
         initial_normals.push_back(std::move(flat_normals));
       }
       q_WGs_[id] = std::move(initial_positions);

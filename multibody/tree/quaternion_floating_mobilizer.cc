@@ -73,7 +73,7 @@ Quaternion<T> QuaternionFloatingMobilizer<T>::get_quaternion(
 }
 
 template <typename T>
-Vector3<T> QuaternionFloatingMobilizer<T>::get_position(
+Vector3<T> QuaternionFloatingMobilizer<T>::get_translation(
     const systems::Context<T>& context) const {
   const auto q = this->get_positions(context);
   DRAKE_ASSERT(q.size() == kNq);
@@ -84,16 +84,16 @@ Vector3<T> QuaternionFloatingMobilizer<T>::get_position(
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_quaternion(
+QuaternionFloatingMobilizer<T>::SetQuaternion(
     systems::Context<T>* context, const Quaternion<T>& q_FM) const {
   DRAKE_DEMAND(context != nullptr);
-  set_quaternion(*context, q_FM, &context->get_mutable_state());
+  SetQuaternion(*context, q_FM, &context->get_mutable_state());
   return *this;
 }
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_quaternion(
+QuaternionFloatingMobilizer<T>::SetQuaternion(
     const systems::Context<T>&, const Quaternion<T>& q_FM,
     systems::State<T>* state) const {
   DRAKE_DEMAND(state != nullptr);
@@ -108,18 +108,17 @@ QuaternionFloatingMobilizer<T>::set_quaternion(
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_position(systems::Context<T>* context,
-                                             const Vector3<T>& p_FM) const {
+QuaternionFloatingMobilizer<T>::SetTranslation(systems::Context<T>* context,
+                                               const Vector3<T>& p_FM) const {
   DRAKE_DEMAND(context != nullptr);
-  set_position(*context, p_FM, &context->get_mutable_state());
-  return *this;
+  return SetTranslation(*context, p_FM, &context->get_mutable_state());
 }
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_position(const systems::Context<T>&,
-                                             const Vector3<T>& p_FM,
-                                             systems::State<T>* state) const {
+QuaternionFloatingMobilizer<T>::SetTranslation(
+    const systems::Context<T>&, const Vector3<T>& p_FM,
+    systems::State<T>* state) const {
   DRAKE_DEMAND(state != nullptr);
   auto q = this->get_mutable_positions(&*state);
   DRAKE_ASSERT(q.size() == kNq);
@@ -129,21 +128,20 @@ QuaternionFloatingMobilizer<T>::set_position(const systems::Context<T>&,
 }
 
 template <typename T>
-void QuaternionFloatingMobilizer<T>::set_random_position_distribution(
-    const Vector3<symbolic::Expression>& position) {
+void QuaternionFloatingMobilizer<T>::set_random_translation_distribution(
+    const Vector3<symbolic::Expression>& p_FM) {
   Vector<symbolic::Expression, kNq> positions;
   if (this->get_random_state_distribution()) {
     positions = this->get_random_state_distribution()->template head<kNq>();
   } else {
     positions = get_zero_position().template cast<symbolic::Expression>();
   }
-  positions.template segment<3>(4) = position;
+  positions.template segment<3>(4) = p_FM;
   MobilizerBase::set_random_position_distribution(positions);
 }
 
 template <typename T>
-void QuaternionFloatingMobilizer<
-    T>::set_random_quaternion_distribution(
+void QuaternionFloatingMobilizer<T>::set_random_quaternion_distribution(
         const Eigen::Quaternion<symbolic::Expression>& q_FM) {
   Vector<symbolic::Expression, kNq> positions;
   if (this->get_random_state_distribution()) {

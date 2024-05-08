@@ -1,3 +1,4 @@
+load("//tools/lint:lint.bzl", "add_lint_tests")
 load(
     "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
@@ -8,7 +9,6 @@ load(
     "//tools/skylark:test_tags.bzl",
     "mosek_test_tags",
 )
-load("//tools/lint:lint.bzl", "add_lint_tests")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -79,9 +79,11 @@ drake_cc_library(
         "//geometry:scene_graph",
         "//solvers:mathematical_program",
         "//solvers:mathematical_program_result",
+        "//math:matrix_util",
     ],
     deps = [
         "//geometry:read_obj",
+        "//solvers:aggregate_costs_constraints",
         "//solvers:choose_best_solver",
         "//solvers:clarabel_solver",
         "//solvers:get_program_type",
@@ -235,6 +237,7 @@ drake_cc_library(
     testonly = 1,
     srcs = ["test_utilities.cc"],
     hdrs = ["test_utilities.h"],
+    visibility = ["//visibility:private"],
     deps = [
         ":convex_set",
         "//geometry:scene_graph",
@@ -280,6 +283,7 @@ drake_cc_googletest(
     name = "convex_set_test",
     deps = [
         ":convex_set",
+        "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_throws_message",
     ],
 )
@@ -435,6 +439,7 @@ drake_cc_googletest(
     deps = [
         ":convex_set",
         ":geodesic_convexity",
+        "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_throws_message",
     ],
 )
@@ -448,6 +453,7 @@ drake_cc_googletest(
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_no_throw",
         "//common/test_utilities:expect_throws_message",
+        "//common/yaml",
         "//solvers:choose_best_solver",
         "//solvers:clarabel_solver",
         "//solvers:clp_solver",
@@ -506,6 +512,17 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "iris_internal_test",
+    deps = [
+        ":iris_internal",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//multibody/parsing:parser",
+        "//solvers:ipopt_solver",
+        "//systems/framework:diagram_builder",
+    ],
+)
+
+drake_cc_googletest(
     name = "iris_test",
     deps = [
         ":iris",
@@ -528,6 +545,7 @@ drake_cc_googletest(
     ],
     deps = [
         ":iris",
+        "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_throws_message",
         "//common/test_utilities:maybe_pause_for_user",
         "//geometry:meshcat",
@@ -544,6 +562,7 @@ drake_cc_googletest(
         ":convex_set",
         ":test_utilities",
         "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 
@@ -553,6 +572,7 @@ drake_cc_googletest(
         ":convex_set",
         ":test_utilities",
         "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 

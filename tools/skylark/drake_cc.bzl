@@ -38,15 +38,6 @@ CLANG_FLAGS = CXX_FLAGS + [
     "-Werror=range-loop-analysis",
     "-Werror=return-stack-address",
     "-Werror=sign-compare",
-    # This was turned on via "-Wc99-designator", but is not an an error.
-    # Our conventions permit using this language extension even in C++17 mode.
-    "-Wno-c++20-designator",
-    # As a kind of portability hint, by default Clang will warn about the use
-    # of C++20 features when compiling in -std=c++17 mode (i.e., the warning
-    # flag "-Wc++-20-extensions" is enabled by default). For Drake, we are
-    # content to use any C++20 extensions that pass our CI, so the warning is
-    # always a false positive. We'll turn it off via the "-Wno..." syntax.
-    "-Wno-c++20-extensions",
 ]
 
 # The CLANG_VERSION_SPECIFIC_FLAGS will be enabled for all C++ rules in the
@@ -84,6 +75,20 @@ GCC_CC_TEST_FLAGS = [
     "-Wno-unused-parameter",
 ]
 
+GCC_VERSION_SPECIFIC_FLAGS = {
+    # TODO(#21337) Investigate and resolve what to do about these warnings
+    # long-term. Some of them seem like true positives (i.e., bugs in Drake).
+    13: [
+        "-Wno-array-bounds",
+        "-Wno-dangling-reference",
+        "-Wno-maybe-uninitialized",
+        "-Wno-pessimizing-move",
+        "-Wno-stringop-overflow",
+        "-Wno-stringop-overread",
+        "-Wno-uninitialized",
+    ],
+}
+
 def _platform_copts(rule_copts, rule_gcc_copts, rule_clang_copts, cc_test = 0):
     """Returns both the rule_copts (plus rule_{cc}_copts iff under the
     specified compiler), and platform-specific copts.
@@ -102,6 +107,8 @@ def _platform_copts(rule_copts, rule_gcc_copts, rule_clang_copts, cc_test = 0):
     elif COMPILER_ID == "GNU":
         extra_gcc_flags = GCC_CC_TEST_FLAGS if cc_test else []
         result = GCC_FLAGS + extra_gcc_flags + rule_copts + rule_gcc_copts
+        if COMPILER_VERSION_MAJOR in GCC_VERSION_SPECIFIC_FLAGS:
+            result += GCC_VERSION_SPECIFIC_FLAGS[COMPILER_VERSION_MAJOR]
     else:
         result = rule_copts
 

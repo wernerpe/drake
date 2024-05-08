@@ -12,7 +12,8 @@ hood.
 
 Follow Drake's
 [platform-specific setup instructions](/from_source.html#mandatory-platform-specific-instructions)
-to install Bazel.
+to install bazelisk at ``/usr/bin/bazel``, which will then automatically
+download the correct version of Bazel necessary for the build.
 
 # Drake clone and platform setup
 
@@ -322,7 +323,7 @@ tools/dynamic_analysis/kcov_tool clean
 ### kcov and Python
 
 Coverage reports for Python sources produced by kcov are useful, but can be
-misleading. As of Ubuntu 20.04 and kcov 38, Python reports do not render
+misleading. As of Ubuntu 22.04 and kcov 38, Python reports do not render
 coverage for multi-line statements properly. Statements that use delimiter
 pairs to span more than two lines, or statements that use string token pasting
 across multiple lines may be mistakenly shown as only partially executed.
