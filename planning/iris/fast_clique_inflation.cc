@@ -8,7 +8,7 @@
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
-#include "drake/planning/iris/fast_iris.h"
+#include "drake/planning/iris/fast_clique_inflation.h"
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/clarabel_solver.h"
 #include "drake/solvers/mosek_solver.h"
@@ -26,6 +26,7 @@ using geometry::Sphere;
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::VPolytope;
+using geometry::optimization::AffineBall;
 using math::RigidTransform;
 using solvers::MathematicalProgram;
 
@@ -43,35 +44,6 @@ index_t argsort(values_t const& values) {
   return index;
 }
 
-Eigen::VectorXd compute_face_tangent_to_dist_cvxh(
-    const Hyperellipsoid& E, const Eigen::Ref<const Eigen::VectorXd>& point,
-    const VPolytope& cvxh_vpoly) {
-  Eigen::VectorXd a_face = E.A().transpose() * E.A() * (point - E.center());
-  double b_face = a_face.transpose() * point;
-  double worst_case =
-      (a_face.transpose() * cvxh_vpoly.vertices()).maxCoeff() - b_face;
-  // Return standard iris face if either the face does not chopp off any
-  // containment points or collision is in convex hull.
-  if (cvxh_vpoly.PointInSet(point) || worst_case <= 0) {
-    return a_face;
-  } else {
-    MathematicalProgram prog;
-    int dim = cvxh_vpoly.ambient_dimension();
-    std::vector<solvers::SolverId> preferred_solvers{
-        solvers::MosekSolver::id(), solvers::ClarabelSolver::id()};
-    auto x = prog.NewContinuousVariables(dim);
-    cvxh_vpoly.AddPointInSetConstraints(&prog, x);
-    Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(dim, dim);
-    prog.AddQuadraticErrorCost(identity, point, x);
-    auto solver = solvers::MakeFirstAvailableSolver(preferred_solvers);
-    solvers::MathematicalProgramResult result;
-    solver->Solve(prog, std::nullopt, std::nullopt, &result);
-    DRAKE_THROW_UNLESS(result.is_success());
-    a_face = point - result.GetSolution(x);
-    return a_face;
-  }
-}
-
 int unadaptive_test_samples(double p, double delta, double tau) {
   return static_cast<int>(-2 * std::log(delta) / (tau * tau * p) + 0.5);
 }
@@ -81,7 +53,8 @@ int unadaptive_test_samples(double p, double delta, double tau) {
 HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
                                 const Eigen::MatrixXd& clique,
                                 const HPolyhedron& domain,
-                                const FastIrisOptions& options) {
+                                const FastCliqueInflationOptions& options) {
+
   auto start = std::chrono::high_resolution_clock::now();
   const auto parallelism = Parallelism::Max();
   const int num_threads_to_use =
@@ -91,9 +64,9 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           : 1;
 
   RandomGenerator generator(options.random_seed);
-
+  double rank_tol = 1e-6;
   const AffineBall ab =
-      AffineBall::MinimumVolumeCircumscribedEllipsoid(clique, 1e-6);
+      AffineBall::MinimumVolumeCircumscribedEllipsoid(clique, rank_tol);
   Eigen::MatrixXd B = ab.B();
 
   // Eigen's SVD rank never returns zero, and their singular values are
@@ -102,13 +75,12 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
   auto svd = (clique.colwise() - mean).bdcSvd(Eigen::ComputeThinU);
   if (svd.singularValues()[0] < rank_tol) {
     // make sure B is invertible
-    B += Eigen::Identity(ab::ambient_dimension()) * 1e-3;
+    B += Eigen::MatrixXd::Identity(ab.ambient_dimension(), ab.ambient_dimension()) * 1e-3;
   }
   const Hyperellipsoid circumscribing_ellipsoid{AffineBall(B, ab.center())};
   const Eigen::VectorXd ellipsoid_center = circumscribing_ellipsoid.center();
 
   Eigen::MatrixXd ellipsoid_A = circumscribing_ellipsoid.A();
-  double previous_volume = 0;
 
   const int dim = circumscribing_ellipsoid.ambient_dimension();
   int current_num_faces = domain.A().rows();
@@ -142,10 +114,10 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
   // For debugging visualization.
   Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
   if (options.meshcat && dim <= 3) {
-    std::string path = "seedpoint";
+    std::string path = "ellipsoid_center";
     options.meshcat->SetObject(path, Sphere(0.06),
                                geometry::Rgba(0.1, 1, 1, 1.0));
-    point_to_draw.head(dim) = current_ellipsoid_center;
+    point_to_draw.head(dim) = ellipsoid_center;
     options.meshcat->SetTransform(path, RigidTransform<double>(point_to_draw));
   }
 
@@ -167,7 +139,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     log()->info("FastCliqueInflation worst case test requires {} samples.",
                 N_max);
   }
-  Eigen::MatrixXd particles(dim, N_max) = Eigen::MatrixXd::Zero(dim, N_max);
+  Eigen::MatrixXd particles = Eigen::MatrixXd::Zero(dim, N_max);
 
   HPolyhedron P = domain;
 
@@ -263,7 +235,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           "Projection of the particles onto the convex hull of the clique "
           "failed!");
     }
-    Eigen::MatrixXd projected_particles = distances_and_projections.second;
+    Eigen::MatrixXd projected_particles = distances_and_projections->second;
 
     const auto particle_update_work =
         [&checker, &particles_in_collision_updated, &particles_in_collision,
@@ -421,7 +393,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
              particle_index < number_particles_in_collision; ++particle_index) {
           if (!particle_is_redundant[particle_index]) {
             if (a_face.transpose() *
-                        particles_in_collision_updated[particle_index] -
+                        particles_in_collision_updated.col(particle_index) -
                     b_face >=
                 0) {
               particle_is_redundant[particle_index] = 1;
@@ -440,9 +412,9 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           max_relaxation));
     }
     // resampling particles in current polyhedron for next iteration
-    particles[0] = P.UniformSample(&generator);
+    particles.col(0) = P.UniformSample(&generator);
     for (int j = 1; j < options.num_particles; ++j) {
-      particles[j] = P.UniformSample(&generator, particles[j - 1]);
+      particles.col(j) = P.UniformSample(&generator, particles.col(j-1));
     }
     ++num_iterations_separating_planes;
     if (num_iterations_separating_planes -

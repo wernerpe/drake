@@ -56,6 +56,24 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "fast_clique_inflation",
+    srcs = ["fast_clique_inflation.cc"],
+    hdrs = ["fast_clique_inflation.h"],
+    deps = [
+        "//planning:collision_checker",
+        "//common:parallelism",
+        "//geometry:meshcat",
+        "//geometry/optimization:convex_set",
+        "//solvers:choose_best_solver",
+        "//solvers:clarabel_solver",
+        "//solvers:mathematical_program",
+        "//solvers:mosek_solver",
+        "//solvers:solve",
+        "@common_robotics_utilities",
+    ],
+)
+
 drake_cc_googletest(
     name = "iris_from_clique_cover_test",
     timeout = "moderate",

@@ -13,6 +13,7 @@
 // #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
+#include "drake/geometry/optimization/affine_ball.h"
 #include "drake/planning/collision_checker.h"
 
 namespace drake {
@@ -40,7 +41,7 @@ struct FastCliqueInflationOptions {
     a->Visit(DRAKE_NVP(random_seed));
   }
 
-  FastIrisOptions() = default;
+  FastCliqueInflationOptions() = default;
 
   /** Number of particles used to estimate the closest collision*/
   int num_particles = 1e3;
