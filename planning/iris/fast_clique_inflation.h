@@ -44,7 +44,7 @@ struct FastCliqueInflationOptions {
   FastCliqueInflationOptions() = default;
 
   /** Number of particles used to estimate the closest collision*/
-  int num_particles = 1e3;
+  int num_particles = 4e2;
 
   /** Descision threshold for unadaptive test.*/
   double tau = 0.5;
@@ -63,7 +63,7 @@ struct FastCliqueInflationOptions {
   int max_iterations{2};
 
   /** Maximum number of rounds of adding faces to the polytope*/
-  int max_iterations_separating_planes{1000};
+  int max_iterations_separating_planes{100};
 
   /** Maximum number of faces to add per round of samples, -1 is unlimited*/
   int max_separating_planes_per_iteration{10};

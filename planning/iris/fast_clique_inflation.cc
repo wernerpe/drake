@@ -1,3 +1,5 @@
+#include "drake/planning/iris/fast_clique_inflation.h"
+
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -8,7 +10,6 @@
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
-#include "drake/planning/iris/fast_clique_inflation.h"
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/clarabel_solver.h"
 #include "drake/solvers/mosek_solver.h"
@@ -23,10 +24,10 @@ using common_robotics_utilities::parallelism::ParallelForBackend;
 using common_robotics_utilities::parallelism::StaticParallelForIndexLoop;
 using geometry::Meshcat;
 using geometry::Sphere;
+using geometry::optimization::AffineBall;
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::VPolytope;
-using geometry::optimization::AffineBall;
 using math::RigidTransform;
 using solvers::MathematicalProgram;
 
@@ -54,7 +55,6 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
                                 const Eigen::MatrixXd& clique,
                                 const HPolyhedron& domain,
                                 const FastCliqueInflationOptions& options) {
-
   auto start = std::chrono::high_resolution_clock::now();
   const auto parallelism = Parallelism::Max();
   const int num_threads_to_use =
@@ -62,26 +62,37 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           ? std::min(parallelism.num_threads(),
                      checker.num_allocated_contexts())
           : 1;
-
+  log()->info("starting affine ball");
   RandomGenerator generator(options.random_seed);
+  AffineBall ab;
+  Eigen::MatrixXd B;
   double rank_tol = 1e-6;
-  const AffineBall ab =
-      AffineBall::MinimumVolumeCircumscribedEllipsoid(clique, rank_tol);
-  Eigen::MatrixXd B = ab.B();
 
-  // Eigen's SVD rank never returns zero, and their singular values are
-  // returned in decreasing order.
-  Eigen::VectorXd mean = clique.rowwise().mean();
-  auto svd = (clique.colwise() - mean).bdcSvd(Eigen::ComputeThinU);
-  if (svd.singularValues()[0] < rank_tol) {
-    // make sure B is invertible
-    B += Eigen::MatrixXd::Identity(ab.ambient_dimension(), ab.ambient_dimension()) * 1e-3;
+  if (clique.cols() == 1) {
+    ab = AffineBall::MakeHypersphere(1e-2, clique.col(0));
+    B = ab.B();
+  } else {
+    ab = AffineBall::MinimumVolumeCircumscribedEllipsoid(clique, rank_tol);
+    B = ab.B();
+
+    // Eigen's SVD rank never returns zero, and their singular values are
+    // returned in decreasing order.
+    Eigen::VectorXd mean = clique.rowwise().mean();
+    auto svd = (clique.colwise() - mean).bdcSvd(Eigen::ComputeThinU);
+    if (svd.singularValues()[0] < rank_tol) {
+      // make sure B is invertible
+      B += Eigen::MatrixXd::Identity(ab.ambient_dimension(),
+                                     ab.ambient_dimension()) *
+           1e-3;
+    }
   }
+
   const Hyperellipsoid circumscribing_ellipsoid{AffineBall(B, ab.center())};
   const Eigen::VectorXd ellipsoid_center = circumscribing_ellipsoid.center();
 
   Eigen::MatrixXd ellipsoid_A = circumscribing_ellipsoid.A();
 
+  log()->info("Circumscribing ellipsoid done done");
   const int dim = circumscribing_ellipsoid.ambient_dimension();
   int current_num_faces = domain.A().rows();
 
@@ -92,8 +103,10 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
 
   VPolytope cvxh_vpoly(clique);
   DRAKE_THROW_UNLESS(domain.ambient_dimension() == clique.rows());
-  cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
+ 
+  // cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
 
+  log()->info("min representation of vpoly done");
   // copy to vector to allow for parallel checking
   std::vector<Eigen::VectorXd> clique_vec;
   clique_vec.reserve(clique.cols());
@@ -111,6 +124,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     }
   }
 
+  log()->info("clique checked for collisions");
   // For debugging visualization.
   Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
   if (options.meshcat && dim <= 3) {
@@ -401,7 +415,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           }
         }
       }
-    } // end adding hyperplanes
+    }  // end adding hyperplanes
 
     // update current polyhedron
     P = HPolyhedron(A.topRows(current_num_faces), b.head(current_num_faces));
@@ -414,7 +428,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     // resampling particles in current polyhedron for next iteration
     particles.col(0) = P.UniformSample(&generator);
     for (int j = 1; j < options.num_particles; ++j) {
-      particles.col(j) = P.UniformSample(&generator, particles.col(j-1));
+      particles.col(j) = P.UniformSample(&generator, particles.col(j - 1));
     }
     ++num_iterations_separating_planes;
     if (num_iterations_separating_planes -
@@ -425,7 +439,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
       log()->info("SeparatingPlanes iteration: {} faces: {}",
                   num_iterations_separating_planes, current_num_faces);
     }
-  }// end separating planes step
+  }  // end separating planes step
   auto stop = std::chrono::high_resolution_clock::now();
   if (options.verbose) {
     log()->info(
