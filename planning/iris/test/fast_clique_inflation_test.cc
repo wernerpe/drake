@@ -248,18 +248,18 @@ GTEST_TEST(FastCliqueInflation, BlockOnGround) {
   meshcat->Delete("face_pt");
   meshcat->Delete("start_pt");
   meshcat->Delete("bisection");
+  meshcat->Delete("/obstacles");
+  meshcat->Delete("/drake/Domain");
   FastCliqueInflationOptions options;
   options.verbose = true;
   options.meshcat = meshcat;
-  Eigen::MatrixXd clique(2, 1);
-  clique.col(0) = sample;
-
-  HPolyhedron region = FastCliqueInflationFromUrdf(block_urdf, clique, options);
-
-  EXPECT_EQ(region.ambient_dimension(), 2);
-  // Confirm that we've found a substantial region.
-  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 2.0);
-
+  Eigen::MatrixXd clique(3, 3);
+  // clang-format off
+        clique << 2,  2, 2.2,
+                  2, -2, 0.,
+                  0,  0,  0;
+  // clang-format on
+  HPolyhedron region = FastCliqueInflationFromUrdf(block_urdf, clique.topRows(2), options);
   {
     meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}), 0,
                              3.25, -3.25, 3.25);
@@ -281,6 +281,21 @@ GTEST_TEST(FastCliqueInflation, BlockOnGround) {
       points(0, points.cols() - i - 2) = 3.0;
       points(1, points.cols() - i - 2) = thetas[i];
     }
+    for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
+      Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
+      std::string path = fmt::format("clique_pt/{}", pt_to_draw);
+      options.meshcat->SetObject(path, Sphere(0.04),
+                                 geometry::Rgba(1, 0, 0.0, 1.0));
+      point_to_draw.head(2) = clique.col(pt_to_draw);
+      options.meshcat->SetTransform(
+          path, math::RigidTransform<double>(point_to_draw));
+      EXPECT_TRUE(region.PointInSet(point_to_draw.head(2)));
+    }
+   
+    
+    EXPECT_EQ(region.ambient_dimension(), 2);
+    // Confirm that we've found a substantial region.
+    EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 2.0);
     points.col(points.cols() - 1) = points.col(0);
     meshcat->SetLine("True C_free", points, 2.0, Rgba(0, 0, 1));
     VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
@@ -466,7 +481,7 @@ const char boxes_in_corners_urdf[] = R"(
   </joint>
 </robot>
 )";
-GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest) {
+GTEST_TEST(FastCliqueInflationTest, FourPointClique) {
   std::shared_ptr<Meshcat> meshcat;
   meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
@@ -550,7 +565,7 @@ GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest) {
   }
 }
 
-GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest2) {
+GTEST_TEST(FastCliqueInflationTest, ThreePointClique) {
   std::shared_ptr<Meshcat> meshcat;
   meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
@@ -632,7 +647,7 @@ GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest2) {
     MaybePauseForUser();
   }
 }
-GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest3) {
+GTEST_TEST(FastCliqueInflationTest, ThreePointCliqueInCollision) {
   std::shared_ptr<Meshcat> meshcat;
   meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
@@ -716,7 +731,7 @@ GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest3) {
     MaybePauseForUser();
   }
 }
-GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest4) {
+GTEST_TEST(FastCliqueInflationTest, TwoPointCliqueCornerCase) {
   std::shared_ptr<Meshcat> meshcat;
   meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
@@ -786,7 +801,7 @@ GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest4) {
   EXPECT_EQ(region.ambient_dimension(), 2);
   {
     
-    EXPECT_FALSE(region.PointInSet(clique.col(0).head(2)));
+    EXPECT_TRUE(region.PointInSet(clique.col(0).head(2)));
     EXPECT_FALSE(region.PointInSet(clique.col(1).head(2)));
     Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 20);
 
@@ -800,8 +815,7 @@ GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest4) {
     MaybePauseForUser();
   }
 }
-GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest5) {
-  MaybePauseForUser();
+GTEST_TEST(FastCliqueInflationTest, ThreePointLineClique) {
   std::shared_ptr<Meshcat> meshcat;
   meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
@@ -882,6 +896,74 @@ GTEST_TEST(FastCliqueInflationTest, ForceContainmentPointsTest5) {
 
     MaybePauseForUser();
   }
+}
+GTEST_TEST(FastCliqueInflationTest, CliqueInCollision) {
+  std::shared_ptr<Meshcat> meshcat;
+  meshcat = geometry::GetTestEnvironmentMeshcat();
+  meshcat->Delete("face_pt");
+  meshcat->Delete("start_pt");
+  meshcat->Delete("bisection");
+  meshcat->Delete("clique_pt");
+  meshcat->Delete("True C_free");
+  meshcat->Delete("Test point");
+  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
+                           -3.25, 3.25, -3.25, 3.25);
+  meshcat->SetProperty("/Grid", "visible", true);
+  // Draw the true cspace.
+  Eigen::Matrix3Xd env_points(3, 5);
+  // clang-format off
+        env_points << -2, 2,  2, -2, -2,
+                        2, 2, -2, -2,  2,
+                        0, 0,  0,  0,  0;
+  // clang-format on
+  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
+  Eigen::Matrix3Xd centers(3, 4);
+  double c = 1.0;
+  // clang-format off
+        centers << -c, c,  c, -c,
+                    c, c, -c, -c,
+                    0, 0,  0,  0;
+  // clang-format on
+  Eigen::Matrix3Xd obs_points(3, 5);
+  // approximating offset due to sphere radius with fixed offset
+  double s = 0.7 + 0.01;
+  // clang-format off
+        obs_points << -s, s,  s, -s, -s,
+                        s, s, -s, -s, s,
+                        s, 0,  0,  0,  0;
+  // clang-format on
+  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
+    Eigen::Matrix3Xd obstacle = obs_points;
+    obstacle.colwise() += centers.col(obstacle_idx);
+    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
+                     8.0, Rgba(0, 0, 0));
+  }
+  const Vector2d sample{0.0, 0.0};
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  Eigen::Matrix3Xd clique(3, 3);
+  double xw;
+  xw = 0.4;
+  // clang-format off
+        clique << 1, 0,  0,
+                  1, 0, xw,
+                  0,  0,  0;
+  // clang-format on
+  FastCliqueInflationOptions options;
+  options.verbose = true;
+  options.meshcat = meshcat;
+  options.configuration_space_margin = 0.04;
+  for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
+      Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
+      std::string path = fmt::format("clique_pt/{}", pt_to_draw);
+      options.meshcat->SetObject(path, Sphere(0.04),
+                                 geometry::Rgba(1, 0, 0.0, 1.0));
+      point_to_draw.head(2) = clique.col(pt_to_draw);
+      options.meshcat->SetTransform(
+          path, math::RigidTransform<double>(point_to_draw));
+  }
+  EXPECT_THROW(FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
+                                                   clique.topRows(2), options), std::runtime_error);
 }
 }  // namespace
 }  // namespace planning
