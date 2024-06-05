@@ -66,7 +66,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
   AffineBall ab;
   Eigen::MatrixXd B;
   double rank_tol = 1e-6;
-
+  double min_eig = 1e-3;
   if (clique.cols() == 1) {
     ab = AffineBall::MakeHypersphere(1e-2, clique.col(0));
     B = ab.B();
@@ -74,27 +74,42 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     ab = AffineBall::MinimumVolumeCircumscribedEllipsoid(clique, rank_tol);
     B = ab.B();
 
-    auto svd = clique.jacobiSvd();
+    auto svd = B.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
     Eigen::VectorXd sigma = svd.singularValues();
-    log()->info("end svd {}", fmt_eigen(sigma.tail(1)));
 
-    if (sigma.tail(1)(0) < rank_tol) {
-      // make sure B is invertiblel
-      log()->info("affine ball min singular value of B {}",
-                  svd.singularValues()[0]);
-      B += Eigen::MatrixXd::Identity(ab.ambient_dimension(),
-                                     ab.ambient_dimension()) *
-           1e-3;
+    if (sigma.minCoeff() < rank_tol || clique.cols() < clique.rows() + 1) {
+      log()->info("original sigma\n{}", fmt_eigen(sigma));
+
+      // make sure B is invertible
+      for (int idx = 0; idx < sigma.size(); idx++) {
+        if (sigma(idx) <= sqrt(min_eig)) {
+          sigma(idx) = sqrt(min_eig);
+        }
+      }
+
+      // rebuild B
+      Eigen::MatrixXd U = svd.matrixU();
+      Eigen::MatrixXd V = svd.matrixV();
+      Eigen::MatrixXd Sigma_corrected =
+          Eigen::MatrixXd::Zero(U.cols(), V.cols());
+      log()->info("new sigma\n{}", fmt_eigen(Sigma_corrected));
+
+      Sigma_corrected.diagonal() = sigma;
+      log()->info("new sigma\n{}", fmt_eigen(Sigma_corrected));
+      log()->info("V\n{}", fmt_eigen(V));
+      log()->info("U\n{}", fmt_eigen(U));
+
+      B = U * Sigma_corrected * V.transpose();
+      log()->info("original B\n{} \n new B\n{}", fmt_eigen(ab.B()),
+                  fmt_eigen(B));
     }
   }
 
   const Hyperellipsoid circumscribing_ellipsoid{AffineBall(B, ab.center())};
-  const Eigen::VectorXd ellipsoid_center = circumscribing_ellipsoid.center();
-
+  Eigen::VectorXd ellipsoid_center = circumscribing_ellipsoid.center();
   Eigen::MatrixXd ellipsoid_A = circumscribing_ellipsoid.A();
-
-  log()->info("Circumscribing ellipsoid done done");
   const int dim = circumscribing_ellipsoid.ambient_dimension();
+
   int current_num_faces = domain.A().rows();
 
   DRAKE_THROW_UNLESS(num_threads_to_use > 0);
@@ -107,7 +122,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
 
   // cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
 
-  log()->info("min representation of vpoly done");
+  // log()->info("min representation of vpoly done");
   // copy to vector to allow for parallel checking
   std::vector<Eigen::VectorXd> clique_vec;
   clique_vec.reserve(clique.cols());
@@ -125,7 +140,16 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     }
   }
 
-  log()->info("clique checked for collisions");
+  // handle corner case where center of ellipsoid is in collision
+  if (!checker.CheckConfigCollisionFree(ellipsoid_center)) {
+    log()->info("original ellipsoid center in collision\n{}",
+                fmt_eigen(ellipsoid_center));
+    Eigen::Index nearest_point_col;
+    (clique - ellipsoid_center).colwise().norm().minCoeff(&nearest_point_col);
+    ellipsoid_center = clique.col(nearest_point_col);
+    log()->info("new ellipsoid center is \n{}", fmt_eigen(ellipsoid_center));
+  }
+
   // For debugging visualization.
   Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
   if (options.meshcat && dim <= 3) {
@@ -318,6 +342,40 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     // returned in ascending order
     auto indices_sorted = argsort(particle_distances);
 
+    // find all particles that have distance ~0 to the convex hull
+    // these are likely collisions inside of the convex hull, and need to be
+    // treated separately. The procedure is the following:
+    // 1. Find 0 distance particles
+    // 2. sort them by the ellipsoid metric instead (this gives a sensible
+    // ordering to the zero distance particles)
+    // 3. put up faces tangent to the ellipsoid, while taking care to project
+    // the normal vectors into the affine subspace of the clique if necessary
+
+    // 1. finding 0 distance particles
+    int num_critical_particles = 0;
+    for (auto i : indices_sorted) {
+      if (particle_distances.at(i) >= 1e-9) {
+        break;
+      }
+      ++num_critical_particles;
+    }
+    // 2. sort by ellipsoid metric
+    if (num_critical_particles) {
+      std::vector<double> critical_distances(num_critical_particles);
+      for (int idx = 0; idx < num_critical_particles; idx++) {
+        Eigen::VectorXd critical_particle =
+            particles_in_collision_updated.col(indices_sorted[idx]);
+        critical_distances.emplace_back(
+            (critical_particle - ellipsoid_center).transpose() * ATA *
+            (critical_particle - ellipsoid_center));
+      }
+      auto reordering = argsort(critical_distances);
+      // reorder the critical elements
+      for (int idx = 0; idx < num_critical_particles; idx++) {
+        indices_sorted.at(idx) = indices_sorted.at(reordering.at(idx));
+      }
+    }
+
     // bools are not threadsafe - using uint8_t instead to accomondate for
     // parallel checking
     std::vector<uint8_t> particle_is_redundant;
@@ -345,6 +403,8 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
               "convex hull at \n{}",
               fmt_eigen(nearest_particle));
           a_face = ATA * (nearest_particle - ellipsoid_center);
+          // project face into linear subspace of the clique if necessary
+
           allow_relax_cspace_margin = false;
         } else {
           // set face tangent to sublevel sets of distance function
@@ -380,17 +440,30 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
 
         // debugging visualization
         if (options.meshcat && dim <= 3) {
-          for (int pt_to_draw = 0; pt_to_draw < number_particles_in_collision;
-               ++pt_to_draw) {
-            std::string path = fmt::format("face_pt/sepit{:02}/{:03}/pt",
-                                           num_iterations_separating_planes,
-                                           current_num_faces);
-            options.meshcat->SetObject(path, Sphere(0.03),
-                                       geometry::Rgba(1, 1, 0.1, 1.0));
-            point_to_draw.head(dim) = nearest_particle;
-            options.meshcat->SetTransform(
-                path, RigidTransform<double>(point_to_draw));
-          }
+          std::string path =
+              fmt::format("face_pt/sepit{:02}/{:03}/pt",
+                          num_iterations_separating_planes, current_num_faces);
+          options.meshcat->SetObject(path, Sphere(0.03),
+                                     geometry::Rgba(1, 1, 0.1, 1.0));
+          point_to_draw.head(dim) = nearest_particle;
+          options.meshcat->SetTransform(path,
+                                        RigidTransform<double>(point_to_draw));
+          path =
+              fmt::format("start_pt/sepit{:02}/{:03}/pt",
+                          num_iterations_separating_planes, current_num_faces);
+          options.meshcat->SetObject(path, Sphere(0.03),
+                                     geometry::Rgba(0, 0, 0.1, 1.0));
+          point_to_draw.head(dim) = particles_in_collision.col(i);
+          options.meshcat->SetTransform(path,
+                                        RigidTransform<double>(point_to_draw));
+          Eigen::MatrixXd points = Eigen::MatrixXd::Zero(3, 2);
+          points.topLeftCorner(2, 1) = particles_in_collision.col(i);
+          points.topRightCorner(2, 1) = nearest_particle;
+          path =
+              fmt::format("bisection/sepit{:02}/{:03}/pt",
+                          num_iterations_separating_planes, current_num_faces);
+          options.meshcat->SetLine(path, points, 2.0,
+                                   geometry::Rgba(0, 0.1, 0, 1));
         }
 
         if (hyperplanes_added == options.max_separating_planes_per_iteration &&
@@ -433,11 +506,11 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
       particles.col(j) = P.UniformSample(&generator, particles.col(j - 1));
     }
     ++num_iterations_separating_planes;
-    if (num_iterations_separating_planes -
-                1 % static_cast<int>(
-                        0.2 * options.max_iterations_separating_planes) ==
-            0 &&
-        options.verbose) {
+    // num_iterations_separating_planes -
+    //             1 % static_cast<int>(
+    //                     0.2 * options.max_iterations_separating_planes) ==
+    //         0 &&
+    if (options.verbose) {
       log()->info("SeparatingPlanes iteration: {} faces: {}",
                   num_iterations_separating_planes, current_num_faces);
     }
