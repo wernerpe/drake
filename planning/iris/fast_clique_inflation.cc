@@ -78,8 +78,6 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     Eigen::VectorXd sigma = svd.singularValues();
 
     if (sigma.minCoeff() < rank_tol || clique.cols() < clique.rows() + 1) {
-      log()->info("original sigma\n{}", fmt_eigen(sigma));
-
       // make sure B is invertible
       for (int idx = 0; idx < sigma.size(); idx++) {
         if (sigma(idx) <= sqrt(min_eig)) {
@@ -92,16 +90,8 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
       Eigen::MatrixXd V = svd.matrixV();
       Eigen::MatrixXd Sigma_corrected =
           Eigen::MatrixXd::Zero(U.cols(), V.cols());
-      log()->info("new sigma\n{}", fmt_eigen(Sigma_corrected));
-
       Sigma_corrected.diagonal() = sigma;
-      log()->info("new sigma\n{}", fmt_eigen(Sigma_corrected));
-      log()->info("V\n{}", fmt_eigen(V));
-      log()->info("U\n{}", fmt_eigen(U));
-
       B = U * Sigma_corrected * V.transpose();
-      log()->info("original B\n{} \n new B\n{}", fmt_eigen(ab.B()),
-                  fmt_eigen(B));
     }
   }
 
@@ -399,8 +389,8 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
         if (dist <= 1e-9) {
           // use ellipsoid, this is likely a collision inside of the convex hull
           log()->info(
-              "FastCliqueInflation Warning! Possible collision inside of "
-              "convex hull at \n{}",
+              "FastCliqueInflation Warning! Collision inside of "
+              "convex hull at \n{}.",
               fmt_eigen(nearest_particle));
           a_face = ATA * (nearest_particle - ellipsoid_center);
           // project face into linear subspace of the clique if necessary

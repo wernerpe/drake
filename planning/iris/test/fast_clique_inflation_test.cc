@@ -149,7 +149,7 @@ GTEST_TEST(FastCliqueInflationTest, DoublePendulum) {
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
   meshcat->Delete("start_pt");
-  meshcat->Delete("bisection");  
+  meshcat->Delete("bisection");
   FastCliqueInflationOptions options;
   options.verbose = true;
   options.meshcat = meshcat;
@@ -259,7 +259,8 @@ GTEST_TEST(FastCliqueInflation, BlockOnGround) {
                   2, -2, 0.,
                   0,  0,  0;
   // clang-format on
-  HPolyhedron region = FastCliqueInflationFromUrdf(block_urdf, clique.topRows(2), options);
+  HPolyhedron region =
+      FastCliqueInflationFromUrdf(block_urdf, clique.topRows(2), options);
   {
     meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}), 0,
                              3.25, -3.25, 3.25);
@@ -291,8 +292,7 @@ GTEST_TEST(FastCliqueInflation, BlockOnGround) {
           path, math::RigidTransform<double>(point_to_draw));
       EXPECT_TRUE(region.PointInSet(point_to_draw.head(2)));
     }
-   
-    
+
     EXPECT_EQ(region.ambient_dimension(), 2);
     // Confirm that we've found a substantial region.
     EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 2.0);
@@ -787,20 +787,19 @@ GTEST_TEST(FastCliqueInflationTest, TwoPointCliqueCornerCase) {
   options.meshcat = meshcat;
   options.configuration_space_margin = 0.04;
   for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
-      Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
-      std::string path = fmt::format("clique_pt/{}", pt_to_draw);
-      options.meshcat->SetObject(path, Sphere(0.04),
-                                 geometry::Rgba(1, 0, 0.0, 1.0));
-      point_to_draw.head(2) = clique.col(pt_to_draw);
-      options.meshcat->SetTransform(
-          path, math::RigidTransform<double>(point_to_draw));
-    }
+    Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
+    std::string path = fmt::format("clique_pt/{}", pt_to_draw);
+    options.meshcat->SetObject(path, Sphere(0.04),
+                               geometry::Rgba(1, 0, 0.0, 1.0));
+    point_to_draw.head(2) = clique.col(pt_to_draw);
+    options.meshcat->SetTransform(path,
+                                  math::RigidTransform<double>(point_to_draw));
+  }
 
   HPolyhedron region = FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
                                                    clique.topRows(2), options);
   EXPECT_EQ(region.ambient_dimension(), 2);
   {
-    
     EXPECT_TRUE(region.PointInSet(clique.col(0).head(2)));
     EXPECT_FALSE(region.PointInSet(clique.col(1).head(2)));
     Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 20);
@@ -954,16 +953,17 @@ GTEST_TEST(FastCliqueInflationTest, CliqueInCollision) {
   options.meshcat = meshcat;
   options.configuration_space_margin = 0.04;
   for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
-      Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
-      std::string path = fmt::format("clique_pt/{}", pt_to_draw);
-      options.meshcat->SetObject(path, Sphere(0.04),
-                                 geometry::Rgba(1, 0, 0.0, 1.0));
-      point_to_draw.head(2) = clique.col(pt_to_draw);
-      options.meshcat->SetTransform(
-          path, math::RigidTransform<double>(point_to_draw));
+    Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
+    std::string path = fmt::format("clique_pt/{}", pt_to_draw);
+    options.meshcat->SetObject(path, Sphere(0.04),
+                               geometry::Rgba(1, 0, 0.0, 1.0));
+    point_to_draw.head(2) = clique.col(pt_to_draw);
+    options.meshcat->SetTransform(path,
+                                  math::RigidTransform<double>(point_to_draw));
   }
   EXPECT_THROW(FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
-                                                   clique.topRows(2), options), std::runtime_error);
+                                           clique.topRows(2), options),
+               std::runtime_error);
 }
 }  // namespace
 }  // namespace planning
