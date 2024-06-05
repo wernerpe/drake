@@ -11,9 +11,9 @@
 #include "drake/common/parallelism.h"
 #include "drake/geometry/meshcat.h"
 // #include "drake/geometry/optimization/convex_set.h"
+#include "drake/geometry/optimization/affine_ball.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
-#include "drake/geometry/optimization/affine_ball.h"
 #include "drake/planning/collision_checker.h"
 
 namespace drake {
@@ -94,13 +94,13 @@ struct FastCliqueInflationOptions {
   std::shared_ptr<geometry::Meshcat> meshcat{};
 };
 
-/** Given a set of points that form a clique on a visibility graph, use sampling based
-optimization to find a collision free polytope in cspace.*/
+/** Given a set of points that form a clique on a visibility graph, use sampling
+based optimization to find a collision free polytope in cspace.*/
 
-HPolyhedron FastCliqueInflation(const CollisionChecker& checker,
-                     const Eigen::MatrixXd& clique,
-                     const HPolyhedron& domain,
-                     const FastCliqueInflationOptions& options = FastCliqueInflationOptions());
+HPolyhedron FastCliqueInflation(
+    const CollisionChecker& checker, const Eigen::MatrixXd& clique,
+    const HPolyhedron& domain,
+    const FastCliqueInflationOptions& options = FastCliqueInflationOptions());
 
 }  // namespace planning
 }  // namespace drake

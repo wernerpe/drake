@@ -19,8 +19,8 @@ namespace drake {
 namespace planning {
 
 using geometry::optimization::HPolyhedron;
-using geometry::optimization::VPolytope;
 using geometry::optimization::Hyperellipsoid;
+using geometry::optimization::VPolytope;
 
 struct FastIrisOptions {
   /** Passes this object to an Archive.

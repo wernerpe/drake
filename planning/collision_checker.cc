@@ -579,7 +579,7 @@ std::vector<uint8_t> CollisionChecker::CheckConfigsCollisionFree(
   return collision_checks;
 }
 
-std::vector<uint8_t> CollisionChecker::CheckConfigsCollisionFree(
+std::vector<uint8_t> CollisionChecker::CheckConfigsCollisionFreeEigen(
     const Eigen::Ref<const Eigen::MatrixXd>& configs,
     const Parallelism parallelize) const {
   // Note: vector<uint8_t> is used since vector<bool> is not thread safe.

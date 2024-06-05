@@ -1,7 +1,7 @@
 #include "drake/planning/iris/fast_clique_inflation.h"
 
 #include <algorithm>
-#include <iostream>
+// #include <iostream>
 #include <string>
 
 #include <common_robotics_utilities/parallelism.hpp>
@@ -62,7 +62,6 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           ? std::min(parallelism.num_threads(),
                      checker.num_allocated_contexts())
           : 1;
-  log()->info("starting affine ball");
   RandomGenerator generator(options.random_seed);
   AffineBall ab;
   Eigen::MatrixXd B;
@@ -75,12 +74,14 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     ab = AffineBall::MinimumVolumeCircumscribedEllipsoid(clique, rank_tol);
     B = ab.B();
 
-    // Eigen's SVD rank never returns zero, and their singular values are
-    // returned in decreasing order.
-    Eigen::VectorXd mean = clique.rowwise().mean();
-    auto svd = (clique.colwise() - mean).bdcSvd(Eigen::ComputeThinU);
-    if (svd.singularValues()[0] < rank_tol) {
-      // make sure B is invertible
+    auto svd = clique.jacobiSvd();
+    Eigen::VectorXd sigma = svd.singularValues();
+    log()->info("end svd {}", fmt_eigen(sigma.tail(1)));
+
+    if (sigma.tail(1)(0) < rank_tol) {
+      // make sure B is invertiblel
+      log()->info("affine ball min singular value of B {}",
+                  svd.singularValues()[0]);
       B += Eigen::MatrixXd::Identity(ab.ambient_dimension(),
                                      ab.ambient_dimension()) *
            1e-3;
@@ -103,7 +104,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
 
   VPolytope cvxh_vpoly(clique);
   DRAKE_THROW_UNLESS(domain.ambient_dimension() == clique.rows());
- 
+
   // cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
 
   log()->info("min representation of vpoly done");
@@ -194,7 +195,8 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
 
     // Find all particles in collision
     std::vector<uint8_t> particle_col_free =
-        checker.CheckConfigsCollisionFree(particles.leftCols(N_k), parallelism);
+        checker.CheckConfigsCollisionFreeEigen(particles.leftCols(N_k),
+                                               parallelism);
     int number_particles_in_collision_unadaptive_test =
         N_k -
         std::accumulate(particle_col_free.begin(), particle_col_free.end(), 0);
@@ -340,7 +342,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           // use ellipsoid, this is likely a collision inside of the convex hull
           log()->info(
               "FastCliqueInflation Warning! Possible collision inside of "
-              "convex hull at {}",
+              "convex hull at \n{}",
               fmt_eigen(nearest_particle));
           a_face = ATA * (nearest_particle - ellipsoid_center);
           allow_relax_cspace_margin = false;

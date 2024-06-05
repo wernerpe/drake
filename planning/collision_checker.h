@@ -742,7 +742,7 @@ class CollisionChecker {
       const std::vector<Eigen::VectorXd>& configs,
       Parallelism parallelize = Parallelism::Max()) const;
 
-  std::vector<uint8_t> CheckConfigsCollisionFree(
+  std::vector<uint8_t> CheckConfigsCollisionFreeEigen(
     const Eigen::Ref<const Eigen::MatrixXd>& configs,
     const Parallelism parallelize) const;
 
