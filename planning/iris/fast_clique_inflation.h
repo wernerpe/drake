@@ -12,6 +12,7 @@
 #include "drake/geometry/meshcat.h"
 // #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/affine_ball.h"
+#include "drake/geometry/optimization/affine_subspace.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/planning/collision_checker.h"

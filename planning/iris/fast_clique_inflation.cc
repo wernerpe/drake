@@ -25,6 +25,7 @@ using common_robotics_utilities::parallelism::StaticParallelForIndexLoop;
 using geometry::Meshcat;
 using geometry::Sphere;
 using geometry::optimization::AffineBall;
+using geometry::optimization::AffineSubspace;
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::VPolytope;
@@ -63,8 +64,12 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
                      checker.num_allocated_contexts())
           : 1;
   RandomGenerator generator(options.random_seed);
+  VPolytope cvxh_vpoly(clique);
+
   AffineBall ab;
   Eigen::MatrixXd B;
+  Eigen::MatrixXd face_projector_matrix =
+      Eigen::MatrixXd::Identity(clique.rows(), clique.rows());
   double rank_tol = 1e-6;
   double min_eig = 1e-3;
   if (clique.cols() == 1) {
@@ -92,6 +97,12 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
           Eigen::MatrixXd::Zero(U.cols(), V.cols());
       Sigma_corrected.diagonal() = sigma;
       B = U * Sigma_corrected * V.transpose();
+
+      AffineSubspace ah(cvxh_vpoly, rank_tol);
+
+      // update face projector matrix
+      face_projector_matrix -= ah.OrthogonalComplementBasis() *
+                               ah.OrthogonalComplementBasis().transpose();
     }
   }
 
@@ -107,7 +118,6 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
   DRAKE_THROW_UNLESS(domain.IsBounded());
   DRAKE_THROW_UNLESS(domain.PointInSet(ellipsoid_center));
 
-  VPolytope cvxh_vpoly(clique);
   DRAKE_THROW_UNLESS(domain.ambient_dimension() == clique.rows());
 
   // cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
@@ -393,7 +403,10 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
               "convex hull at \n{}.",
               fmt_eigen(nearest_particle));
           a_face = ATA * (nearest_particle - ellipsoid_center);
+          a_face.normalize();
           // project face into linear subspace of the clique if necessary
+          a_face = face_projector_matrix * a_face;
+          a_face.normalize();
 
           allow_relax_cspace_margin = false;
         } else {
