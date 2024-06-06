@@ -758,7 +758,6 @@ TEST_F(FastCliqueInflationTestFixture, CliqueInCollision) {
                                            clique.topRows(2), options),
                std::runtime_error);
 }
-
 }  // namespace
 }  // namespace planning
 }  // namespace drake
