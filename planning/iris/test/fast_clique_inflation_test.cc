@@ -93,7 +93,7 @@ GTEST_TEST(FastCliqueInflationTest, JointLimits) {
   EXPECT_FALSE(region.PointInSet(Vector1d{qmin - kTol}));
   EXPECT_FALSE(region.PointInSet(Vector1d{qmax + kTol}));
 }
-
+// Taken from IrisInConfigurationSpace unit tests.
 // A simple double pendulum with link lengths `l1` and `l2` with a sphere at the
 // tip of radius `r` between two (fixed) walls at `w` from the origin.  The
 // true configuration space is - w + r ≤ l₁s₁ + l₂s₁₊₂ ≤ w - r.  These regions
@@ -198,7 +198,7 @@ GTEST_TEST(FastCliqueInflationTest, DoublePendulum) {
     points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
     points.topRightCorner(2, 1) = vregion.vertices().col(0);
     points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+    meshcat->SetLine("Inflated Clique", points, 2.0, Rgba(0, 1, 0));
 
     MaybePauseForUser();
   }
@@ -236,7 +236,7 @@ const char block_urdf[] = R"(
   </joint>
 </robot>
 )";
-
+// Taken from IrisInConfigurationSpace unit tests.
 // A block on a vertical track, free to rotate (in the plane) with width `w` of
 // 2 and height `h` of 1, plus a ground plane at z=0.  The true configuration
 // space is min(q₀ ± .5w sin(q₁) ± .5h cos(q₁)) ≥ 0, where the min is over the
@@ -303,22 +303,12 @@ GTEST_TEST(FastCliqueInflation, BlockOnGround) {
     points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
     points.topRightCorner(2, 1) = vregion.vertices().col(0);
     points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+    meshcat->SetLine("Inflated Clique", points, 2.0, Rgba(0, 1, 0));
 
     MaybePauseForUser();
   }
 }
-
-// A (somewhat contrived) example of a concave configuration-space obstacle
-// (resulting in a convex configuration-space, which we approximate with
-// polytopes):  A simple pendulum of length `l` with a sphere at the tip of
-// radius `r` on a vertical track, plus a ground plane at z=0.  The
-// configuration space is given by the joint limits and z + l*cos(theta) >= r.
-// The region is also visualized at
-// https://www.desmos.com/calculator/flshvay78b. In addition to testing the
-// convex space, this was originally a test for which Ibex found
-// counter-examples that Snopt missed; now Snopt succeeds due to having
-// options.num_collision_infeasible_samples > 1.
+// Taken from IrisInConfigurationSpace unit tests.
 GTEST_TEST(FastCliqueInflationTest, ConvexConfigurationSpace) {
   const double l = 1.5;
   const double r = 0.1;
@@ -418,7 +408,7 @@ GTEST_TEST(FastCliqueInflationTest, ConvexConfigurationSpace) {
     points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
     points.topRightCorner(2, 1) = vregion.vertices().col(0);
     points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+    meshcat->SetLine("Inflated Clique", points, 2.0, Rgba(0, 1, 0));
 
     meshcat->SetObject("Test point", Sphere(0.03), Rgba(1, 0, 0));
     meshcat->SetTransform("Test point", math::RigidTransform(Eigen::Vector3d(
@@ -481,66 +471,76 @@ const char boxes_in_corners_urdf[] = R"(
   </joint>
 </robot>
 )";
-GTEST_TEST(FastCliqueInflationTest, FourPointClique) {
-  std::shared_ptr<Meshcat> meshcat;
-  meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
-  meshcat->Delete("start_pt");
-  meshcat->Delete("bisection");
-  meshcat->Delete("clique_pt");
-  meshcat->Delete("True C_free");
-  meshcat->Delete("Test point");
-  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
-                           -3.25, 3.25, -3.25, 3.25);
-  meshcat->SetProperty("/Grid", "visible", true);
-  // Draw the true cspace.
-  Eigen::Matrix3Xd env_points(3, 5);
-  // clang-format off
-        env_points << -2, 2,  2, -2, -2,
-                        2, 2, -2, -2,  2,
-                        0, 0,  0,  0,  0;
-  // clang-format on
-  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
-  Eigen::Matrix3Xd centers(3, 4);
-  double c = 1.0;
-  // clang-format off
-        centers << -c, c,  c, -c,
-                    c, c, -c, -c,
-                    0, 0,  0,  0;
-  // clang-format on
-  Eigen::Matrix3Xd obs_points(3, 5);
-  // approximating offset due to sphere radius with fixed offset
-  double s = 0.7 + 0.01;
-  // clang-format off
-        obs_points << -s, s,  s, -s, -s,
-                        s, s, -s, -s, s,
-                        s, 0,  0,  0,  0;
-  // clang-format on
-  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
-    Eigen::Matrix3Xd obstacle = obs_points;
-    obstacle.colwise() += centers.col(obstacle_idx);
-    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
-                     8.0, Rgba(0, 0, 0));
-  }
-  const Vector2d sample{0.0, 0.0};
-  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+class FastCliqueInflationTestFixture : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    meshcat = geometry::GetTestEnvironmentMeshcat();
+    meshcat->Delete("face_pt");
+    meshcat->Delete("start_pt");
+    meshcat->Delete("bisection");
+    meshcat->Delete("clique_pt");
+    meshcat->Delete("True C_free");
+    meshcat->Delete("Test point");
+    meshcat->Delete("Inflated Clique");
+    meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
+                             -3.25, 3.25, -3.25, 3.25);
+    meshcat->SetProperty("/Grid", "visible", true);
+    // Draw the true cspace.
+    Eigen::Matrix3Xd env_points(3, 5);
+    // clang-format off
+            env_points << -2, 2,  2, -2, -2,
+                            2, 2, -2, -2,  2,
+                            0, 0,  0,  0,  0;
+    // clang-format on
+    meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
+    Eigen::Matrix3Xd centers(3, 4);
+    double c = 1.0;
+    // clang-format off
+            centers << -c, c,  c, -c,
+                        c, c, -c, -c,
+                        0, 0,  0,  0;
+    // clang-format on
+    Eigen::Matrix3Xd obs_points(3, 5);
+    // approximating offset due to sphere radius with fixed offset
+    double s = 0.7 + 0.01;
+    // clang-format off
+            obs_points << -s, s,  s, -s, -s,
+                            s, s, -s, -s, s,
+                            s, 0,  0,  0,  0;
+    // clang-format on
+    for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
+      Eigen::Matrix3Xd obstacle = obs_points;
+      obstacle.colwise() += centers.col(obstacle_idx);
+      meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
+                       8.0, Rgba(0, 0, 0));
+    }
 
+    // setup fci options
+    options.verbose = true;
+    options.meshcat = meshcat;
+    options.configuration_space_margin = 0.04;
+  }
+
+  std::shared_ptr<Meshcat> meshcat;
+  FastCliqueInflationOptions options;
+};
+// Four point clique that is hard to contain with iris but must lie in the
+// region resulting from FCI by construction.
+TEST_F(FastCliqueInflationTestFixture, FourPointClique) {
   Eigen::Matrix3Xd clique(3, 4);
   double xw, yw;
   xw = 0.4;
   yw = 0.28;
   // clang-format off
-        clique << -xw, xw,  xw, -xw,
-                        yw, yw, -yw, -yw,
-                        0,  0,  0,  0;
+    clique << -xw, xw,  xw, -xw,
+               yw, yw, -yw, -yw,
+                0,  0,  0,  0;
   // clang-format on
-  FastCliqueInflationOptions options;
-  options.verbose = true;
-  options.meshcat = meshcat;
-  options.configuration_space_margin = 0.04;
   HPolyhedron region = FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
                                                    clique.topRows(2), options);
   EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a substantial region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 0.5);
   {
     for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
       Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
@@ -559,71 +559,27 @@ GTEST_TEST(FastCliqueInflationTest, FourPointClique) {
     points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
     points.topRightCorner(2, 1) = vregion.vertices().col(0);
     points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+    meshcat->SetLine("Inflated Clique", points, 2.0, Rgba(0, 1, 0));
 
     MaybePauseForUser();
   }
 }
-
-GTEST_TEST(FastCliqueInflationTest, ThreePointClique) {
-  std::shared_ptr<Meshcat> meshcat;
-  meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
-  meshcat->Delete("start_pt");
-  meshcat->Delete("bisection");
-  meshcat->Delete("clique_pt");
-  meshcat->Delete("True C_free");
-  meshcat->Delete("Test point");
-  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
-                           -3.25, 3.25, -3.25, 3.25);
-  meshcat->SetProperty("/Grid", "visible", true);
-  // Draw the true cspace.
-  Eigen::Matrix3Xd env_points(3, 5);
-  // clang-format off
-        env_points << -2, 2,  2, -2, -2,
-                        2, 2, -2, -2,  2,
-                        0, 0,  0,  0,  0;
-  // clang-format on
-  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
-  Eigen::Matrix3Xd centers(3, 4);
-  double c = 1.0;
-  // clang-format off
-        centers << -c, c,  c, -c,
-                    c, c, -c, -c,
-                    0, 0,  0,  0;
-  // clang-format on
-  Eigen::Matrix3Xd obs_points(3, 5);
-  // approximating offset due to sphere radius with fixed offset
-  double s = 0.7 + 0.01;
-  // clang-format off
-        obs_points << -s, s,  s, -s, -s,
-                        s, s, -s, -s, s,
-                        s, 0,  0,  0,  0;
-  // clang-format on
-  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
-    Eigen::Matrix3Xd obstacle = obs_points;
-    obstacle.colwise() += centers.col(obstacle_idx);
-    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
-                     8.0, Rgba(0, 0, 0));
-  }
-  const Vector2d sample{0.0, 0.0};
-  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
+// Three point clique that barely a valid clique. None the less, because it is
+// valid all points should always be contained in the region.
+TEST_F(FastCliqueInflationTestFixture, ThreePointClique) {
   Eigen::Matrix3Xd clique(3, 3);
   double xw;
   xw = 0.4;
   // clang-format off
-        clique << -xw, 0, 0,
-                    0, 0, xw,
-                    0, 0, 0;
+    clique << -xw, 0,  0,
+                0, 0, xw,
+                0, 0,  0;
   // clang-format on
-  FastCliqueInflationOptions options;
-  options.verbose = true;
-  options.meshcat = meshcat;
-  options.configuration_space_margin = 0.04;
   HPolyhedron region = FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
                                                    clique.topRows(2), options);
   EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a substantial region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 0.3);
   {
     for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
       Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
@@ -642,69 +598,27 @@ GTEST_TEST(FastCliqueInflationTest, ThreePointClique) {
     points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
     points.topRightCorner(2, 1) = vregion.vertices().col(0);
     points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+    meshcat->SetLine("Inflated Clique", points, 2.0, Rgba(0, 1, 0));
 
     MaybePauseForUser();
   }
 }
-GTEST_TEST(FastCliqueInflationTest, ThreePointCliqueInCollision) {
-  std::shared_ptr<Meshcat> meshcat;
-  meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
-  meshcat->Delete("start_pt");
-  meshcat->Delete("bisection");
-  meshcat->Delete("True C_free");
-  meshcat->Delete("Test point");
-  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
-                           -3.25, 3.25, -3.25, 3.25);
-  meshcat->SetProperty("/Grid", "visible", true);
-  // Draw the true cspace.
-  Eigen::Matrix3Xd env_points(3, 5);
-  // clang-format off
-        env_points << -2, 2,  2, -2, -2,
-                        2, 2, -2, -2,  2,
-                        0, 0,  0,  0,  0;
-  // clang-format on
-  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
-  Eigen::Matrix3Xd centers(3, 4);
-  double c = 1.0;
-  // clang-format off
-        centers << -c, c,  c, -c,
-                    c, c, -c, -c,
-                    0, 0,  0,  0;
-  // clang-format on
-  Eigen::Matrix3Xd obs_points(3, 5);
-  // approximating offset due to sphere radius with fixed offset
-  double s = 0.7 + 0.01;
-  // clang-format off
-        obs_points << -s, s,  s, -s, -s,
-                        s, s, -s, -s, s,
-                        s, 0,  0,  0,  0;
-  // clang-format on
-  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
-    Eigen::Matrix3Xd obstacle = obs_points;
-    obstacle.colwise() += centers.col(obstacle_idx);
-    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
-                     8.0, Rgba(0, 0, 0));
-  }
-  const Vector2d sample{0.0, 0.0};
-  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
+// Three points that dont form a clique. We expect a region that matches the
+// shape of the clique but excludes two of the points.
+TEST_F(FastCliqueInflationTestFixture, ThreePointInvalidClique) {
   Eigen::Matrix3Xd clique(3, 3);
   double xw;
-  xw = 0.7;
+  xw = 0.6;
   // clang-format off
-        clique << -xw, 0,  0,
-                    0, 0, xw,
-                    0,  0,  0;
+    clique << -xw, 0,  0,
+                0, 0, xw,
+                0, 0,  0;
   // clang-format on
-  FastCliqueInflationOptions options;
-  options.verbose = true;
-  options.meshcat = meshcat;
-  options.configuration_space_margin = 0.04;
   HPolyhedron region = FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
                                                    clique.topRows(2), options);
   EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a substantial region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 0.3);
   {
     for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
       Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
@@ -726,153 +640,27 @@ GTEST_TEST(FastCliqueInflationTest, ThreePointCliqueInCollision) {
     points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
     points.topRightCorner(2, 1) = vregion.vertices().col(0);
     points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+    meshcat->SetLine("Inflated Clique", points, 2.0, Rgba(0, 1, 0));
 
     MaybePauseForUser();
   }
 }
-GTEST_TEST(FastCliqueInflationTest, TwoPointCliqueCornerCase) {
-  std::shared_ptr<Meshcat> meshcat;
-  meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
-  meshcat->Delete("start_pt");
-  meshcat->Delete("bisection");
-  meshcat->Delete("True C_free");
-  meshcat->Delete("Test point");
-  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
-                           -3.25, 3.25, -3.25, 3.25);
-  meshcat->SetProperty("/Grid", "visible", true);
-  // Draw the true cspace.
-  Eigen::Matrix3Xd env_points(3, 5);
-  // clang-format off
-        env_points << -2, 2,  2, -2, -2,
-                        2, 2, -2, -2,  2,
-                        0, 0,  0,  0,  0;
-  // clang-format on
-  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
-  Eigen::Matrix3Xd centers(3, 4);
-  double c = 1.0;
-  // clang-format off
-        centers << -c, c,  c, -c,
-                    c, c, -c, -c,
-                    0, 0,  0,  0;
-  // clang-format on
-  Eigen::Matrix3Xd obs_points(3, 5);
-  // approximating offset due to sphere radius with fixed offset
-  double s = 0.7 + 0.01;
-  // clang-format off
-        obs_points << -s, s,  s, -s, -s,
-                        s, s, -s, -s, s,
-                        s, 0,  0,  0,  0;
-  // clang-format on
-  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
-    Eigen::Matrix3Xd obstacle = obs_points;
-    obstacle.colwise() += centers.col(obstacle_idx);
-    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
-                     8.0, Rgba(0, 0, 0));
-  }
-  const Vector2d sample{0.0, 0.0};
-  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-  Eigen::Matrix3Xd clique(3, 2);
-  double xw;
-  xw = 0.9;
-  // clang-format off
-        clique << -xw, 0,
-                    0, xw,
-                    0, 0;
-  // clang-format on
-  FastCliqueInflationOptions options;
-  options.verbose = true;
-  options.meshcat = meshcat;
-  options.configuration_space_margin = 0.04;
-  for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
-    Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
-    std::string path = fmt::format("clique_pt/{}", pt_to_draw);
-    options.meshcat->SetObject(path, Sphere(0.04),
-                               geometry::Rgba(1, 0, 0.0, 1.0));
-    point_to_draw.head(2) = clique.col(pt_to_draw);
-    options.meshcat->SetTransform(path,
-                                  math::RigidTransform<double>(point_to_draw));
-  }
-
-  HPolyhedron region = FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
-                                                   clique.topRows(2), options);
-  EXPECT_EQ(region.ambient_dimension(), 2);
-  {
-    EXPECT_TRUE(region.PointInSet(clique.col(0).head(2)));
-    EXPECT_FALSE(region.PointInSet(clique.col(1).head(2)));
-    Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 20);
-
-    VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
-    points.resize(3, vregion.vertices().cols() + 1);
-    points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
-    points.topRightCorner(2, 1) = vregion.vertices().col(0);
-    points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
-
-    MaybePauseForUser();
-  }
-}
-GTEST_TEST(FastCliqueInflationTest, ThreePointLineClique) {
-  std::shared_ptr<Meshcat> meshcat;
-  meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
-  meshcat->Delete("start_pt");
-  meshcat->Delete("bisection");
-  meshcat->Delete("clique_pt");
-  meshcat->Delete("True C_free");
-  meshcat->Delete("Test point");
-  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
-                           -3.25, 3.25, -3.25, 3.25);
-  meshcat->SetProperty("/Grid", "visible", true);
-  // Draw the true cspace.
-  Eigen::Matrix3Xd env_points(3, 5);
-  // clang-format off
-        env_points << -2, 2,  2, -2, -2,
-                        2, 2, -2, -2,  2,
-                        0, 0,  0,  0,  0;
-  // clang-format on
-  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
-  Eigen::Matrix3Xd centers(3, 4);
-  double c = 1.0;
-  // clang-format off
-        centers << -c, c,  c, -c,
-                    c, c, -c, -c,
-                    0, 0,  0,  0;
-  // clang-format on
-  Eigen::Matrix3Xd obs_points(3, 5);
-  // approximating offset due to sphere radius with fixed offset
-  double s = 0.7 + 0.01;
-  // clang-format off
-        obs_points << -s, s,  s, -s, -s,
-                        s, s, -s, -s, s,
-                        s, 0,  0,  0,  0;
-  // clang-format on
-  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
-    Eigen::Matrix3Xd obstacle = obs_points;
-    obstacle.colwise() += centers.col(obstacle_idx);
-    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
-                     8.0, Rgba(0, 0, 0));
-  }
-  const Vector2d sample{0.0, 0.0};
-  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
+// Inflating a three point clique that form a line, checking that handling lower
+// dimensional cliques works as expected in the case of a valid clique.
+TEST_F(FastCliqueInflationTestFixture, ThreePointLineClique) {
   Eigen::Matrix3Xd clique(3, 3);
   double xw;
-  xw = 0.4;
+  xw = 0.8;
   // clang-format off
-        clique << 0, 0,  0,
-                -xw, 0, xw,
-                  0,  0,  0;
+    clique << 0, 0,  0,
+            -xw, 0, xw,
+              0, 0,  0;
   // clang-format on
-  FastCliqueInflationOptions options;
-  options.verbose = true;
-  options.meshcat = meshcat;
-  options.configuration_space_margin = 0.04;
   HPolyhedron region = FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
                                                    clique.topRows(2), options);
   EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a substantial region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 0.5);
   {
     for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
       Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
@@ -891,67 +679,72 @@ GTEST_TEST(FastCliqueInflationTest, ThreePointLineClique) {
     points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
     points.topRightCorner(2, 1) = vregion.vertices().col(0);
     points.bottomRows<1>().setZero();
-    meshcat->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+    meshcat->SetLine("Inflated Clique", points, 2.0, Rgba(0, 1, 0));
 
     MaybePauseForUser();
   }
 }
-GTEST_TEST(FastCliqueInflationTest, CliqueInCollision) {
-  std::shared_ptr<Meshcat> meshcat;
-  meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
-  meshcat->Delete("start_pt");
-  meshcat->Delete("bisection");
-  meshcat->Delete("clique_pt");
-  meshcat->Delete("True C_free");
-  meshcat->Delete("Test point");
-  meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
-                           -3.25, 3.25, -3.25, 3.25);
-  meshcat->SetProperty("/Grid", "visible", true);
-  // Draw the true cspace.
-  Eigen::Matrix3Xd env_points(3, 5);
+// Attempting to inflate a linesegment that is in collision. This is a hard case
+// where the convex hull of the points lies in a lower dimensional space and is
+// in collision. We expect to get a nonempty region that contains one of the
+// points. Furthermore, the face that separates the found collision in the
+// convex hull is expected to be perpendicular to the linesegment.
+TEST_F(FastCliqueInflationTestFixture, TwoPointCliqueCornerCase) {
+  Eigen::Matrix3Xd clique(3, 2);
+  double xw;
+  xw = 0.9;
   // clang-format off
-        env_points << -2, 2,  2, -2, -2,
-                        2, 2, -2, -2,  2,
-                        0, 0,  0,  0,  0;
+    clique << -xw,  0,
+                0, xw,
+                0,  0;
   // clang-format on
-  meshcat->SetLine("Domain", env_points, 8.0, Rgba(0, 0, 0));
-  Eigen::Matrix3Xd centers(3, 4);
-  double c = 1.0;
-  // clang-format off
-        centers << -c, c,  c, -c,
-                    c, c, -c, -c,
-                    0, 0,  0,  0;
-  // clang-format on
-  Eigen::Matrix3Xd obs_points(3, 5);
-  // approximating offset due to sphere radius with fixed offset
-  double s = 0.7 + 0.01;
-  // clang-format off
-        obs_points << -s, s,  s, -s, -s,
-                        s, s, -s, -s, s,
-                        s, 0,  0,  0,  0;
-  // clang-format on
-  for (int obstacle_idx = 0; obstacle_idx < 4; ++obstacle_idx) {
-    Eigen::Matrix3Xd obstacle = obs_points;
-    obstacle.colwise() += centers.col(obstacle_idx);
-    meshcat->SetLine(fmt::format("/obstacles/obs_{}", obstacle_idx), obstacle,
-                     8.0, Rgba(0, 0, 0));
+  for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
+    Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
+    std::string path = fmt::format("clique_pt/{}", pt_to_draw);
+    options.meshcat->SetObject(path, Sphere(0.04),
+                               geometry::Rgba(1, 0, 0.0, 1.0));
+    point_to_draw.head(2) = clique.col(pt_to_draw);
+    options.meshcat->SetTransform(path,
+                                  math::RigidTransform<double>(point_to_draw));
   }
-  const Vector2d sample{0.0, 0.0};
-  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  HPolyhedron region = FastCliqueInflationFromUrdf(boxes_in_corners_urdf,
+                                                   clique.topRows(2), options);
+  EXPECT_EQ(region.ambient_dimension(), 2);
+  // Confirm that we've found a "substantial" region.
+  EXPECT_GE(region.MaximumVolumeInscribedEllipsoid().Volume(), 0.15);
+  Eigen::VectorXd dir(2);
+  dir << 1 / sqrt(2), 1 / sqrt(2);
+  Eigen::MatrixXd face_normals = region.A();
+  double max_dotprod = (face_normals * dir).cwiseAbs().maxCoeff();
+  // Check that the collision in the convex hull indeed produces a face in the
+  // orthogonal complement to the affine space of the edge.
+  EXPECT_GE(max_dotprod, 0.99);
+  {
+    EXPECT_TRUE(region.PointInSet(clique.col(0).head(2)));
+    EXPECT_FALSE(region.PointInSet(clique.col(1).head(2)));
+    Eigen::Matrix3Xd points = Eigen::Matrix3Xd::Zero(3, 20);
 
+    VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
+    points.resize(3, vregion.vertices().cols() + 1);
+    points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
+    points.topRightCorner(2, 1) = vregion.vertices().col(0);
+    points.bottomRows<1>().setZero();
+    meshcat->SetLine("nflated Clique", points, 2.0, Rgba(0, 1, 0));
+
+    MaybePauseForUser();
+  }
+}
+// Verify that FastCliqueInflation throws if one of the clique points is in
+// collision.
+TEST_F(FastCliqueInflationTestFixture, CliqueInCollision) {
   Eigen::Matrix3Xd clique(3, 3);
   double xw;
   xw = 0.4;
   // clang-format off
-        clique << 1, 0,  0,
-                  1, 0, xw,
-                  0,  0,  0;
+    clique << 1, 0,  0,
+              1, 0, xw,
+              0,  0,  0;
   // clang-format on
-  FastCliqueInflationOptions options;
-  options.verbose = true;
-  options.meshcat = meshcat;
-  options.configuration_space_margin = 0.04;
   for (int pt_to_draw = 0; pt_to_draw < clique.cols(); ++pt_to_draw) {
     Eigen::Vector3d point_to_draw = Eigen::Vector3d::Zero();
     std::string path = fmt::format("clique_pt/{}", pt_to_draw);
@@ -965,6 +758,7 @@ GTEST_TEST(FastCliqueInflationTest, CliqueInCollision) {
                                            clique.topRows(2), options),
                std::runtime_error);
 }
+
 }  // namespace
 }  // namespace planning
 }  // namespace drake
