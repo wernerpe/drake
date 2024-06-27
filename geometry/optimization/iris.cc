@@ -605,6 +605,10 @@ int unadaptive_test_samples(double p, double delta, double tau) {
   return static_cast<int>(-2 * std::log(delta) / (tau * tau * p) + 0.5);
 }
 
+bool my_comparator(const VectorXd& t1, const VectorXd& t2, const Hyperellipsoid& E) {
+  return (t1 - E.center()).squaredNorm() < (t2 - E.center()).squaredNorm(); // or use a custom compare function
+}
+
 }  // namespace
 
 HPolyhedron RayIris(const MultibodyPlant<double>& plant,
@@ -903,6 +907,14 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
           }
         }
       }
+
+      if (options.only_walk_toward_collisions) { // Sort collision order
+        std::sort(std::begin(particles_in_collision), std::begin(particles_in_collision) + number_particles_in_collision, std::bind(my_comparator, std::placeholders::_1, std::placeholders::_2, E));
+
+      }
+
+
+
       if (options.verbose) {
         log()->info("RayIris N_k {}, N_col {}, thresh {}", N_k,
                     number_particles_in_collision_unadaptive_test,
@@ -932,6 +944,9 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
       for (int i_particle = 0; i_particle < num_particles_to_walk_toward; ++i_particle){
         Eigen::VectorXd direction;
         if (options.only_walk_toward_collisions) {
+          if (!P_candidate.PointInSet(particles_in_collision.at(i_particle))) {
+            continue;
+          }
           direction = (particles_in_collision.at(i_particle) - E.center()).normalized();
           collision_search_step_size = (particles_in_collision.at(i_particle) - E.center()).norm() / options.face_ray_steps;
         } else {
@@ -941,7 +956,8 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
 
         std::pair<Eigen::VectorXd, int> closest_collision_info;
         // log()->info("starting COllisionLineSearch");
-        if (options.only_walk_toward_collisions && options.face_ray_steps == 1) {
+        if (options.only_walk_toward_collisions && options.face_ray_steps == 1) { // GreedyIris settings
+          
           closest_collision_info = std::make_pair(particles_in_collision.at(i_particle), 
             FindCollisionPairIndex(plant, mutable_context, particles_in_collision.at(i_particle), sorted_pairs));
         } else {
