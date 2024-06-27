@@ -476,56 +476,12 @@ bool CheckTerminate(const IrisOptions& options, const HPolyhedron& P,
 }  // namespace
 
 namespace {
-std::pair<Eigen::VectorXd, int> CheckRayPolytopeIntersection(const MultibodyPlant<double>& plant, 
-    const Parallelism& parallelism, const planning::CollisionChecker& checker, Context<double>* context, 
-    const std::vector<GeometryPairWithDistance>& sorted_pairs, const HPolyhedron& P, 
-    const Eigen::VectorXd& center, const Eigen::VectorXd& direction) {
-  // Find where line hits polytope.
-  MathematicalProgram prog;
-  solvers::VectorXDecisionVariable d = prog.NewContinuousVariables(1);
-  prog.AddLinearCost(-d[0]); // Maximize distance along direction.
-  solvers::VectorXDecisionVariable x = prog.NewContinuousVariables(direction.size());
-  prog.AddLinearEqualityConstraint(center + d[0] * direction - x, Eigen::VectorXd::Zero(P.ambient_dimension())); // x is distance d from center, along direction.
-  P.AddPointInSetConstraints(&prog, x);
-  auto result = solvers::Solve(prog);
-  const Eigen::VectorXd configuration = result.GetSolution(x);
-
-  // check if configuration is in collision
-  std::vector<Eigen::VectorXd> configs_to_check(1);
-  configs_to_check[0] = configuration;
-  std::vector<uint8_t> col_free =
-      checker.CheckConfigsCollisionFree(configs_to_check,
-                                        parallelism);
-  int i_pair = 0;
-  int pair_in_collision = -1;
-  VectorXd collision_configuration = Eigen::VectorXd::Zero(P.ambient_dimension());
-  if (!col_free[0]) { // Have to check which pair is in collision via signed distance pair
-    // log()->info("found collision");
-    for (const auto& pair : sorted_pairs) {
-      plant.SetPositions(context, configuration);
-      auto query_object =
-          plant.get_geometry_query_input_port().template Eval<QueryObject<double>>(*context);
-      const double distance =
-      query_object.ComputeSignedDistancePairClosestPoints(pair.geomA, pair.geomB)
-          .distance;
-      if (distance < 0.0) {
-        pair_in_collision = i_pair;
-        collision_configuration = configuration;
-        break;
-      }
-      ++i_pair;
-    }
-  }
-
-  return std::make_pair(collision_configuration, pair_in_collision);
-}
-}
-
-namespace {
 
 int FindCollisionPairIndex(const MultibodyPlant<double>& plant, 
 Context<double>* context, const Eigen::VectorXd& configuration, 
 const std::vector<GeometryPairWithDistance>& sorted_pairs) {
+  // Call ComputeSignedDistancePairClosestPoints for each pair of collision geometries until 
+  // finding a pair that is in collision and returning the corresponding index
   int pair_in_collision = -1;
   int i_pair = 0;
   for (const auto& pair : sorted_pairs) {
@@ -553,50 +509,34 @@ const double step_size = 0.05, bool parallelize_check = false, const double cons
   // Do a line search for closest collision to center, along direction vector.
   int i = 1;
   int pair_in_collision = -1;
-  // VectorXd collision_configuration(P.ambient_dimension());
   VectorXd collision_configuration = Eigen::VectorXd::Zero(P.ambient_dimension());
   
   int particle_chunk_size = parallelism.num_threads();
-  // const int particle_chunk_size = 16;
-  // const int particle_chunk_size = 1;
   std::vector<Eigen::VectorXd> configs_to_check;
   while (P.PointInSet(center + i * step_size * direction, constraint_tol) && pair_in_collision < 0) {
-    // log()->info("In collisionlinesearch loop");
-    // const Eigen::VectorXd configuration = center + i * step_size * direction;
     Eigen::VectorXd configuration;
     for (int i_in_chunk = 0; (i_in_chunk < particle_chunk_size); ++i_in_chunk) {
       configuration = center + i* step_size * direction;
       configs_to_check.push_back(configuration);
       ++i;
-      // log()->info("i = {}", i);
       if (!P.PointInSet(center + i * step_size * direction, constraint_tol)) {
-        // log()->info("left polytope");
         break;
       }
     }
-    // log()->info("calling collision checker");
     std::vector<uint8_t> col_free = checker.CheckConfigsCollisionFree(configs_to_check,
                                         parallelism);
-    // log()->info("finished call");
     bool collision_in_chunk = false;
     for (int i_in_chunk = 0; i_in_chunk < col_free.size(); ++i_in_chunk) {
-      // log()->info("checking i_in_chunk {}", i_in_chunk);
       if (!col_free[i_in_chunk]) {
-        // log()->info("found collision 0");
         collision_configuration = configs_to_check[i_in_chunk];
         collision_in_chunk = true;
-        // log()->info("found collision");
         break;
       }
     }
     
-    // log()->info("checking particle at: {}",configuration[0]);
     if (collision_in_chunk) { // Have to check which pair is in collision via signed distance pair
-      // log()->info("fidning pair in collision");
       pair_in_collision = FindCollisionPairIndex(plant, context, collision_configuration, sorted_pairs);
-      // log()->info("pair in collision: {}",pair_in_collision);
     }
-    // log()->info("finishing iteration");
   }
   return std::make_pair(collision_configuration, pair_in_collision);
 }
@@ -799,11 +739,6 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
 
   VectorXd guess = seed;
 
-  // For debugging visualization.
-  Vector3d point_to_draw = Vector3d::Zero();
-  int num_points_drawn = 0;
-  bool do_debugging_visualization = options.meshcat && nq <= 3;
-
   const std::string seed_point_error_msg =
       "IrisInConfigurationSpace: require_sample_point_is_contained is true but "
       "the seed point exited the initial region. Does the provided "
@@ -856,15 +791,11 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
   }
   // log()->info("particles at 0 {}, first", particles.at(0)[0]);
   while (true) {
-    // for (int i = 0; i < E.center().size(); ++i) {
-    //   log()->info("ellipsoid center ind {}: {}", i, E.center()[i]);
-    // }
     log()->info("RayIris iteration {}", iteration);
     int num_constraints = num_initial_constraints;
     HPolyhedron P_candidate = HPolyhedron(A.topRows(num_initial_constraints),
                                           b.head(num_initial_constraints));
     DRAKE_ASSERT(best_volume > 0);
-    // Find separating hyperplanes
 
     // Separating Planes Step
     int num_iterations_separating_planes = 0;
@@ -913,8 +844,6 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
 
       }
 
-
-
       if (options.verbose) {
         log()->info("RayIris N_k {}, N_col {}, thresh {}", N_k,
                     number_particles_in_collision_unadaptive_test,
@@ -952,10 +881,8 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
         } else {
           direction = (particles.at(i_particle) - E.center()).normalized();
         }
-        // log()->info("particle to arrive at: {}",particles_in_collision.at(i_particle)[0]);
 
         std::pair<Eigen::VectorXd, int> closest_collision_info;
-        // log()->info("starting COllisionLineSearch");
         if (options.only_walk_toward_collisions && options.face_ray_steps == 1) { // GreedyIris settings
           
           closest_collision_info = std::make_pair(particles_in_collision.at(i_particle), 
@@ -964,44 +891,20 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
           closest_collision_info = CollisionLineSearch(plant, parallelism, checker, mutable_context, 
             sorted_pairs, P_candidate, E.center(), direction, collision_search_step_size);
         }
-        
 
         if (closest_collision_info.second >= 0) { // pair is actually in collision
-          // log()->info("solving SNOPT problem {}", direction[0]);
-          // if (consecutive__sample_failures > options.num_collision_infeasible_samples) {
-          //   log()->info("solving SNOPT problem in final pass");
-          // }
-
-          
           auto pair_iterator = std::next(sorted_pairs.begin(), closest_collision_info.second);
           const auto collision_pair = *pair_iterator;
 
-          // plant.SetPositions(mutable_context, closest_collision_info.first);
-          // auto query_object_test =
-          //     plant.get_geometry_query_input_port().template Eval<QueryObject<double>>(*mutable_context);
-          // const double distance =
-          // query_object_test.ComputeSignedDistancePairClosestPoints(collision_pair.geomA, collision_pair.geomB)
-          //     .distance;
-          // DRAKE_DEMAND(distance <= 0);
-
-          // log()->info("Collision found on ray: {}, {}", collision_configuration(0), collision_configuration(1));
           internal::ClosestCollisionProgram prog(
             same_point_constraint, *frames.at(collision_pair.geomA), *frames.at(collision_pair.geomB),
             *sets.at(collision_pair.geomA), *sets.at(collision_pair.geomB), E,
             A.topRows(num_constraints), b.head(num_constraints));
           if (prog.Solve(*solver, closest_collision_info.first, options.solver_options, &closest)) {
-            // log()->info("SNOPT collision: {}, {}", closest(0), closest(1));
             AddTangentToPolytope(E, closest, options.configuration_space_margin,
                                 &A, &b, &num_constraints);
             P_candidate =
                 HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
-            // log()->info("num faces in P_candidate, after adding face: {}", P_candidate.A().rows());
-            // for (int i = 0; i < P_candidate.A().rows(); ++i) {
-            //   log()->info("Hyperplanes 2: {}x + {}y < {}", P_candidate.A().row(i)(0), P_candidate.A().row(i)(1), P_candidate.b()(i));
-            // }
-            // for (int i = 0; i < P_candidate.A().rows(); ++i) {
-            //   log()->info("Hyperplanes 2: {}x + {}y < {}", A.topRows(num_constraints).row(i)(0), P_candidate.A().row(i)(1), b.head(num_constraints)(i));
-            // }
             if (options.require_sample_point_is_contained) {
               const bool seed_point_requirement =
                   A.row(num_constraints - 1) * seed <= b(num_constraints - 1);
@@ -1014,9 +917,7 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
               }
             }
       
-          } //else {
-            // log()->info("seeded SNOPT with feasible guess but did not get feasible soln"); // TODO(rhjiang) remove after debugging
-          // }
+          }
         }
       }
       
