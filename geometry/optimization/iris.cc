@@ -832,7 +832,8 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
       for (size_t i = 0; i < particle_col_free.size(); ++i) {
         if (particle_col_free[i] == 0) {
           ++number_particles_in_collision_unadaptive_test;
-          if (options.only_walk_toward_collisions && number_particles_in_collision < options.particle_batch_size) {
+          // if (options.only_walk_toward_collisions && number_particles_in_collision < options.particle_batch_size) {
+          if (options.only_walk_toward_collisions) {
             particles_in_collision.at(number_particles_in_collision) = particles[i];
             ++number_particles_in_collision;
           }
