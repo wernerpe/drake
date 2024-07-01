@@ -840,9 +840,8 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
         }
       }
 
-      if (options.only_walk_toward_collisions) { // Sort collision order
+      if (options.only_walk_toward_collisions || options.particle_batch_size == -1) { // Sort collision order
         std::sort(std::begin(particles_in_collision), std::begin(particles_in_collision) + number_particles_in_collision, std::bind(my_comparator, std::placeholders::_1, std::placeholders::_2, E));
-
       }
 
       if (options.verbose) {
@@ -869,6 +868,8 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
       int num_particles_to_walk_toward = options.particle_batch_size;
       if (options.only_walk_toward_collisions) {
         num_particles_to_walk_toward = number_particles_in_collision;
+      } else if (options.particle_batch_size == -1) {
+        num_particles_to_walk_toward = N_k;
       }
 
       for (int i_particle = 0; i_particle < num_particles_to_walk_toward; ++i_particle){
