@@ -872,7 +872,11 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
         num_particles_to_walk_toward = N_k;
       }
 
+      int num_hyperplanes_added = 0;
       for (int i_particle = 0; i_particle < num_particles_to_walk_toward; ++i_particle){
+        if (num_hyperplanes_added > options.max_hyperplanes_per_iteration) {
+          break;
+        }
         Eigen::VectorXd direction;
         if (options.only_walk_toward_collisions) {
           if (!P_candidate.PointInSet(particles_in_collision.at(i_particle))) {
@@ -903,6 +907,7 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
             *sets.at(collision_pair.geomA), *sets.at(collision_pair.geomB), E,
             A.topRows(num_constraints), b.head(num_constraints));
           if (prog.Solve(*solver, closest_collision_info.first, options.solver_options, &closest)) {
+            ++num_hyperplanes_added;
             AddTangentToPolytope(E, closest, options.configuration_space_margin,
                                 &A, &b, &num_constraints);
             P_candidate =

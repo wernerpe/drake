@@ -147,6 +147,10 @@ struct IrisOptions {
 
   bool only_walk_toward_collisions = false;
 
+  // Set large so default behavior is unchanged
+  // TODO (cohnt) change to INT_MAX maybe
+  int max_hyperplanes_per_iteration{1000};
+
   /** Passing a meshcat instance may enable debugging visualizations; this
   currently only happens in IrisInConfigurationSpace and when the
   configuration space is <= 3 dimensional.*/

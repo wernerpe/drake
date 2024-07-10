@@ -550,6 +550,8 @@ void DefineGeometryOptimization(py::module m) {
             "particle_batch_size", &IrisOptions::particle_batch_size, cls_doc.particle_batch_size.doc)  
         .def_readwrite(
             "only_walk_toward_collisions", &IrisOptions::only_walk_toward_collisions, cls_doc.only_walk_toward_collisions.doc)  
+        .def_readwrite(
+            "max_hyperplanes_per_iteration", &IrisOptions::max_hyperplanes_per_iteration, cls_doc.max_hyperplanes_per_iteration.doc)
         .def_readwrite("mixing_steps", &IrisOptions::mixing_steps,
             cls_doc.mixing_steps.doc)
         .def_readwrite("solver_options", &IrisOptions::solver_options,
