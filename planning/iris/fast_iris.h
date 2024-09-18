@@ -10,7 +10,6 @@
 
 #include "drake/common/parallelism.h"
 #include "drake/geometry/meshcat.h"
-// #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/planning/collision_checker.h"

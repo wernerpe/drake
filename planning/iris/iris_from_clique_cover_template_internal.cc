@@ -1,7 +1,6 @@
 #include "drake/planning/iris/iris_from_clique_cover_template_internal.h"
 
 #include <cmath>
-#include <iostream>
 #include <optional>
 #include <vector>
 
@@ -139,13 +138,11 @@ bool IsSufficientlyCovered(
   int num_covered_points = ClassifyCollisionFreePoints(
       *sampled_points, sets, uncovered_collision_free_points,
       num_uncovered_collision_free_points);
-  std::cout << "Running Coverage check with " << *num_points_sampled
-            << "points." << std::endl;
-  std::cout << "num_covered_points / *num_points_sampled : "
-            << (static_cast<double>(num_covered_points) / *num_points_sampled)
-            << std::endl;
-  std::cout << "coverage_threshold : " << coverage_threshold << std::endl
-            << std::endl;
+  const double coverage_frac =
+      (static_cast<double>(num_covered_points) / *num_points_sampled);
+  log()->debug(
+      "IsSufficientlyCovered: Coverage estimate is {}. Threshold is {}",
+      coverage_frac, coverage_threshold);
   return (static_cast<double>(num_covered_points) / *num_points_sampled) >
          coverage_threshold;
 }
