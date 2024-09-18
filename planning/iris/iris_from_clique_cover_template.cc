@@ -1,7 +1,6 @@
 #include "drake/planning/iris/iris_from_clique_cover_template.h"
 
 #include <algorithm>
-#include <iostream>
 #include <set>
 
 #include "drake/common/drake_throw.h"
@@ -26,11 +25,8 @@ std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
   DRAKE_THROW_UNLESS(min_clique_cover_solver != nullptr);
   DRAKE_THROW_UNLESS(set_builder != nullptr);
 
-  std::cout << "PointsToCliqueCoverSets" << std::endl;
   Eigen::SparseMatrix<bool> visibility_graph =
       VisibilityGraph(checker, points, parallelism);
-  std::cout << "VisibilityGraph has " << visibility_graph.nonZeros()
-            << " non-zeros." << std::endl;
   // Compute the clique cover
   std::vector<std::set<int>> clique_cover =
       min_clique_cover_solver->SolveMinCliqueCover(visibility_graph, partition);
@@ -51,7 +47,6 @@ std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
         ++this_ctr;
       }
     }
-    std::cout << "Setting points" << std::endl;
     meshcat->SetLineSegments("/visibility_graph", start, end, 1,
                              geometry::Rgba(0, 1, 0, 1));
     int clique_ctr = 0;
@@ -86,18 +81,13 @@ std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
   // Inflate the regions.
   // Pre-allocate a data-structure to hold the current clique.
   Eigen::MatrixXd clique(points.rows(), points.cols());
-  std::cout << "looping over clique_inds. There are " << clique_cover.size()
-            << " cliques." << std::endl;
   for (const auto& clique_inds : clique_cover) {
     int i = 0;
     for (const auto& ind : clique_inds) {
       clique.col(i++) = points.col(ind);
     }
-    std::cout << "Calling Build Set on clique of size " << clique_inds.size()
-              << std::endl;
     sets.push_back(
         set_builder->BuildRegion(clique.leftCols(clique_inds.size())));
-    std::cout << "SET BUILT!" << std::endl;
   }
   return sets;
 }
@@ -168,11 +158,15 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
   Eigen::MatrixXd visibility_graph_points(checker.plant().num_positions(),
                                           num_points_per_visibility_round);
   int ctr = 0;
+  auto test_coverage_threshold = [&ctr, &options]() {
+    return 6 * options.coverage_termination_threshold /
+           (M_PI * (ctr + 1) * (ctr + 1));
+  };
   while (ctr < options.iteration_limit &&
          !internal::IsSufficientlyCovered(
-             options.coverage_termination_threshold, options.confidence,
-             checker, *sets, generator, point_sampler,
-             &collision_free_sampled_points, &num_collision_free_sampled_points,
+             test_coverage_threshold(), options.confidence, checker, *sets,
+             generator, point_sampler, &collision_free_sampled_points,
+             &num_collision_free_sampled_points,
              &uncovered_collision_free_sampled_points,
              &num_uncovered_collision_free_sampled_points,
              options.sampling_batch_size, max_collision_checker_parallelism)) {
@@ -229,7 +223,6 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
                                       (checker.plant().num_positions() == 3 ||
                                        checker.plant().num_positions() == 2);
     if (do_debugging_visualization) {
-      std::cout << "PLOTTING POINTS" << std::endl;
       Eigen::Matrix3Xf plot_points(3, visibility_graph_points.cols());
       if (visibility_graph_points.rows() == 3) {
         plot_points = visibility_graph_points.cast<float>();
@@ -248,7 +241,6 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
 
     std::vector<HPolyhedron> new_sets;
     if (adjacency_matrix_builder == nullptr) {
-      std::cout << "In adjacency_matrix_builder == nullptr" << std::endl;
       new_sets = PointsToCliqueCoverSets(
           visibility_graph_points, options.partition, checker,
           min_clique_cover_solver, set_builder,
@@ -259,7 +251,9 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
           min_clique_cover_solver, set_builder, options.iris_options.meshcat);
     }
     sets->insert(sets->end(), new_sets.begin(), new_sets.end());
-    std::cout << "sets is now " << sets->size() << std::endl;
+    log()->debug(
+        "IrisInConfigurationSpaceFromCliqueCoverTemplate has built {} sets.",
+        sets->size());
   }
 }
 
