@@ -13,7 +13,7 @@ void DefinePlanningVisibilityGraph(py::module m) {
   constexpr auto& doc = pydrake_doc.drake.planning;
 
   m.def("VisibilityGraph", &planning::VisibilityGraph, py::arg("checker"),
-      py::arg("points"), py::arg("parallelize") = true,
+      py::arg("points"), py::arg("parallelize") = Parallelism::Max(),
       py::call_guard<py::gil_scoped_release>(), doc.VisibilityGraph.doc);
 }
 

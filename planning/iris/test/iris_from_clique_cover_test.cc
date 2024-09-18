@@ -49,7 +49,7 @@ void Draw2dVPolytope(const VPolytope& polytope, const std::string& meshcat_name,
 
 GTEST_TEST(IrisInConfigurationSpaceFromCliqueCover,
            TestIrisFromCliqueCoverOptions) {
-  IrisFromCliqueCoverOptions options;
+  iris::IrisFromCliqueCoverOptions options;
 
   EXPECT_EQ(options.iris_options.iteration_limit, 1);
   options.iris_options.iteration_limit = 100;
@@ -135,7 +135,7 @@ GTEST_TEST(IrisInConfigurationSpaceFromCliqueCover, BoxConfigurationSpaceTest) {
   auto checker =
       std::make_unique<SceneGraphCollisionChecker>(std::move(params));
 
-  IrisFromCliqueCoverOptions options;
+  iris::IrisFromCliqueCoverOptions options;
 
   options.num_points_per_coverage_check = 100;
   options.num_points_per_visibility_round = 20;
@@ -188,7 +188,7 @@ GTEST_TEST(IrisInConfigurationSpaceFromCliqueCover, NoJointLimits) {
   auto checker =
       std::make_unique<SceneGraphCollisionChecker>(std::move(params));
 
-  IrisFromCliqueCoverOptions options;
+  iris::IrisFromCliqueCoverOptions options;
   std::vector<HPolyhedron> sets;
 
   RandomGenerator generator(0);
@@ -344,7 +344,7 @@ class IrisInConfigurationSpaceFromCliqueCoverTestFixture
   CollisionCheckerParams params;
   std::shared_ptr<Meshcat> meshcat;
   std::unique_ptr<SceneGraphCollisionChecker> checker;
-  IrisFromCliqueCoverOptions options;
+  iris::IrisFromCliqueCoverOptions options;
   std::vector<HPolyhedron> sets;
   RandomGenerator generator;
   std::vector<Hyperrectangle> manual_decomposition;

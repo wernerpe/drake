@@ -154,7 +154,7 @@ GTEST_TEST(MaxCliqueSolverViaMipTest, FullyConnectedPlusFullBipartiteGraph) {
       internal::FullyConnectedPlusFullBipartiteGraph();
   VectorX<bool> solution(9);
 
-  // The max cliuqe solutions are pairs of vertices on the bipartite graph.
+  // The max clique solutions are pairs of vertices on the bipartite graph.
   solution << true, true, true, false, false, false, false, false, false;
 
   std::vector<VectorX<bool>> possible_solutions;

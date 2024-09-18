@@ -182,7 +182,7 @@ void ComputeGreedyTruncatedCliqueCover(
 std::queue<HPolyhedron> IrisWorker(
     const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points, const int builder_id,
-    const IrisFromCliqueCoverOptions& options,
+    const iris::IrisFromCliqueCoverOptions& options,
     AsyncQueue<VectorX<bool>>* computed_cliques, bool disable_meshcat = true) {
   // Copy the IrisOptions as we will change the value of the starting ellipse
   // in this worker.
@@ -324,8 +324,9 @@ MakeDefaultMaxCliqueSolver() {
 }  // namespace
 
 void IrisInConfigurationSpaceFromCliqueCover(
-    const CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
-    RandomGenerator* generator, std::vector<HPolyhedron>* sets,
+    const CollisionChecker& checker,
+    const iris::IrisFromCliqueCoverOptions& options, RandomGenerator* generator,
+    std::vector<HPolyhedron>* sets,
     const planning::graph_algorithms::MaxCliqueSolverBase*
         max_clique_solver_ptr) {
   DRAKE_THROW_UNLESS(options.coverage_termination_threshold > 0);
