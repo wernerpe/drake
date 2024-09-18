@@ -14,9 +14,9 @@ drake_cc_package_library(
     visibility = ["//visibility:public"],
     deps = [
         ":adjacency_matrix_builder_base",
-        ":hpolyhedron_point_sampler",
         ":fast_clique_inflation",
         ":fast_iris",
+        ":hpolyhedron_point_sampler",
         ":iris_from_clique_cover",
         ":iris_from_clique_cover_options",
         ":iris_from_clique_cover_template",
