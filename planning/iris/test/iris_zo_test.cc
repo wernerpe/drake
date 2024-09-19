@@ -463,7 +463,6 @@ GTEST_TEST(IrisZoTest, ForceContainmentPointsTest) {
                            -3.25, 3.25, -3.25, 3.25);
   meshcat->SetProperty("/Grid", "visible", true);
   // Draw the true cspace.
-
   Eigen::Matrix3Xd env_points(3, 5);
   // clang-format off
         env_points << -2, 2,  2, -2, -2,

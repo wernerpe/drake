@@ -39,10 +39,14 @@ void DefinePlanningTrajectoryOptimization(py::module m);
 void DefinePlanningVisibilityGraph(py::module m);
 
 /* Defines bindings per planning_py_fast_iris.cc. */
+<<<<<<< HEAD
 void DefinePlanningFastIris(py::module m);
 
 /* Defines bindings per planning_py_fast_iris.cc. */
 void DefinePlanningFastCliqueInflation(py::module m);
+=======
+void DefinePlanningIrisZO(py::module m);
+>>>>>>> feature/fastiris
 
 /* Defines bindings per planning_py_zmp_planner.cc. */
 void DefinePlanningZmpPlanner(py::module m);

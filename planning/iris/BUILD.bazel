@@ -14,7 +14,6 @@ drake_cc_package_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fast_clique_inflation",
-        ":fast_iris",
         ":iris_from_clique_cover",
         ":iris_zo",
     ],
