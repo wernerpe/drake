@@ -38,9 +38,9 @@ using geometry::optimization::VPolytope;
 
 TEST_F(BoxInCornerTestFixture,
        IrisInConfigurationSpaceCliqueInflationTestCenterRegion) {
-  options.num_points_per_visibility_round = 100;
+  options.num_points_per_visibility_round = 250;
   // TODO(Alexandre.Amice) use a different set of options.
-  options.partition = false;
+  options.partition = true;
   options.sample_outside_of_sets = true;
   std::vector<geometry::optimization::HPolyhedron> sets;
   IrisInConfigurationSpaceFromCliqueCoverV2(*checker, options, &generator,

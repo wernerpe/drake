@@ -158,14 +158,14 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
   Eigen::MatrixXd visibility_graph_points(checker.plant().num_positions(),
                                           num_points_per_visibility_round);
   int ctr = 0;
-  auto confidence_threshold = [&ctr, &options]() {
-    return 6 * options.confidence / (M_PI * (ctr + 1) * (ctr + 1));
+  auto delta_threshold = [&ctr, &options]() {
+    return 6 * options.confidence / (M_PI * M_PI * (ctr + 1) * (ctr + 1));
   };
   while (ctr < options.iteration_limit &&
          !internal::IsSufficientlyCovered(
-             options.coverage_termination_threshold, confidence_threshold(),
-             checker, *sets, generator, point_sampler,
-             &collision_free_sampled_points, &num_collision_free_sampled_points,
+             options.coverage_termination_threshold, delta_threshold(), checker,
+             *sets, generator, point_sampler, &collision_free_sampled_points,
+             &num_collision_free_sampled_points,
              &uncovered_collision_free_sampled_points,
              &num_uncovered_collision_free_sampled_points,
              options.sampling_batch_size, max_collision_checker_parallelism)) {
@@ -180,14 +180,14 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
     if (options.sample_outside_of_sets) {
       num_new_points = std::min(num_uncovered_collision_free_sampled_points,
                                 num_points_per_visibility_round);
-      visibility_graph_points.middleCols(
-          new_points_start_index, new_points_start_index + num_new_points) =
+      visibility_graph_points.middleCols(new_points_start_index,
+                                         num_new_points) =
           uncovered_collision_free_sampled_points.leftCols(num_new_points);
     } else {
       num_new_points = std::min(num_collision_free_sampled_points,
                                 num_points_per_visibility_round);
-      visibility_graph_points.middleCols(
-          new_points_start_index, new_points_start_index + num_new_points) =
+      visibility_graph_points.middleCols(new_points_start_index,
+                                         num_new_points) =
           collision_free_sampled_points.leftCols(num_new_points);
     }
     new_points_start_index += num_new_points;
@@ -205,15 +205,14 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
         num_new_points =
             std::min(num_uncovered_collision_free_sampled_points,
                      num_points_per_visibility_round - new_points_start_index);
-        visibility_graph_points.middleCols(
-            new_points_start_index, new_points_start_index + num_new_points) =
+        visibility_graph_points.middleCols(new_points_start_index,
+                                           num_new_points) =
             uncovered_collision_free_sampled_points.leftCols(num_new_points);
       } else {
         num_new_points = std::min(num_collision_free_sampled_points,
                                   num_points_per_visibility_round);
-        visibility_graph_points.middleCols(
-            new_points_start_index,
-            new_points_start_index - new_points_start_index) =
+        visibility_graph_points.middleCols(new_points_start_index,
+                                           num_new_points) =
             collision_free_sampled_points.leftCols(num_new_points);
       }
       new_points_start_index += num_new_points;

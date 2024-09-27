@@ -56,7 +56,7 @@ int ClassifyCollisionFreePoints(
     int* num_uncovered_collision_free_points);
 
 // Tests whether at least coverage_threshold of the collision free space is
-// covered by sets with confidence threshold equal to confidence.
+// covered by sets with confidence threshold equal to 1-delta.
 //
 //  @param checker
 //
@@ -91,8 +91,7 @@ int ClassifyCollisionFreePoints(
 //  collision checker for collision.
 
 bool IsSufficientlyCovered(
-    double coverage_threshold, double confidence,
-    const CollisionChecker& checker,
+    double coverage_threshold, double delta, const CollisionChecker& checker,
     const std::vector<geometry::optimization::HPolyhedron>& sets,
     RandomGenerator* generator, PointSamplerBase* point_sampler,
     Eigen::MatrixXd* sampled_points, int* num_points_sampled,

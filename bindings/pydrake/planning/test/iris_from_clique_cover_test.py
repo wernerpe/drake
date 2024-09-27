@@ -181,6 +181,10 @@ class TestIrisFromCliqueCover(unittest.TestCase):
             checker=checker, options=options, generator=generator, sets=[]
         )
         self.assertGreaterEqual(len(sets), 2)
+        sets = mut.IrisInConfigurationSpaceFromCliqueCoverV2(
+            checker=checker, options=options, generator=generator, sets=[]
+        )
+        self.assertGreaterEqual(len(sets), 2)
 
         class DummyMaxCliqueSolver(mut.MaxCliqueSolverBase):
             def __init__(self, name):
@@ -387,7 +391,6 @@ class TestIrisFromCliqueCover(unittest.TestCase):
                 if not (self.checker.
                         CheckConfigCollisionFree(clique_ellipse.center())):
                     self.options.iris_options.starting_ellipse = clique_ellipse
-                    print("POINT IS IN COLLISION")
                 else:
                     diff = (clique_points.T - clique_ellipse.center()).T
                     distances = np.linalg.norm(diff, axis=1)
@@ -425,12 +428,11 @@ class TestIrisFromCliqueCover(unittest.TestCase):
 
         options = mut.IrisFromCliqueCoverOptions()
 
-        options.num_points_per_coverage_check = 10
-        options.num_points_per_visibility_round = 25
+        options.num_points_per_visibility_round = 100
         options.parallelism = Parallelism(1)
 
         options.coverage_termination_threshold = 0.9
-        options.iteration_limit = 3
+        options.iteration_limit = 2
 
         generator = RandomGenerator(0)
 
