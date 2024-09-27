@@ -158,15 +158,14 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
   Eigen::MatrixXd visibility_graph_points(checker.plant().num_positions(),
                                           num_points_per_visibility_round);
   int ctr = 0;
-  auto test_coverage_threshold = [&ctr, &options]() {
-    return 6 * options.coverage_termination_threshold /
-           (M_PI * (ctr + 1) * (ctr + 1));
+  auto confidence_threshold = [&ctr, &options]() {
+    return 6 * options.confidence / (M_PI * (ctr + 1) * (ctr + 1));
   };
   while (ctr < options.iteration_limit &&
          !internal::IsSufficientlyCovered(
-             test_coverage_threshold(), options.confidence, checker, *sets,
-             generator, point_sampler, &collision_free_sampled_points,
-             &num_collision_free_sampled_points,
+             options.coverage_termination_threshold, confidence_threshold(),
+             checker, *sets, generator, point_sampler,
+             &collision_free_sampled_points, &num_collision_free_sampled_points,
              &uncovered_collision_free_sampled_points,
              &num_uncovered_collision_free_sampled_points,
              options.sampling_batch_size, max_collision_checker_parallelism)) {
