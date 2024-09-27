@@ -56,7 +56,6 @@ void SampleCollisionFreePoints(
     }
     return ret;
   };
-
   sampled_points->conservativeResize(checker.plant().num_positions(),
                                      num_points);
   int batch_size = batch_size_optional.value_or(num_points);
@@ -78,6 +77,7 @@ void SampleCollisionFreePoints(
         if (static_cast<bool>(config_collision_free[i]) &&
             !config_not_in_set[i]) {
           sampled_points->col(num_already_sampled++) = base_points.col(i);
+
           if (num_already_sampled >= num_points) {
             return;
           }
@@ -94,6 +94,7 @@ int ClassifyCollisionFreePoints(
     int* num_uncovered_collision_free_points) {
   DRAKE_DEMAND(uncovered_collision_free_points != nullptr);
   DRAKE_DEMAND(num_uncovered_collision_free_points != nullptr);
+
   uncovered_collision_free_points->conservativeResize(points.rows(),
                                                       points.cols());
 
@@ -117,11 +118,10 @@ int ClassifyCollisionFreePoints(
 }
 
 bool IsSufficientlyCovered(
-    double coverage_threshold, double confidence,
-    const CollisionChecker& checker, const std::vector<HPolyhedron>& sets,
-    RandomGenerator* generator, PointSamplerBase* point_sampler,
-    Eigen::MatrixXd* sampled_points, int* num_points_sampled,
-    Eigen::MatrixXd* uncovered_collision_free_points,
+    double coverage_threshold, double delta, const CollisionChecker& checker,
+    const std::vector<HPolyhedron>& sets, RandomGenerator* generator,
+    PointSamplerBase* point_sampler, Eigen::MatrixXd* sampled_points,
+    int* num_points_sampled, Eigen::MatrixXd* uncovered_collision_free_points,
     int* num_uncovered_collision_free_points,
     std::optional<int> sampling_batch_size, Parallelism parallelism) {
   DRAKE_THROW_UNLESS(generator != nullptr);
@@ -129,7 +129,9 @@ bool IsSufficientlyCovered(
   DRAKE_THROW_UNLESS(uncovered_collision_free_points != nullptr);
 
   (*num_points_sampled) =
-      unadaptive_test_samples(1 - coverage_threshold, 1 - confidence, 0.5);
+      unadaptive_test_samples(1 - coverage_threshold, delta, 0.5);
+  DRAKE_DEMAND(*num_points_sampled > 0);
+
   // The columns of points are the sampled configurations
   SampleCollisionFreePoints(
       *num_points_sampled, checker, generator, point_sampler, sampled_points,
@@ -143,8 +145,7 @@ bool IsSufficientlyCovered(
   log()->debug(
       "IsSufficientlyCovered: Coverage estimate is {}. Threshold is {}",
       coverage_frac, coverage_threshold);
-  return (static_cast<double>(num_covered_points) / *num_points_sampled) >
-         coverage_threshold;
+  return coverage_frac > coverage_threshold;
 }
 
 }  // namespace internal
