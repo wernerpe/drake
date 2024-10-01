@@ -75,6 +75,13 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
           .def_readwrite("point_in_set_tol",
               &IrisFromCliqueCoverOptions::point_in_set_tol,
               cls_doc.point_in_set_tol.doc)
+          .def_readwrite("confidence", &IrisFromCliqueCoverOptions::confidence,
+              cls_doc.confidence.doc)
+          .def_readwrite("sample_outside_of_sets",
+              &IrisFromCliqueCoverOptions::sample_outside_of_sets,
+              cls_doc.sample_outside_of_sets.doc)
+          .def_readwrite("partition", &IrisFromCliqueCoverOptions::partition,
+              cls_doc.partition.doc)
           .def_readwrite("sampling_batch_size",
               &IrisFromCliqueCoverOptions::sampling_batch_size,
               cls_doc.sampling_batch_size.doc);

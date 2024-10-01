@@ -85,7 +85,7 @@ struct IrisFromCliqueCoverOptions {
 
   /** Whether to compute a clique cover or partition. See
    * MinCliqueCoverSolverBase for details. */
-  bool partition{false};
+  bool partition{true};
 
   /** Points which are sampled during IrisFromCliqueCover are sampled in batches
    * of this size */

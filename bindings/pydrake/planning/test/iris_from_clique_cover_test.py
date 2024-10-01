@@ -147,6 +147,11 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         options.point_in_set_tol = 1e-5
         self.assertEqual(options.point_in_set_tol, 1e-5)
 
+        options.sample_outside_of_sets = False
+        self.assertFalse(options.sample_outside_of_sets)
+        options.partition = False
+        self.assertFalse(options.partition)
+
         self.assertTrue(options.sampling_batch_size is None)
         options.sampling_batch_size = 10
         self.assertEqual(options.sampling_batch_size, 10)
