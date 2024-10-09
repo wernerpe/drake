@@ -177,7 +177,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         options.num_points_per_visibility_round = 25
 
         # We can achieve almost 100% coverage with 2 regions.
-        options.coverage_termination_threshold = 0.999
+        options.coverage_termination_threshold = 0.99
         options.iteration_limit = 3
 
         generator = RandomGenerator(0)

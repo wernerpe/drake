@@ -184,42 +184,63 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
                   .doc);
     }
     m.def(
-        "IrisInConfigurationSpaceFromCliqueCoverTemplate",
-        [](const IrisFromCliqueCoverOptions& options,
-            const planning::CollisionChecker& checker,
-            RandomGenerator generator, PointSamplerBase* point_sampler,
-            planning::graph_algorithms::MinCliqueCoverSolverBase*
-                min_clique_cover_solver,
-            RegionFromCliqueBase* set_builder,
-            std::vector<geometry::optimization::HPolyhedron> sets,
-            AdjacencyMatrixBuilderBase* adjacency_matrix_builder) {
-          IrisInConfigurationSpaceFromCliqueCoverTemplate(options, checker,
-              &generator, point_sampler, min_clique_cover_solver, set_builder,
-              &sets, adjacency_matrix_builder);
-          return sets;
-        },
-        py::arg("options"), py::arg("checker"), py::arg("generator"),
-        py::arg("point_sampler"), py::arg("min_clique_cover_solver"),
-        py::arg("set_builder"), py::arg("sets"),
-        py::arg("adjacency_matrix_builder") = nullptr,
-        py::call_guard<py::gil_scoped_release>(),
-        doc.IrisInConfigurationSpaceFromCliqueCoverTemplate.doc);
-    m.def(
-        "IrisInConfigurationSpaceFromCliqueCoverV2",
-        [](const planning::CollisionChecker& checker,
-            const IrisFromCliqueCoverOptions& options,
-            RandomGenerator generator,
-            std::vector<geometry::optimization::HPolyhedron> sets,
-            const planning::graph_algorithms::MaxCliqueSolverBase*
-                max_clique_solver) {
-          IrisInConfigurationSpaceFromCliqueCoverV2(
-              checker, options, &generator, &sets, max_clique_solver);
-          return sets;
-        },
-        py::arg("checker"), py::arg("options"), py::arg("generator"),
-        py::arg("sets"), py::arg("max_clique_solver") = nullptr,
-        py::call_guard<py::gil_scoped_release>(),
-        doc.IrisInConfigurationSpaceFromCliqueCoverTemplate.doc);
+         "IrisInConfigurationSpaceFromCliqueCoverTemplate",
+         [](const IrisFromCliqueCoverOptions& options,
+             const planning::CollisionChecker& checker,
+             RandomGenerator generator, PointSamplerBase* point_sampler,
+             planning::graph_algorithms::MinCliqueCoverSolverBase*
+                 min_clique_cover_solver,
+             RegionFromCliqueBase* set_builder,
+             std::vector<geometry::optimization::HPolyhedron> sets,
+             AdjacencyMatrixBuilderBase* adjacency_matrix_builder) {
+           IrisInConfigurationSpaceFromCliqueCoverTemplate(options, checker,
+               &generator, point_sampler, min_clique_cover_solver, set_builder,
+               &sets, adjacency_matrix_builder);
+           return sets;
+         },
+         py::arg("options"), py::arg("checker"), py::arg("generator"),
+         py::arg("point_sampler"), py::arg("min_clique_cover_solver"),
+         py::arg("set_builder"), py::arg("sets"),
+         py::arg("adjacency_matrix_builder") = nullptr,
+         py::call_guard<py::gil_scoped_release>(),
+         doc.IrisInConfigurationSpaceFromCliqueCoverTemplate.doc)
+        .def("PointsToCliqueCoverSets",
+            py::overload_cast<const Eigen::Ref<const Eigen::MatrixXd>&, bool,
+                const planning::CollisionChecker&,
+                planning::graph_algorithms::MinCliqueCoverSolverBase*,
+                RegionFromCliqueBase*, Parallelism,
+                std::shared_ptr<geometry::Meshcat>>(&PointsToCliqueCoverSets),
+            py::arg("points"), py::arg("partition"), py::arg("checker"),
+            py::arg("min_clique_cover_solver"), py::arg("set_builder"),
+            py::arg("parallelism") = Parallelism::Max(),
+            py::arg("meshcat") = nullptr,
+            py::call_guard<py::gil_scoped_release>())
+        .def("PointsToCliqueCoverSets",
+            py::overload_cast<const Eigen::Ref<const Eigen::MatrixXd>&, bool,
+                AdjacencyMatrixBuilderBase*,
+                planning::graph_algorithms::MinCliqueCoverSolverBase*,
+                RegionFromCliqueBase*, std::shared_ptr<geometry::Meshcat>>(
+                &PointsToCliqueCoverSets),
+            py::arg("points"), py::arg("partition"), py::arg("graph_builder"),
+            py::arg("min_clique_cover_solver"), py::arg("set_builder"),
+            py::arg("meshcat") = nullptr,
+            py::call_guard<py::gil_scoped_release>())
+        .def(
+            "IrisInConfigurationSpaceFromCliqueCoverV2",
+            [](const planning::CollisionChecker& checker,
+                const IrisFromCliqueCoverOptions& options,
+                RandomGenerator generator,
+                std::vector<geometry::optimization::HPolyhedron> sets,
+                const planning::graph_algorithms::MaxCliqueSolverBase*
+                    max_clique_solver) {
+              IrisInConfigurationSpaceFromCliqueCoverV2(
+                  checker, options, &generator, &sets, max_clique_solver);
+              return sets;
+            },
+            py::arg("checker"), py::arg("options"), py::arg("generator"),
+            py::arg("sets"), py::arg("max_clique_solver") = nullptr,
+            py::call_guard<py::gil_scoped_release>(),
+            doc.IrisInConfigurationSpaceFromCliqueCoverTemplate.doc);
   }
 }  // DefinePlanningIrisFromCliqueCover
 
