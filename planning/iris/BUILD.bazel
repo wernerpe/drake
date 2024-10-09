@@ -73,6 +73,8 @@ drake_cc_library(
         "//solvers:mathematical_program",
         "//solvers:mosek_solver",
         "//solvers:solve",
+    ],
+    implementation_deps = [
         "@common_robotics_utilities",
     ],
 )
@@ -91,6 +93,8 @@ drake_cc_library(
         "//solvers:mathematical_program",
         "//solvers:mosek_solver",
         "//solvers:solve",
+    ],
+    implementation_deps = [
         "@common_robotics_utilities",
     ],
 )
