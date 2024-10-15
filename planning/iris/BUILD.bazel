@@ -13,9 +13,28 @@ drake_cc_package_library(
     name = "iris",
     visibility = ["//visibility:public"],
     deps = [
+        ":adjacency_matrix_builder_base",
         ":fast_clique_inflation",
+        ":hpolyhedron_point_sampler",
         ":iris_from_clique_cover",
+        ":iris_from_clique_cover_options",
+        ":iris_from_clique_cover_template",
+        ":iris_from_clique_cover_template_internal",
+        ":iris_from_clique_cover_v2",
+        ":iris_in_configuration_space_clique_inflation",
         ":iris_zo",
+        ":point_sampler_base",
+        ":region_from_clique_base",
+    ],
+)
+
+drake_cc_library(
+    name = "iris_from_clique_cover_options",
+    srcs = ["iris_from_clique_cover_options.cc"],
+    hdrs = ["iris_from_clique_cover_options.h"],
+    deps = [
+        "//common:parallelism",
+        "//geometry/optimization:iris",
     ],
 )
 
@@ -24,6 +43,7 @@ drake_cc_library(
     srcs = ["iris_from_clique_cover.cc"],
     hdrs = ["iris_from_clique_cover.h"],
     deps = [
+        ":iris_from_clique_cover_options",
         "//geometry:meshcat",
         "//geometry/optimization:convex_set",
         "//geometry/optimization:iris",
@@ -53,6 +73,8 @@ drake_cc_library(
         "//solvers:mathematical_program",
         "//solvers:mosek_solver",
         "//solvers:solve",
+    ],
+    implementation_deps = [
         "@common_robotics_utilities",
     ],
 )
@@ -74,6 +96,116 @@ drake_cc_library(
     ],
     implementation_deps = [
         "@common_robotics_utilities",
+    ],
+)
+
+drake_cc_library(
+    name = "point_sampler_base",
+    srcs = ["point_sampler_base.cc"],
+    hdrs = ["point_sampler_base.h"],
+    deps = [
+        "//common:essential",
+        "//common:parallelism",
+        "//common:random",
+    ],
+)
+
+drake_cc_library(
+    name = "hpolyhedron_point_sampler",
+    srcs = ["hpolyhedron_point_sampler.cc"],
+    hdrs = ["hpolyhedron_point_sampler.h"],
+    deps = [
+        ":point_sampler_base",
+        "//geometry/optimization:convex_set",
+    ],
+)
+
+drake_cc_library(
+    name = "adjacency_matrix_builder_base",
+    srcs = ["adjacency_matrix_builder_base.cc"],
+    hdrs = ["adjacency_matrix_builder_base.h"],
+    deps = [
+        "//common:essential",
+    ],
+)
+
+drake_cc_library(
+    name = "region_from_clique_base",
+    srcs = ["region_from_clique_base.cc"],
+    hdrs = ["region_from_clique_base.h"],
+    deps = [
+        "//geometry/optimization:convex_set",
+    ],
+)
+
+drake_cc_library(
+    name = "iris_in_configuration_space_clique_inflation",
+    srcs = ["iris_in_configuration_space_clique_inflation.cc"],
+    hdrs = ["iris_in_configuration_space_clique_inflation.h"],
+    deps = [
+        ":region_from_clique_base",
+        "//geometry/optimization:convex_set",
+        "//geometry/optimization:iris",
+        "//planning:collision_checker",
+    ],
+)
+
+drake_cc_library(
+    name = "iris_from_clique_cover_template",
+    srcs = ["iris_from_clique_cover_template.cc"],
+    hdrs = ["iris_from_clique_cover_template.h"],
+    deps = [
+        ":iris_from_clique_cover_options",
+        "//geometry:meshcat",
+        "//geometry/optimization:convex_set",
+        "//geometry/optimization:iris",
+        "//perception:point_cloud",
+        "//planning:scene_graph_collision_checker",
+        "//planning:visibility_graph",
+        "//planning/graph_algorithms:max_clique_solver_base",
+        "//planning/graph_algorithms:min_clique_cover_solver_base",
+        "//planning/iris:adjacency_matrix_builder_base",
+        "//planning/iris:point_sampler_base",
+        "//planning/iris:region_from_clique_base",
+    ],
+    implementation_deps = [
+        ":iris_from_clique_cover_template_internal",
+        "//planning/graph_algorithms:min_clique_cover_solver_via_greedy",
+    ],
+)
+
+drake_cc_library(
+    name = "iris_from_clique_cover_v2",
+    srcs = ["iris_from_clique_cover_v2.cc"],
+    hdrs = ["iris_from_clique_cover_v2.h"],
+    deps = [
+        ":iris_from_clique_cover_options",
+        ":iris_from_clique_cover_template",
+        "//geometry/optimization:convex_set",
+        "//planning/graph_algorithms:max_clique_solver_base",
+        "//planning/iris:region_from_clique_base",
+    ],
+    implementation_deps = [
+        ":iris_from_clique_cover_template_internal",
+        "//geometry/optimization:iris",
+        "//planning/graph_algorithms:min_clique_cover_solver_via_greedy",
+        "//planning/iris:hpolyhedron_point_sampler",
+        "//planning/iris:iris_in_configuration_space_clique_inflation",
+    ],
+)
+
+drake_cc_library(
+    name = "iris_from_clique_cover_template_internal",
+    srcs = ["iris_from_clique_cover_template_internal.cc"],
+    hdrs = ["iris_from_clique_cover_template_internal.h"],
+    deps = [
+        ":point_sampler_base",
+        "//common:parallelism",
+        "//geometry/optimization:convex_set",
+        "//planning:collision_checker",
+        "@eigen",
+    ],
+    implementation_deps = [
     ],
 )
 
@@ -151,6 +283,90 @@ drake_cc_googletest(
         "//multibody/inverse_kinematics",
         "//planning:robot_diagram_builder",
         "//planning:scene_graph_collision_checker",
+    ],
+)
+
+drake_cc_library(
+    name = "box_in_corner_test_fixture",
+    testonly = 1,
+    srcs = ["test/box_in_corner_test_fixture.cc"],
+    hdrs = ["test/box_in_corner_test_fixture.h"],
+    deps = [
+        ":hpolyhedron_point_sampler",
+        ":iris_from_clique_cover_options",
+        "//geometry/optimization:convex_set",
+        "//geometry/test_utilities:meshcat_environment",
+        "//multibody/parsing:parser",
+        "//planning:robot_diagram_builder",
+        "//planning:scene_graph_collision_checker",
+        "//systems/framework:diagram_builder",
+        "@gtest//:without_main",
+    ],
+)
+
+drake_cc_googletest(
+    name = "iris_from_clique_cover_template_test",
+    timeout = "moderate",
+    data = [
+        "//examples/pendulum:models",
+        "//multibody/parsing:test_models",
+    ],
+    # Running with multiple threads is an essential part of our test coverage.
+    num_threads = 4,
+    shard_count = 4,
+    # Most of these tests take an exceptionally long time under
+    # instrumentation, resulting in timeouts, and so are excluded.
+    # These test also can only be run with either mosek or gurobi enabled.
+    tags = [
+        "no_asan",
+        "no_memcheck",
+        # IPOPT is exceptionally slow with IRIS so only test with snopt.
+        "snopt",
+    ],
+    deps = [
+        ":box_in_corner_test_fixture",
+        ":hpolyhedron_point_sampler",
+        ":iris_from_clique_cover_template",
+        ":iris_from_clique_cover_v2",
+        "//common/test_utilities:expect_throws_message",
+        "//common/test_utilities:maybe_pause_for_user",
+        "//geometry/test_utilities:meshcat_environment",
+        "//multibody/parsing:parser",
+        "//planning:robot_diagram_builder",
+        "//planning:scene_graph_collision_checker",
+        "//planning/graph_algorithms:max_clique_solver_via_mip",
+        "//solvers:gurobi_solver",
+        "//solvers:mosek_solver",
+        "//systems/framework:diagram_builder",
+    ],
+)
+
+drake_cc_googletest(
+    name = "iris_from_clique_cover_template_internal_test",
+    deps = [
+        ":box_in_corner_test_fixture",
+        ":hpolyhedron_point_sampler",
+        ":iris_from_clique_cover_template_internal",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:maybe_pause_for_user",
+    ],
+)
+
+drake_cc_googletest(
+    name = "hpolyhedron_point_sampler_test",
+    deps = [
+        ":hpolyhedron_point_sampler",
+        "//common/test_utilities:eigen_matrix_compare",
+    ],
+)
+
+drake_cc_googletest(
+    name = "iris_in_configuration_space_clique_inflation_test",
+    deps = [
+        ":box_in_corner_test_fixture",
+        ":iris_in_configuration_space_clique_inflation",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:maybe_pause_for_user",
     ],
 )
 
