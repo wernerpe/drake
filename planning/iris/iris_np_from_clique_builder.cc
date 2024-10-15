@@ -10,10 +10,10 @@ using geometry::optimization::Hyperellipsoid;
 
 IrisNpFromCliqueBuilder::IrisNpFromCliqueBuilder(
     const CollisionChecker& checker,
-    const geometry::optimization::IrisOptions& iris_options,
+    const geometry::optimization::IrisOptions& options,
     std::optional<double> rank_tol_for_minimum_volume_circumscribed_ellipsoid)
     : RegionFromCliqueBase(),
-      iris_options_(iris_options),
+      iris_options_(options),
       rank_tol_for_minimum_volume_circumscribed_ellipsoid_(
           rank_tol_for_minimum_volume_circumscribed_ellipsoid),
       checker_(checker.Clone()) {}

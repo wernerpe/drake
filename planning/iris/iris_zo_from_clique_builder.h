@@ -59,11 +59,8 @@ class IrisZoFromCliqueBuilder final : public RegionFromCliqueBase {
    * Sets the domain used during IrisZo.
    * @return
    */
-  void set_domain(const geometry::optimization::HPolyhedron& domain) {
-    DRAKE_THROW_UNLESS(domain.ambient_dimension() ==
-                       checker_->plant().num_positions());
-    domain_ = domain;
-  }
+  void set_domain(const geometry::optimization::HPolyhedron& domain);
+
   /**
    * The rank tolerance used to decide whether an ellipsoid is rank-deficient.
    * If this is nullopt, then the default rank_tol argument is used when

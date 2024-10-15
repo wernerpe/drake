@@ -52,6 +52,13 @@ HPolyhedron IrisZoFromCliqueBuilder::DoBuildRegion(
   return IrisZO(*checker_, clique_ellipse, domain_, options_);
 }
 
+void IrisZoFromCliqueBuilder::set_domain(
+    const geometry::optimization::HPolyhedron& domain) {
+  DRAKE_THROW_UNLESS(domain.ambient_dimension() ==
+                     checker_->plant().num_positions());
+  domain_ = domain;
+}
+
 }  // namespace iris
 }  // namespace planning
 }  // namespace drake

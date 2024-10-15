@@ -4,12 +4,16 @@
 #include "drake/planning/collision_checker.h"
 #include "drake/planning/graph_algorithms/max_clique_solver_base.h"
 #include "drake/planning/iris/adjacency_matrix_builder_base.h"
+#include "drake/planning/iris/fast_clique_inflation.h"
+#include "drake/planning/iris/fast_clique_inflation_builder.h"
 #include "drake/planning/iris/hpolyhedron_point_sampler.h"
 #include "drake/planning/iris/iris_from_clique_cover.h"
 #include "drake/planning/iris/iris_from_clique_cover_options.h"
 #include "drake/planning/iris/iris_from_clique_cover_template.h"
 #include "drake/planning/iris/iris_from_clique_cover_v2.h"
-#include "drake/planning/iris/iris_in_configuration_space_clique_inflation.h"
+#include "drake/planning/iris/iris_np_from_clique_builder.h"
+#include "drake/planning/iris/iris_zo.h"
+#include "drake/planning/iris/iris_zo_from_clique_builder.h"
 #include "drake/planning/iris/point_sampler_base.h"
 #include "drake/planning/iris/region_from_clique_base.h"
 
@@ -157,31 +161,79 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
               py::arg("clique_points"), cls_doc.BuildRegion.doc);
     }
     {
-      const auto& cls_doc = doc.IrisInConfigurationSpaceCliqueInflation;
-      py::class_<IrisInConfigurationSpaceCliqueInflation, RegionFromCliqueBase>(
+      const auto& cls_doc = doc.IrisNpFromCliqueBuilder;
+      py::class_<IrisNpFromCliqueBuilder, RegionFromCliqueBase>(
           m, "IrisNpFromCliqueBuilder")
           .def(py::init<const planning::CollisionChecker&,
                    const geometry::optimization::IrisOptions&,
                    std::optional<double>>(),
-              py::arg("checker"), py::arg("iris_options"),
-              py::arg("rank_tol_for_minimum_volume_circumscribed_ellipsoid"),
+              py::arg("checker"), py::arg("options"),
+              py::arg("rank_tol_for_minimum_volume_circumscribed_ellipsoid") =
+                  std::nullopt,
               cls_doc.ctor.doc)
-          .def("iris_options",
-              &IrisInConfigurationSpaceCliqueInflation::iris_options,
-              cls_doc.iris_options.doc)
-          .def("set_iris_options",
-              &IrisInConfigurationSpaceCliqueInflation::set_iris_options,
-              cls_doc.set_iris_options.doc)
+          .def(
+              "options", &IrisNpFromCliqueBuilder::options, cls_doc.options.doc)
+          .def("set_options", &IrisNpFromCliqueBuilder::set_options,
+              cls_doc.set_options.doc)
           .def("rank_tol_for_minimum_volume_circumscribed_ellipsoid",
-              &IrisInConfigurationSpaceCliqueInflation::
+              &IrisNpFromCliqueBuilder::
                   rank_tol_for_minimum_volume_circumscribed_ellipsoid,
               cls_doc.rank_tol_for_minimum_volume_circumscribed_ellipsoid.doc)
           .def("set_rank_tol_for_minimum_volume_circumscribed_ellipsoid",
-              &IrisInConfigurationSpaceCliqueInflation::
+              &IrisNpFromCliqueBuilder::
                   set_rank_tol_for_minimum_volume_circumscribed_ellipsoid,
               py::arg("rank_tol_for_minimum_volume_circumscribed_ellipsoid"),
               cls_doc.set_rank_tol_for_minimum_volume_circumscribed_ellipsoid
                   .doc);
+    }
+    {
+      const auto& cls_doc = doc.IrisZoFromCliqueBuilder;
+      py::class_<IrisZoFromCliqueBuilder, RegionFromCliqueBase>(
+          m, "IrisZoFromCliqueBuilder")
+          .def(py::init<const planning::CollisionChecker&,
+                   const std::optional<geometry::optimization::HPolyhedron>,
+                   const planning::IrisZoOptions&, std::optional<double>>(),
+              py::arg("checker"), py::arg("domain") = std::nullopt,
+              py::arg("options") = planning::IrisZoOptions(),
+              py::arg("rank_tol_for_minimum_volume_circumscribed_ellipsoid") =
+                  std::nullopt,
+              cls_doc.ctor.doc)
+          .def(
+              "options", &IrisZoFromCliqueBuilder::options, cls_doc.options.doc)
+          .def("set_options", &IrisZoFromCliqueBuilder::set_options,
+              cls_doc.set_options.doc)
+          .def("domain", &IrisZoFromCliqueBuilder::domain, cls_doc.domain.doc)
+          .def("set_domain", &IrisZoFromCliqueBuilder::set_domain,
+              py::arg("domain"), cls_doc.set_domain.doc)
+          .def("rank_tol_for_minimum_volume_circumscribed_ellipsoid",
+              &IrisZoFromCliqueBuilder::
+                  rank_tol_for_minimum_volume_circumscribed_ellipsoid,
+              cls_doc.rank_tol_for_minimum_volume_circumscribed_ellipsoid.doc)
+          .def("set_rank_tol_for_minimum_volume_circumscribed_ellipsoid",
+              &IrisZoFromCliqueBuilder::
+                  set_rank_tol_for_minimum_volume_circumscribed_ellipsoid,
+              py::arg("rank_tol_for_minimum_volume_circumscribed_ellipsoid"),
+              cls_doc.set_rank_tol_for_minimum_volume_circumscribed_ellipsoid
+                  .doc);
+    }
+    {
+      const auto& cls_doc = doc.FastCliqueInflationBuilder;
+      py::class_<FastCliqueInflationBuilder, RegionFromCliqueBase>(
+          m, "FastCliqueInflationBuilder")
+          .def(py::init<const planning::CollisionChecker&,
+                   const std::optional<geometry::optimization::HPolyhedron>,
+                   const planning::FastCliqueInflationOptions&>(),
+              py::arg("checker"), py::arg("domain") = std::nullopt,
+              py::arg("options") = planning::FastCliqueInflationOptions(),
+              cls_doc.ctor.doc)
+          .def("options", &FastCliqueInflationBuilder::options,
+              cls_doc.options.doc)
+          .def("set_options", &FastCliqueInflationBuilder::set_options,
+              cls_doc.set_options.doc)
+          .def(
+              "domain", &FastCliqueInflationBuilder::domain, cls_doc.domain.doc)
+          .def("set_domain", &FastCliqueInflationBuilder::set_domain,
+              py::arg("domain"), cls_doc.set_domain.doc);
     }
     m.def(
          "IrisInConfigurationSpaceFromCliqueCoverTemplate",

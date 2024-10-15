@@ -27,7 +27,7 @@ class IrisNpFromCliqueBuilder final : public RegionFromCliqueBase {
  public:
   IrisNpFromCliqueBuilder(
       const CollisionChecker& checker,
-      const geometry::optimization::IrisOptions& iris_options,
+      const geometry::optimization::IrisOptions& options,
       std::optional<double>
           rank_tol_for_minimum_volume_circumscribed_ellipsoid = std::nullopt);
 
