@@ -50,7 +50,7 @@ std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
  */
 std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
     const Eigen::Ref<const Eigen::MatrixXd>& points,
-    AdjacencyMatrixBuilderBase* graph_builder,
+    AdjacencyMatrixBuilderBase* adjacency_matrix_builder,
     graph_algorithms::MinCliqueCoverSolverBase* min_clique_cover_solver,
     RegionFromCliqueBase* set_builder, bool partition = true,
     std::shared_ptr<geometry::Meshcat> meshcat = nullptr);

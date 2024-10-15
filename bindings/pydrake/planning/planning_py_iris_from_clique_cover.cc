@@ -221,7 +221,7 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
                 planning::graph_algorithms::MinCliqueCoverSolverBase*,
                 RegionFromCliqueBase*, bool,
                 std::shared_ptr<geometry::Meshcat>>(&PointsToCliqueCoverSets),
-            py::arg("points"), py::arg("graph_builder"),
+            py::arg("points"), py::arg("adjacency_matrix_builder"),
             py::arg("min_clique_cover_solver"), py::arg("set_builder"),
             py::arg("partition") = true, py::arg("meshcat") = nullptr,
             py::call_guard<py::gil_scoped_release>())

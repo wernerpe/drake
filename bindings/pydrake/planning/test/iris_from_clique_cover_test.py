@@ -471,3 +471,11 @@ class TestIrisFromCliqueCover(unittest.TestCase):
             checker=checker,
             min_clique_cover_solver=min_clique_cover_solver,
             set_builder=set_builder)
+        self.assertGreaterEqual(len(sets), 2)
+        sets = mut.PointsToCliqueCoverSets(
+            points=samples,
+            adjacency_matrix_builder=adjacency_matrix_builder,
+            min_clique_cover_solver=min_clique_cover_solver,
+            set_builder=set_builder,
+            partition=True)
+        self.assertGreaterEqual(len(sets), 2)
