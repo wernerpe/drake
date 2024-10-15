@@ -36,6 +36,10 @@ using geometry::optimization::Hyperrectangle;
 using geometry::optimization::IrisOptions;
 using geometry::optimization::VPolytope;
 
+// Note that this test actually checks that IrisFromCliqueCoverTemplate is
+// implemented correctly and that PointsToCliqueCoverSets is implemented
+// correctly as IrisInConfigurationSpaceFromCliqueCoverV2 implements the former
+// which calls the latter.
 TEST_F(BoxInCornerTestFixture,
        IrisInConfigurationSpaceCliqueInflationTestCenterRegion) {
   options.num_points_per_visibility_round = 250;

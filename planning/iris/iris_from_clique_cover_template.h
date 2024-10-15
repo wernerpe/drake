@@ -32,11 +32,11 @@ namespace iris {
  * @param parallelism Parallelism used to build visibility graph.
  */
 std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
-    const Eigen::Ref<const Eigen::MatrixXd>& points, bool partition,
+    const Eigen::Ref<const Eigen::MatrixXd>& points,
     const CollisionChecker& checker,
     graph_algorithms::MinCliqueCoverSolverBase* min_clique_cover_solver,
     RegionFromCliqueBase* set_builder,
-    Parallelism parallelism = Parallelism::Max(),
+    Parallelism parallelism = Parallelism::Max(), bool partition = true,
     std::shared_ptr<geometry::Meshcat> meshcat = nullptr);
 /**
  * @param points
@@ -49,10 +49,10 @@ std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
  * @return The convex sets built from the cliques
  */
 std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
-    const Eigen::Ref<const Eigen::MatrixXd>& points, bool partition,
+    const Eigen::Ref<const Eigen::MatrixXd>& points,
     AdjacencyMatrixBuilderBase* graph_builder,
     graph_algorithms::MinCliqueCoverSolverBase* min_clique_cover_solver,
-    RegionFromCliqueBase* set_builder,
+    RegionFromCliqueBase* set_builder, bool partition = true,
     std::shared_ptr<geometry::Meshcat> meshcat = nullptr);
 
 /**

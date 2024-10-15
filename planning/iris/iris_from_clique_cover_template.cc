@@ -17,10 +17,10 @@ namespace iris {
 using geometry::optimization::HPolyhedron;
 
 std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
-    const Eigen::Ref<const Eigen::MatrixXd>& points, bool partition,
+    const Eigen::Ref<const Eigen::MatrixXd>& points,
     const CollisionChecker& checker,
     graph_algorithms::MinCliqueCoverSolverBase* min_clique_cover_solver,
-    RegionFromCliqueBase* set_builder, Parallelism parallelism,
+    RegionFromCliqueBase* set_builder, Parallelism parallelism, bool partition,
     std::shared_ptr<geometry::Meshcat> meshcat) {
   DRAKE_THROW_UNLESS(min_clique_cover_solver != nullptr);
   DRAKE_THROW_UNLESS(set_builder != nullptr);
@@ -93,10 +93,10 @@ std::vector<geometry::optimization::HPolyhedron> PointsToCliqueCoverSets(
 }
 
 std::vector<HPolyhedron> PointsToCliqueCoverSets(
-    const Eigen::Ref<const Eigen::MatrixXd>& points, bool partition,
+    const Eigen::Ref<const Eigen::MatrixXd>& points,
     AdjacencyMatrixBuilderBase* graph_builder,
     graph_algorithms::MinCliqueCoverSolverBase* min_clique_cover_solver,
-    RegionFromCliqueBase* set_builder,
+    RegionFromCliqueBase* set_builder, bool partition,
     std::shared_ptr<geometry::Meshcat> meshcat) {
   unused(meshcat);
   DRAKE_THROW_UNLESS(graph_builder != nullptr);
@@ -240,13 +240,14 @@ void IrisInConfigurationSpaceFromCliqueCoverTemplate(
     std::vector<HPolyhedron> new_sets;
     if (adjacency_matrix_builder == nullptr) {
       new_sets = PointsToCliqueCoverSets(
-          visibility_graph_points, options.partition, checker,
-          min_clique_cover_solver, set_builder,
-          max_collision_checker_parallelism, options.iris_options.meshcat);
+          visibility_graph_points, checker, min_clique_cover_solver,
+          set_builder, max_collision_checker_parallelism, options.partition,
+          options.iris_options.meshcat);
     } else {
       new_sets = PointsToCliqueCoverSets(
-          visibility_graph_points, options.partition, adjacency_matrix_builder,
-          min_clique_cover_solver, set_builder, options.iris_options.meshcat);
+          visibility_graph_points, adjacency_matrix_builder,
+          min_clique_cover_solver, set_builder, options.partition,
+          options.iris_options.meshcat);
     }
     sets->insert(sets->end(), new_sets.begin(), new_sets.end());
     log()->debug(
