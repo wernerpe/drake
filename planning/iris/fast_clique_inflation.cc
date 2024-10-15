@@ -33,7 +33,6 @@ using math::RigidTransform;
 using solvers::MathematicalProgram;
 
 namespace {
-
 using values_t = std::vector<double>;
 using index_t = std::vector<uint8_t>;
 
@@ -53,7 +52,7 @@ int unadaptive_test_samples(double p, double delta, double tau) {
 }  // namespace
 
 HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
-                                const Eigen::MatrixXd& clique,
+                                const Eigen::Ref<const Eigen::MatrixXd>& clique,
                                 const HPolyhedron& domain,
                                 const FastCliqueInflationOptions& options) {
   auto start = std::chrono::high_resolution_clock::now();

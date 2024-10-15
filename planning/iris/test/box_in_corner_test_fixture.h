@@ -147,12 +147,12 @@ class BoxInCornerTestFixture : public ::testing::Test {
 
     params.model = builder.Build();
     checker = std::make_unique<SceneGraphCollisionChecker>(std::move(params));
-    options.iris_options.meshcat = meshcat;
+    iris_from_clique_cover_options.iris_options.meshcat = meshcat;
 
-    options.num_points_per_coverage_check = 1000;
-    options.num_points_per_visibility_round = 140;
-    options.coverage_termination_threshold = 0.9;
-    options.minimum_clique_size = 4;
+    iris_from_clique_cover_options.num_points_per_coverage_check = 1000;
+    iris_from_clique_cover_options.num_points_per_visibility_round = 140;
+    iris_from_clique_cover_options.coverage_termination_threshold = 0.9;
+    iris_from_clique_cover_options.minimum_clique_size = 4;
 
     generator = RandomGenerator(0);
 
@@ -190,7 +190,7 @@ class BoxInCornerTestFixture : public ::testing::Test {
   CollisionCheckerParams params;
   std::shared_ptr<geometry::Meshcat> meshcat;
   std::unique_ptr<SceneGraphCollisionChecker> checker;
-  IrisFromCliqueCoverOptions options;
+  IrisFromCliqueCoverOptions iris_from_clique_cover_options;
   RandomGenerator generator;
   std::vector<geometry::optimization::Hyperrectangle> manual_decomposition;
   std::vector<HPolyhedronPointSampler> manual_decomposition_samplers;

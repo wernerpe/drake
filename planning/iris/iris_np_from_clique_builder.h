@@ -17,16 +17,15 @@ namespace iris {
  * Given a clique, this class constructs a region by computing the maximum
  * volume inscribed ellipsoid of the clique and then running
  * IrisFromInConfigurationSpace with the initial point and metric set to the
- * cetner of the ellipse and the ellipse respectively and using the plant and
+ * center of the ellipse and the ellipse respectively and using the plant and
  * scene graph contained in checker.
  *
  * TODO(Alexandre.Amice) currently I clone the collision checker. This is
  * wasteful so consider a better design when going to master.
  */
-class IrisInConfigurationSpaceCliqueInflation final
-    : public RegionFromCliqueBase {
+class IrisNpFromCliqueBuilder final : public RegionFromCliqueBase {
  public:
-  IrisInConfigurationSpaceCliqueInflation(
+  IrisNpFromCliqueBuilder(
       const CollisionChecker& checker,
       const geometry::optimization::IrisOptions& iris_options,
       std::optional<double>
@@ -36,7 +35,7 @@ class IrisInConfigurationSpaceCliqueInflation final
    * The options used during IrisInConfigurationSpace.
    * @return
    */
-  const geometry::optimization::IrisOptions& iris_options() const {
+  const geometry::optimization::IrisOptions& options() const {
     return iris_options_;
   }
 
@@ -44,8 +43,7 @@ class IrisInConfigurationSpaceCliqueInflation final
    * Sets the options used during IrisInConfigurationSpace.
    * @return
    */
-  void set_iris_options(
-      const geometry::optimization::IrisOptions& iris_options) {
+  void set_options(const geometry::optimization::IrisOptions& iris_options) {
     iris_options_ = iris_options;
   }
   /**
@@ -73,7 +71,7 @@ class IrisInConfigurationSpaceCliqueInflation final
 
   geometry::optimization::IrisOptions iris_options_;
   std::optional<double> rank_tol_for_minimum_volume_circumscribed_ellipsoid_;
-  std::unique_ptr<CollisionChecker> checker_;
+  const std::unique_ptr<CollisionChecker> checker_;
 };
 
 }  // namespace iris

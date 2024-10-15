@@ -159,7 +159,7 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
     {
       const auto& cls_doc = doc.IrisInConfigurationSpaceCliqueInflation;
       py::class_<IrisInConfigurationSpaceCliqueInflation, RegionFromCliqueBase>(
-          m, "IrisInConfigurationSpaceCliqueInflation")
+          m, "IrisNpFromCliqueBuilder")
           .def(py::init<const planning::CollisionChecker&,
                    const geometry::optimization::IrisOptions&,
                    std::optional<double>>(),
