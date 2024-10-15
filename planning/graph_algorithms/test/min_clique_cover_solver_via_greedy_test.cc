@@ -92,6 +92,7 @@ GTEST_TEST(MinCliqueCoverSolverViaGreedyTestTest, BullGraph) {
   solution.insert(std::initializer_list<int>{1, 2, 3});
   solution.insert(std::initializer_list<int>{1, 0});
   solution.insert(std::initializer_list<int>{3, 4});
+
   std::vector<comparable_clique_solution_type> possible_solutions;
   possible_solutions.push_back(solution);
   TestMinCliqueCover(graph, false, possible_solutions, &solver);
