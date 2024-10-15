@@ -415,4 +415,15 @@ drake_cc_googletest(
     ],
 )
 
+drake_cc_googletest(
+    name = "fast_clique_inflation_builder_test",
+    deps = [
+        ":box_in_corner_test_fixture",
+        ":clique_cover_test_utils",
+        ":fast_clique_inflation_builder",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:maybe_pause_for_user",
+    ],
+)
+
 add_lint_tests()
