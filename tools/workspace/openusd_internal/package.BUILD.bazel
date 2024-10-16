@@ -16,6 +16,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "cmake_macros",
+    srcs = ["cmake/macros/Public.cmake"],
+    visibility = ["//visibility:public"],
+)
+
 cmake_configure_file(
     name = "config_genrule",
     src = "pxr/pxr.h.in",
@@ -61,6 +67,7 @@ cc_library(
         ":trace",
         ":usd",
         ":usdGeom",
+        ":usdPhysics",
         ":usdShade",
         ":usdUtils",
         ":vt",

@@ -1,9 +1,12 @@
 /* @file This contains the various "atomic" mesh types and helper functions.
  They can be found in the pydrake.geometry module. */
 
+#include <filesystem>
+
 #include "drake/bindings/pydrake/common/default_scalars_pybind.h"
 #include "drake/bindings/pydrake/common/type_pack.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
+#include "drake/bindings/pydrake/geometry/geometry_py.h"
 #include "drake/geometry/proximity/obj_to_surface_mesh.h"
 #include "drake/geometry/proximity/polygon_surface_mesh.h"
 #include "drake/geometry/proximity/triangle_surface_mesh.h"
@@ -185,7 +188,7 @@ void DoMeshDependentDefinitions(py::module m) {
   constexpr auto& doc = pydrake_doc.drake.geometry;
   m.def(
       "ReadObjToTriangleSurfaceMesh",
-      [](const std::string& filename, double scale) {
+      [](const std::filesystem::path& filename, double scale) {
         return geometry::ReadObjToTriangleSurfaceMesh(filename, scale);
       },
       py::arg("filename"), py::arg("scale") = 1.0,

@@ -1,6 +1,7 @@
 #include "drake/systems/framework/diagram.h"
 
 #include <Eigen/Dense>
+#include <fmt/ranges.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -372,7 +373,7 @@ kitchen sink"!) */
 template <typename T>
 class KitchenSinkStateAndParameters final : public LeafSystem<T> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(KitchenSinkStateAndParameters)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(KitchenSinkStateAndParameters);
 
   KitchenSinkStateAndParameters() :
       LeafSystem<T>(systems::SystemTypeTag<KitchenSinkStateAndParameters>{}) {

@@ -32,7 +32,7 @@ namespace internal {
 // amount of θ about the Fx, Fy and Fz axes respectively. Refer to
 // math::RollPitchYaw for further details on this representation. Zero θ₀, θ₁,
 // θ₂ angles and zero position p_FM define the "zero configuration" which
-// corresponds to frames F and M being coincident, see set_zero_state(). Angles
+// corresponds to frames F and M being coincident, see SetZeroState(). Angles
 // θ₀, θ₁, θ₂ are defined to be positive according to the right-hand-rule with
 // the thumb aligned in the direction of their respective axes.
 //
@@ -62,13 +62,24 @@ namespace internal {
 template <typename T>
 class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(RpyFloatingMobilizer)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(RpyFloatingMobilizer);
+  using MobilizerBase = MobilizerImpl<T, 6, 6>;
+  using MobilizerBase::kNq, MobilizerBase::kNv, MobilizerBase::kNx;
+  using typename MobilizerBase::HMatrix;
+  using typename MobilizerBase::QVector, typename MobilizerBase::VVector;
 
   // Constructor for an RpyFloatingMobilizer between an inboard frame F
   // inboard_frame_F and an outboard frame M outboard_frame_M.
-  RpyFloatingMobilizer(const Frame<T>& inboard_frame_F,
+  RpyFloatingMobilizer(const SpanningForest::Mobod& mobod,
+                       const Frame<T>& inboard_frame_F,
                        const Frame<T>& outboard_frame_M)
-      : MobilizerBase(inboard_frame_F, outboard_frame_M) {}
+      : MobilizerBase(mobod, inboard_frame_F, outboard_frame_M) {}
+
+  ~RpyFloatingMobilizer() final;
+
+  std::unique_ptr<internal::BodyNode<T>> CreateBodyNode(
+      const internal::BodyNode<T>* parent_node, const RigidBody<T>* body,
+      const Mobilizer<T>* mobilizer) const final;
 
   bool is_floating() const final { return true; }
 
@@ -79,7 +90,7 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   std::string position_suffix(int position_index_in_mobilizer) const final;
   std::string velocity_suffix(int velocity_index_in_mobilizer) const final;
 
-  bool can_rotate() const final    { return true; }
+  bool can_rotate() const final { return true; }
   bool can_translate() const final { return true; }
 
   // Returns the generalized positions for this mobilizer stored in context.
@@ -152,8 +163,8 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   //   θ₀, θ₁, θ₂, described in this class's documentation, at entries
   //   angles(0), angles(1) and angles(2), respectively.
   // @returns a constant reference to this mobilizer.
-  const RpyFloatingMobilizer<T>& SetAngles(
-      systems::Context<T>* context, const Vector3<T>& angles) const;
+  const RpyFloatingMobilizer<T>& SetAngles(systems::Context<T>* context,
+                                           const Vector3<T>& angles) const;
 
   // Stores in context the position p_FM of M in F.
   //
@@ -162,8 +173,8 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   // @param[in] p_FM
   //   Position of F in M.
   // @returns a constant reference to this mobilizer.
-  const RpyFloatingMobilizer<T>& SetTranslation(
-      systems::Context<T>* context, const Vector3<T>& p_FM) const;
+  const RpyFloatingMobilizer<T>& SetTranslation(systems::Context<T>* context,
+                                                const Vector3<T>& p_FM) const;
 
   // Sets the distribution governing the random samples of the rpy angles
   // component of the mobilizer state.
@@ -183,7 +194,7 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   //   A vector in ℝ³ with the desired angular velocity of the outboard frame M
   //   in the inboard frame F, expressed in F.
   // @returns a constant reference to this mobilizer.
-  const RpyFloatingMobilizer<T>& set_angular_velocity(
+  const RpyFloatingMobilizer<T>& SetAngularVelocity(
       systems::Context<T>* context, const Vector3<T>& w_FM) const;
 
   // Stores in context the translational velocity v_FM of M in F.
@@ -193,7 +204,7 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   // @param[in] v_FM
   //   Translational velocity of F in M.
   // @returns a constant reference to this mobilizer.
-  const RpyFloatingMobilizer<T>& set_translational_velocity(
+  const RpyFloatingMobilizer<T>& SetTranslationalVelocity(
       systems::Context<T>* context, const Vector3<T>& v_FM) const;
 
   // Sets context so this mobilizer's generalized coordinates (roll-pitch-yaw
@@ -213,13 +224,23 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
   // Computes the across-mobilizer transform X_FM(q) between the inboard
   // frame F and the outboard frame M as a function of the configuration q
   // stored in context.
+  math::RigidTransform<T> calc_X_FM(const T* q) const {
+    return math::RigidTransform<T>(math::RollPitchYaw<T>(q[0], q[1], q[2]),
+                                   Vector3<T>(q[3], q[4], q[5]));
+  }
+
+  // Computes the across-mobilizer velocity V_FM(q, v) of the outboard frame M
+  // measured and expressed in frame F as a function of the input generalized
+  // velocity v, packed as documented in get_generalized_velocities(). (That's
+  // conveniently just V_FM already.)
+  SpatialVelocity<T> calc_V_FM(const systems::Context<T>&, const T* v) const {
+    const Eigen::Map<const VVector> V_FM(v);
+    return SpatialVelocity<T>(V_FM);  // w_FM, v_FM
+  }
+
   math::RigidTransform<T> CalcAcrossMobilizerTransform(
       const systems::Context<T>& context) const final;
 
-  // Computes the across-mobilizer velocity V_FM(q, v) of the outboard frame M
-  // measured and expressed in frame F as a function of the configuration stored
-  // in context and of the input generalized velocity v, packed as documented
-  // in get_generalized_velocities().
   SpatialVelocity<T> CalcAcrossMobilizerSpatialVelocity(
       const systems::Context<T>& context,
       const Eigen::Ref<const VectorX<T>>& v) const final;
@@ -306,16 +327,6 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
       const MultibodyTree<symbolic::Expression>& tree_clone) const final;
 
  private:
-  typedef MobilizerImpl<T, 6, 6> MobilizerBase;
-  // Bring the handy number of position and velocities MobilizerImpl enums into
-  // this class' scope. This is useful when writing mathematical expressions
-  // with fixed-sized vectors since we can do things like Vector<T, kNq>.
-  // Operations with fixed-sized quantities can be optimized at compile time
-  // and therefore they are highly preferred compared to the very slow dynamic
-  // sized quantities.
-  using MobilizerBase::kNq;
-  using MobilizerBase::kNv;
-
   // Helper method to make a clone templated on ToScalar.
   template <typename ToScalar>
   std::unique_ptr<Mobilizer<ToScalar>> TemplatedDoCloneToScalar(
@@ -327,4 +338,4 @@ class RpyFloatingMobilizer final : public MobilizerImpl<T, 6, 6> {
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::RpyFloatingMobilizer)
+    class ::drake::multibody::internal::RpyFloatingMobilizer);

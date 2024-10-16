@@ -100,7 +100,7 @@ MODULE_SETTINGS = {
             # use generate_common_core_sources() from rules.bzl to handle it.
             "Common/Core/vtkArrayDispatchArrayList.h.in",
             "Common/Core/vtkTypeListMacros.h.in",
-            "Common/Core/vtkTypedArray.h.in",
+            "Common/Core/vtk*TypedArray.h.in",
         ],
         "hdrs_extra": [
             # These are the hdrs outputs of generate_common_core_sources() from
@@ -309,6 +309,9 @@ MODULE_SETTINGS = {
             "VTK::ImagingSources",
         ],
     },
+    "VTK::FiltersReduction": {
+        # VTK uses this module internally but we don't need to customize it.
+    },
     "VTK::FiltersSources": {
         "visibility": ["//visibility:public"],
         "srcs_glob_exclude": [
@@ -320,6 +323,7 @@ MODULE_SETTINGS = {
         ],
     },
     "VTK::IOCore": {
+        "visibility": ["//visibility:public"],
         "srcs_glob_exclude": [
             # Skip code we don't need.
             "**/*Glob*",
@@ -371,6 +375,7 @@ MODULE_SETTINGS = {
             "IO/Geometry/vtkGLTFDocumentLoader.cxx",
             "IO/Geometry/vtkGLTFDocumentLoaderInternals.cxx",
             "IO/Geometry/vtkGLTFReader.cxx",
+            "IO/Geometry/vtkGLTFTexture.cxx",
             "IO/Geometry/vtkGLTFUtils.cxx",
             "IO/Geometry/vtkGLTFWriter.cxx",
             "IO/Geometry/vtkGLTFWriterUtils.cxx",
@@ -425,6 +430,9 @@ MODULE_SETTINGS = {
             "IO/Legacy/vtkDataReader.cxx",
             "IO/Legacy/vtkUnstructuredGridReader.cxx",
         ],
+        "module_deps_ignore": [
+            "VTK::IOCellGrid",
+        ],
     },
     "VTK::ImagingCore": {
         "visibility": ["//visibility:public"],
@@ -470,6 +478,8 @@ MODULE_SETTINGS = {
         "srcs_glob_exclude": [
             # This is configure-time setup code, not library code.
             "**/vtkProbe*",
+            # This file uses codegen'd embedded vtp files. We don't need it.
+            "**/*vtkOpenGLAvatar*",
             # Avoid building unnecessary VTK::RenderingHyperTreeGrid.
             "**/*HyperTreeGrid*",
             # Exclude all renderers by default; we'll incorporate the necessary
@@ -478,6 +488,7 @@ MODULE_SETTINGS = {
             "**/vtkEGL*",
             "**/vtkOSOpenGL*",
             "**/vtkSDL2OpenGL*",
+            "**/vtkWebAssembly*",
             "**/vtkWin32OpenGL*",
             "**/vtkXOpenGL*",
         ],
@@ -515,6 +526,7 @@ MODULE_SETTINGS = {
             ],
         }),
         "module_deps_ignore": [
+            "VTK::IOXML",
             "VTK::RenderingHyperTreeGrid",
         ],
     },

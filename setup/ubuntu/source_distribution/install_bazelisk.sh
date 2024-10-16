@@ -50,18 +50,14 @@ dpkg_install_from_wget() {
 apt-get remove bazel || true
 
 # Install bazelisk.
-#
-# TODO(jeremy.nimmer) Once there's a bazelisk >= 1.20 that incorporates
-# https://github.com/bazelbuild/bazelisk/pull/563, we should switch to
-# official release downloads instead of our Drake-custom Debian packages.
 if [[ $(arch) = "aarch64" ]]; then
   dpkg_install_from_wget \
-    bazelisk 1.19.0-9-g58a850f \
-    https://drake-mirror.csail.mit.edu/github/bazelbuild/bazelisk/pr563/bazelisk_1.19.0-9-g58a850f_arm64.deb \
-    5501a44ba1f51298d186e4e66966b0556d03524381a967667696f032e292d719
+    bazelisk 1.22.0 \
+    https://github.com/bazelbuild/bazelisk/releases/download/v1.22.0/bazelisk-arm64.deb \
+    b6a67444325fcee119fcfa1ca4bbc6478a8b1f7937730bde4a52ad3347146d76
 else
   dpkg_install_from_wget \
-    bazelisk 1.19.0-9-g58a850f \
-    https://drake-mirror.csail.mit.edu/github/bazelbuild/bazelisk/pr563/bazelisk_1.19.0-9-g58a850f_amd64.deb \
-    c2bfd15d6c3422ae540cda9facc0ac395005e2701c09dbb15d40447b53e831d4
+    bazelisk 1.22.0 \
+    https://github.com/bazelbuild/bazelisk/releases/download/v1.22.0/bazelisk-amd64.deb \
+    f3a9dd15b08f3f1350f2b2055cfee8a9c412c2050966f635633aaf30dd7e979e
 fi

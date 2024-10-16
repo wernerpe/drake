@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <unordered_set>
 
+#include <fmt/ranges.h>
+
 #include "drake/common/drake_assert.h"
 #include "drake/common/string_unordered_set.h"
 #include "drake/common/text_logging.h"
@@ -1754,4 +1756,4 @@ int Diagram<T>::num_subsystems() const {
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-  class ::drake::systems::Diagram)
+  class ::drake::systems::Diagram);

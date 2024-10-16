@@ -302,13 +302,6 @@ bool SceneGraphInspector<T>::CollisionFiltered(GeometryId geometry_id1,
 }
 
 template <typename T>
-void SceneGraphInspector<T>::Reify(GeometryId geometry_id,
-                                   ShapeReifier* reifier) const {
-  DRAKE_DEMAND(state_ != nullptr);
-  state_->GetShape(geometry_id).Reify(reifier);
-}
-
-template <typename T>
 std::unique_ptr<GeometryInstance> SceneGraphInspector<T>::CloneGeometryInstance(
     GeometryId id) const {
   auto geometry_instance = std::make_unique<GeometryInstance>(
@@ -329,4 +322,4 @@ std::unique_ptr<GeometryInstance> SceneGraphInspector<T>::CloneGeometryInstance(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::geometry::SceneGraphInspector)
+    class ::drake::geometry::SceneGraphInspector);

@@ -6,8 +6,8 @@ def nanoflann_internal_repository(
     github_archive(
         name = name,
         repository = "jlblancoc/nanoflann",
-        commit = "v1.5.5",
-        sha256 = "fd28045eabaf0e7f12236092f80905a1750e0e6b580bb40eadd64dc4f75d641d",  # noqa
+        commit = "v1.6.1",
+        sha256 = "e258d6fd6ad18e1809fa9c081553e78036fd6e7b418d3762875c2c5a015dd431",  # noqa
         build_file = ":package.BUILD.bazel",
         patches = [
             ":patches/namespace.patch",

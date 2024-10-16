@@ -7,12 +7,25 @@
 #include "drake/common/drake_assert.h"
 #include "drake/common/eigen_types.h"
 #include "drake/math/roll_pitch_yaw.h"
+#include "drake/math/rotation_matrix.h"
+#include "drake/multibody/tree/body_node_impl.h"
 #include "drake/multibody/tree/multibody_tree.h"
 #include "drake/multibody/tree/rigid_body.h"
 
 namespace drake {
 namespace multibody {
 namespace internal {
+
+template <typename T>
+RpyFloatingMobilizer<T>::~RpyFloatingMobilizer() = default;
+
+template <typename T>
+std::unique_ptr<internal::BodyNode<T>> RpyFloatingMobilizer<T>::CreateBodyNode(
+    const internal::BodyNode<T>* parent_node, const RigidBody<T>* body,
+    const Mobilizer<T>* mobilizer) const {
+  return std::make_unique<internal::BodyNodeImpl<T, RpyFloatingMobilizer>>(
+      parent_node, body, mobilizer);
+}
 
 template <typename T>
 std::string RpyFloatingMobilizer<T>::position_suffix(
@@ -31,8 +44,7 @@ std::string RpyFloatingMobilizer<T>::position_suffix(
     case 5:
       return "z";
   }
-  throw std::runtime_error(
-      "RpyFloatingMobilizer has only 6 positions.");
+  throw std::runtime_error("RpyFloatingMobilizer has only 6 positions.");
 }
 
 template <typename T>
@@ -52,8 +64,7 @@ std::string RpyFloatingMobilizer<T>::velocity_suffix(
     case 5:
       return "vz";
   }
-  throw std::runtime_error(
-      "RpyFloatingMobilizer has only 6 velocities.");
+  throw std::runtime_error("RpyFloatingMobilizer has only 6 velocities.");
 }
 
 template <typename T>
@@ -101,17 +112,15 @@ const RpyFloatingMobilizer<T>& RpyFloatingMobilizer<T>::SetAngles(
 }
 
 template <typename T>
-const RpyFloatingMobilizer<T>&
-RpyFloatingMobilizer<T>::SetTranslation(systems::Context<T>* context,
-                                        const Vector3<T>& p_FM) const {
+const RpyFloatingMobilizer<T>& RpyFloatingMobilizer<T>::SetTranslation(
+    systems::Context<T>* context, const Vector3<T>& p_FM) const {
   auto q = this->GetMutablePositions(context).template tail<3>();
   q = p_FM;
   return *this;
 }
 
 template <typename T>
-const RpyFloatingMobilizer<T>&
-RpyFloatingMobilizer<T>::set_angular_velocity(
+const RpyFloatingMobilizer<T>& RpyFloatingMobilizer<T>::SetAngularVelocity(
     systems::Context<T>* context, const Vector3<T>& w_FM) const {
   auto v = this->GetMutableVelocities(context).template head<3>();
   v = w_FM;
@@ -120,7 +129,7 @@ RpyFloatingMobilizer<T>::set_angular_velocity(
 
 template <typename T>
 const RpyFloatingMobilizer<T>&
-RpyFloatingMobilizer<T>::set_translational_velocity(
+RpyFloatingMobilizer<T>::SetTranslationalVelocity(
     systems::Context<T>* context, const Vector3<T>& v_FM) const {
   auto v = this->GetMutableVelocities(context).template tail<3>();
   v = v_FM;
@@ -128,8 +137,7 @@ RpyFloatingMobilizer<T>::set_translational_velocity(
 }
 
 template <typename T>
-const RpyFloatingMobilizer<T>&
-RpyFloatingMobilizer<T>::SetFromRigidTransform(
+const RpyFloatingMobilizer<T>& RpyFloatingMobilizer<T>::SetFromRigidTransform(
     systems::Context<T>* context, const math::RigidTransform<T>& X_FM) const {
   SetAngles(context, math::RollPitchYaw<T>(X_FM.rotation()).vector());
   SetTranslation(context, X_FM.translation());
@@ -163,21 +171,19 @@ void RpyFloatingMobilizer<T>::set_random_translation_distribution(
 }
 
 template <typename T>
-math::RigidTransform<T>
-RpyFloatingMobilizer<T>::CalcAcrossMobilizerTransform(
+math::RigidTransform<T> RpyFloatingMobilizer<T>::CalcAcrossMobilizerTransform(
     const systems::Context<T>& context) const {
-  const auto rpy = this->get_angles(context);
-  const auto p_FM = this->get_translation(context);
-  const math::RollPitchYaw<T> roll_pitch_yaw(rpy(0), rpy(1), rpy(2));
-  return math::RigidTransform<T>(roll_pitch_yaw, p_FM);
+  const auto& q = this->get_positions(context);
+  DRAKE_ASSERT(q.size() == kNq);
+  return calc_X_FM(q.data());
 }
 
 template <typename T>
-SpatialVelocity<T>
-RpyFloatingMobilizer<T>::CalcAcrossMobilizerSpatialVelocity(
-    const systems::Context<T>&, const Eigen::Ref<const VectorX<T>>& v) const {
+SpatialVelocity<T> RpyFloatingMobilizer<T>::CalcAcrossMobilizerSpatialVelocity(
+    const systems::Context<T>& context,
+    const Eigen::Ref<const VectorX<T>>& v) const {
   DRAKE_ASSERT(v.size() == kNv);
-  return SpatialVelocity<T>(v);
+  return calc_V_FM(context, v.data());
 }
 
 template <typename T>
@@ -198,8 +204,8 @@ void RpyFloatingMobilizer<T>::ProjectSpatialForce(
 }
 
 template <typename T>
-void RpyFloatingMobilizer<T>::DoCalcNMatrix(
-    const systems::Context<T>& context, EigenPtr<MatrixX<T>> N) const {
+void RpyFloatingMobilizer<T>::DoCalcNMatrix(const systems::Context<T>& context,
+                                            EigenPtr<MatrixX<T>> N) const {
   using std::abs;
   using std::cos;
   using std::sin;
@@ -458,19 +464,18 @@ RpyFloatingMobilizer<T>::TemplatedDoCloneToScalar(
   const Frame<ToScalar>& outboard_frame_clone =
       tree_clone.get_variant(this->outboard_frame());
   return std::make_unique<RpyFloatingMobilizer<ToScalar>>(
-      inboard_frame_clone, outboard_frame_clone);
+      tree_clone.get_mobod(this->mobod().index()), inboard_frame_clone,
+      outboard_frame_clone);
 }
 
 template <typename T>
-std::unique_ptr<Mobilizer<double>>
-RpyFloatingMobilizer<T>::DoCloneToScalar(
+std::unique_ptr<Mobilizer<double>> RpyFloatingMobilizer<T>::DoCloneToScalar(
     const MultibodyTree<double>& tree_clone) const {
   return TemplatedDoCloneToScalar(tree_clone);
 }
 
 template <typename T>
-std::unique_ptr<Mobilizer<AutoDiffXd>>
-RpyFloatingMobilizer<T>::DoCloneToScalar(
+std::unique_ptr<Mobilizer<AutoDiffXd>> RpyFloatingMobilizer<T>::DoCloneToScalar(
     const MultibodyTree<AutoDiffXd>& tree_clone) const {
   return TemplatedDoCloneToScalar(tree_clone);
 }
@@ -487,4 +492,4 @@ RpyFloatingMobilizer<T>::DoCloneToScalar(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::RpyFloatingMobilizer)
+    class ::drake::multibody::internal::RpyFloatingMobilizer);

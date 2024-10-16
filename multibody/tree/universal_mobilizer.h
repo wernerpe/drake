@@ -38,7 +38,7 @@ namespace internal {
 // orientation of M in I as an elemental rotation of amount θ₂ about the y-axis
 // of frame I (also the y-axis of frame M).
 // Zero θ₁, θ₂ angles define the "zero configuration" which corresponds to
-// frames F, I, and M being coincident, see set_zero_state(). Angles (θ₁, θ₂)
+// frames F, I, and M being coincident, see SetZeroState(). Angles (θ₁, θ₂)
 // are defined to be positive according to the right-hand-rule with the thumb
 // aligned in the direction of their respective axes. The generalized
 // velocities for this mobilizer are the rate of change of the angles, v = q̇.
@@ -47,22 +47,33 @@ namespace internal {
 template <typename T>
 class UniversalMobilizer final : public MobilizerImpl<T, 2, 2> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(UniversalMobilizer)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(UniversalMobilizer);
+  using MobilizerBase = MobilizerImpl<T, 2, 2>;
+  using MobilizerBase::kNq, MobilizerBase::kNv, MobilizerBase::kNx;
+  using typename MobilizerBase::HMatrix;
+  using typename MobilizerBase::QVector, typename MobilizerBase::VVector;
 
   // Constructor for a %UniversalMobilizer between an inboard frame F
   // `inboard_frame_F` and an outboard frame M `outboard_frame_M` granting
   // two rotational degrees of freedom corresponding to angles θ₁, θ₂ as
   // described in this class's documentation.
-  UniversalMobilizer(const Frame<T>& inboard_frame_F,
+  UniversalMobilizer(const SpanningForest::Mobod& mobod,
+                     const Frame<T>& inboard_frame_F,
                      const Frame<T>& outboard_frame_M)
-      : MobilizerBase(inboard_frame_F, outboard_frame_M) {}
+      : MobilizerBase(mobod, inboard_frame_F, outboard_frame_M) {}
+
+  ~UniversalMobilizer() final;
+
+  std::unique_ptr<internal::BodyNode<T>> CreateBodyNode(
+      const internal::BodyNode<T>* parent_node, const RigidBody<T>* body,
+      const Mobilizer<T>* mobilizer) const final;
 
   // Overloads to define the suffix names for the position and velocity
   // elements.
   std::string position_suffix(int position_index_in_mobilizer) const final;
   std::string velocity_suffix(int velocity_index_in_mobilizer) const final;
 
-  bool can_rotate() const final    { return true; }
+  bool can_rotate() const final { return true; }
   bool can_translate() const final { return false; }
 
   // Retrieves from `context` the two angles, (θ₁, θ₂) which describe the state
@@ -82,8 +93,8 @@ class UniversalMobilizer final : public MobilizerImpl<T, 2, 2> {
   //                   described in this class's documentation, at entries
   //                   `angles(0)` and `angles(1)`, respectively.
   // @returns a constant reference to `this` mobilizer.
-  const UniversalMobilizer<T>& set_angles(systems::Context<T>* context,
-                                          const Vector2<T>& angles) const;
+  const UniversalMobilizer<T>& SetAngles(systems::Context<T>* context,
+                                         const Vector2<T>& angles) const;
 
   // Retrieves from `context` the rate of change, in radians per second, of
   // `this` mobilizer's angles (see get_angles()).
@@ -98,23 +109,44 @@ class UniversalMobilizer final : public MobilizerImpl<T, 2, 2> {
   // @param[in] angles_dot The desired rate of change, ω₁, ω₂, packed as the
   //                       vector [ω₁, ω₂].
   // @returns a constant reference to `this` mobilizer.
-  const UniversalMobilizer<T>& set_angular_rates(
+  const UniversalMobilizer<T>& SetAngularRates(
       systems::Context<T>* context, const Vector2<T>& angles_dot) const;
 
   // Computes the across-mobilizer transform `X_FM(q)` between the inboard
   // frame F and the outboard frame M as a function of the angles (θ₁, θ₂)
   // stored in `context`.
-  math::RigidTransform<T> CalcAcrossMobilizerTransform(
-      const systems::Context<T>& context) const override;
+  math::RigidTransform<T> calc_X_FM(const T* q) const {
+    const T s1 = sin(q[0]), c1 = cos(q[0]);
+    const T s2 = sin(q[1]), c2 = cos(q[1]);
+    Matrix3<T> R_FM_matrix;
+    // clang-format off
+    R_FM_matrix <<   c2,    0.0,  s2,
+                   s1 * s2, c1,  -s1 * c2,
+                  -c1 * s2, s1,   c1 * c2;
+    // clang-format on
+    return math::RigidTransform<T>(
+        math::RotationMatrix<T>::MakeUnchecked(R_FM_matrix),
+        Vector3<T>::Zero());
+  }
 
-  // Computes the across-mobilizer velocity `V_FM(q, v)` of the outboard frame
+  // Computes the across-mobilizer velocity V_FM(q, v) of the outboard frame
   // M measured and expressed in frame F as a function of the angles (θ₁, θ₂)
-  // stored in `context` and of the input angular rates v, formatted as
+  // stored in context and of the input angular rates v, formatted as
   // in get_angular_rates().
-  // This method aborts in Debug builds if `v.size()` is not two.
+  // TODO(sherm1) Should not have to recalculate H_FM(q) here.
+  SpatialVelocity<T> calc_V_FM(const systems::Context<T>& context,
+                               const T* v) const {
+    const Eigen::Map<const VVector> w(v);
+    const Eigen::Matrix<T, 3, 2> Hw = this->CalcHwMatrix(context);
+    return SpatialVelocity<T>(Hw * w, Vector3<T>::Zero());
+  }
+
+  math::RigidTransform<T> CalcAcrossMobilizerTransform(
+      const systems::Context<T>& context) const final;
+
   SpatialVelocity<T> CalcAcrossMobilizerSpatialVelocity(
       const systems::Context<T>& context,
-      const Eigen::Ref<const VectorX<T>>& v) const override;
+      const Eigen::Ref<const VectorX<T>>& v) const final;
 
   // Computes the across-mobilizer acceleration `A_FM(q, v, v̇)` of the
   // outboard frame M in the inboard frame F.
@@ -176,16 +208,6 @@ class UniversalMobilizer final : public MobilizerImpl<T, 2, 2> {
       const MultibodyTree<symbolic::Expression>& tree_clone) const override;
 
  private:
-  typedef MobilizerImpl<T, 2, 2> MobilizerBase;
-  // Bring the handy number of position and velocities MobilizerImpl enums into
-  // this class' scope. This is useful when writing mathematical expressions
-  // with fixed-sized vectors since we can do things like Vector<T, nq>.
-  // Operations with fixed-sized quantities can be optimized at compile time
-  // and therefore they are highly preferred compared to the very slow dynamic
-  // sized quantities.
-  using MobilizerBase::kNq;
-  using MobilizerBase::kNv;
-
   // Helper method to make a clone templated on ToScalar.
   template <typename ToScalar>
   std::unique_ptr<Mobilizer<ToScalar>> TemplatedDoCloneToScalar(
@@ -197,4 +219,4 @@ class UniversalMobilizer final : public MobilizerImpl<T, 2, 2> {
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::UniversalMobilizer)
+    class ::drake::multibody::internal::UniversalMobilizer);

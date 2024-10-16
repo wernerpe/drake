@@ -103,7 +103,7 @@ class TestTrajectories(unittest.TestCase):
         self.assertEqual(curve.rows(), 0)
         self.assertEqual(curve.cols(), 1)
 
-        points = np.mat("4.0, 5.0; 6.0, 7.0")
+        points = np.array([[4.0, 5.0], [6.0, 7.0]])
         curve = BezierCurve_[T](start_time=1,
                                 end_time=2,
                                 control_points=points)
@@ -538,6 +538,9 @@ class TestTrajectories(unittest.TestCase):
                               PiecewisePolynomial)
         self.assertIsInstance(traj.segment(segment_index=1),
                               PiecewisePolynomial)
+
+        traj = CompositeTrajectory.AlignAndConcatenate(segments=[pp1, pp2])
+        self.assertIsInstance(traj, CompositeTrajectory)
 
     @numpy_compare.check_all_types
     def test_quaternion_slerp(self, T):

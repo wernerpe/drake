@@ -93,6 +93,7 @@ class SoftMesh {
  */
 struct SoftHalfSpace {
   double pressure_scale;
+  double margin;
   // TODO(SeanCurtis-TRI): Possibly add a customizable pressure function in the
   //  future; one that isn't simply the scaled, normalized penetration distance.
 };
@@ -112,7 +113,7 @@ class SoftGeometry {
   explicit SoftGeometry(SoftMesh&& soft_mesh)
       : geometry_(std::move(soft_mesh)) {}
 
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(SoftGeometry)
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(SoftGeometry);
 
   /* @name  Distinguishing compliant representations
 
@@ -171,6 +172,19 @@ class SoftGeometry {
     return std::get<SoftHalfSpace>(geometry_).pressure_scale;
   }
 
+  /* Returns the half space's margin -- calling this will throw if
+   is_half_space() returns `false`.
+   The margin value is part of the contact surface calculation for half spaces.
+   For SoftMesh instances, the margin is already part of the representative mesh
+   and it is not necessary to carry the value here.  */
+  double half_space_margin() const {
+    if (!is_half_space()) {
+      throw std::runtime_error(
+          "SoftGeometry::margin() cannot be invoked for soft mesh");
+    }
+    return std::get<SoftHalfSpace>(geometry_).margin;
+  }
+
   //@}
 
  private:
@@ -188,7 +202,7 @@ class RigidMesh {
       : mesh_(std::move(mesh)),
         bvh_(std::make_unique<Bvh<Obb, TriangleSurfaceMesh<double>>>(*mesh_)) {}
 
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RigidMesh)
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RigidMesh);
 
   const TriangleSurfaceMesh<double>& mesh() const {
     DRAKE_DEMAND(mesh_ != nullptr);
@@ -220,7 +234,7 @@ class RigidGeometry {
   explicit RigidGeometry(RigidMesh&& rigid_mesh)
       : geometry_(RigidMesh(std::move(rigid_mesh))) {}
 
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RigidGeometry)
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RigidGeometry);
 
   /* Returns true if this RigidGeometry is a half space.  */
   bool is_half_space() const { return !geometry_.has_value(); }
@@ -498,7 +512,7 @@ std::optional<SoftGeometry> MakeSoftRepresentation(
  properties have sufficient information). Requires the ('hydroelastic',
  'hydroelastic_modulus') properties. */
 std::optional<SoftGeometry> MakeSoftRepresentation(
-    const Mesh& mesh_specification, const ProximityProperties& props);
+    const Mesh& mesh_spec, const ProximityProperties& props);
 
 //@}
 

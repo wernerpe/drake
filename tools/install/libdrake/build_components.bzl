@@ -57,7 +57,6 @@ LIBDRAKE_COMPONENTS = [
     "//multibody/benchmarks/kuka_iiwa_robot",
     "//multibody/benchmarks/mass_damper_spring",
     "//multibody/benchmarks/pendulum",
-    "//multibody/constraint",
     "//multibody/contact_solvers",
     "//multibody/contact_solvers/sap",
     "//multibody/fem",
@@ -70,8 +69,7 @@ LIBDRAKE_COMPONENTS = [
     "//multibody/plant",
     "//multibody/plant:contact_results_to_lcm",  # unpackaged
     "//multibody/rational",
-    "//multibody/topology:multibody_graph",  # unpackaged
-    "//multibody/topology:multibody_topology",  # unpackaged
+    "//multibody/topology",
     "//multibody/tree",
     "//multibody/triangle_quadrature",
     "//perception",

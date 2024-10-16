@@ -71,6 +71,24 @@ string MathematicalProgram::to_string() const {
   return os.str();
 }
 
+bool MathematicalProgram::IsThreadSafe() const {
+  const std::vector<Binding<Cost>> costs = GetAllCosts();
+  const std::vector<Binding<Constraint>> constraints = GetAllConstraints();
+  return std::all_of(visualization_callbacks_.begin(),
+                     visualization_callbacks_.end(),
+                     [](const Binding<VisualizationCallback>& c) {
+                       return c.evaluator()->is_thread_safe();
+                     }) &&
+         std::all_of(costs.begin(), costs.end(),
+                     [](const Binding<Cost>& c) {
+                       return c.evaluator()->is_thread_safe();
+                     }) &&
+         std::all_of(constraints.begin(), constraints.end(),
+                     [](const Binding<Constraint>& c) {
+                       return c.evaluator()->is_thread_safe();
+                     });
+}
+
 std::string MathematicalProgram::ToLatex(int precision) {
   if (num_vars() == 0) {
     return "\\text{This MathematicalProgram has no decision variables.}";
@@ -536,6 +554,11 @@ Binding<L2NormCost> MathematicalProgram::AddL2NormCost(
   return AddCost(std::make_shared<L2NormCost>(A, b), vars);
 }
 
+Binding<L2NormCost> MathematicalProgram::AddL2NormCost(
+    const symbolic::Expression& e, double psd_tol, double coefficient_tol) {
+  return AddCost(internal::ParseL2NormCost(e, psd_tol, coefficient_tol));
+}
+
 std::tuple<symbolic::Variable, Binding<LinearCost>,
            Binding<LorentzConeConstraint>>
 MathematicalProgram::AddL2NormCostUsingConicConstraint(
@@ -966,6 +989,13 @@ Binding<LorentzConeConstraint> MathematicalProgram::AddConstraint(
   required_capabilities_.insert(ProgramAttribute::kLorentzConeConstraint);
   lorentz_cone_constraint_.push_back(binding);
   return lorentz_cone_constraint_.back();
+}
+
+Binding<LorentzConeConstraint> MathematicalProgram::AddLorentzConeConstraint(
+    const symbolic::Formula& f, LorentzConeConstraint::EvalType eval_type,
+    double psd_tol, double coefficient_tol) {
+  return AddConstraint(internal::ParseLorentzConeConstraint(
+      f, eval_type, psd_tol, coefficient_tol));
 }
 
 Binding<LorentzConeConstraint> MathematicalProgram::AddLorentzConeConstraint(

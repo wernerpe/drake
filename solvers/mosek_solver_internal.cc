@@ -7,12 +7,14 @@
 
 #include "drake/common/fmt_ostream.h"
 #include "drake/common/never_destroyed.h"
+#include "drake/common/parallelism.h"
 #include "drake/math/quadratic_form.h"
 #include "drake/solvers/aggregate_costs_constraints.h"
 
 namespace drake {
 namespace solvers {
 namespace internal {
+namespace {
 // Given a vector of triplets (which might contain duplicated entries in the
 // matrix), returns the vector of rows, columns and values.
 void ConvertTripletsToVectors(
@@ -37,6 +39,7 @@ void ConvertTripletsToVectors(
     }
   }
 }
+}  // namespace
 
 size_t MatrixVariableEntry::get_next_id() {
   static never_destroyed<std::atomic<int>> next_id(0);
@@ -1069,8 +1072,9 @@ MSKrescodee MosekSolverProgram::AddQuadraticCost(
   for (int j = 0; j < Q_quadratic_vars.outerSize(); ++j) {
     for (Eigen::SparseMatrix<double>::InnerIterator it(Q_quadratic_vars, j); it;
          ++it) {
-      Q_lower_triplets.emplace_back(var_indices[it.row()],
-                                    var_indices[it.col()], it.value());
+      int row = std::max(var_indices[it.row()], var_indices[it.col()]);
+      int col = std::min(var_indices[it.row()], var_indices[it.col()]);
+      Q_lower_triplets.emplace_back(row, col, it.value());
     }
   }
   std::vector<MSKint32t> qrow, qcol;
@@ -1494,6 +1498,12 @@ MSKrescodee MosekSolverProgram::UpdateOptions(
     bool* print_to_console, std::string* print_file_name,
     std::optional<std::string>* msk_writedata) {
   MSKrescodee rescode{MSK_RES_OK};
+  // Set the maximum number of threads used by Mosek via the CommonSolverOptions
+  // first, so that solver-specific options can overwrite this later.
+  const int num_threads = merged_options.get_max_threads().value_or(
+      Parallelism::Max().num_threads());
+  rescode = MSK_putnaintparam(task_, "MSK_IPAR_NUM_THREADS", num_threads);
+  ThrowForInvalidOption(rescode, "MSK_IPAR_NUM_THREADS", num_threads);
   for (const auto& double_options : merged_options.GetOptionsDouble(mosek_id)) {
     if (rescode == MSK_RES_OK) {
       rescode = MSK_putnadouparam(task_, double_options.first.c_str(),

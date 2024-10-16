@@ -6,7 +6,8 @@
 
 #include "drake/common/eigen_types.h"
 #include "drake/math/rotation_matrix.h"
-#include "drake/multibody/tree/multibody_tree.h"
+#include "drake/multibody/tree/body_node_impl.h"
+// #include "drake/multibody/tree/multibody_tree.h"
 
 namespace drake {
 namespace multibody {
@@ -16,8 +17,19 @@ using std::cos;
 using std::sin;
 
 template <typename T>
+UniversalMobilizer<T>::~UniversalMobilizer() = default;
+
+template <typename T>
+std::unique_ptr<internal::BodyNode<T>> UniversalMobilizer<T>::CreateBodyNode(
+    const internal::BodyNode<T>* parent_node, const RigidBody<T>* body,
+    const Mobilizer<T>* mobilizer) const {
+  return std::make_unique<internal::BodyNodeImpl<T, UniversalMobilizer>>(
+      parent_node, body, mobilizer);
+}
+
+template <typename T>
 std::string UniversalMobilizer<T>::position_suffix(
-  int position_index_in_mobilizer) const {
+    int position_index_in_mobilizer) const {
   switch (position_index_in_mobilizer) {
     case 0:
       return "qx";
@@ -29,15 +41,14 @@ std::string UniversalMobilizer<T>::position_suffix(
 
 template <typename T>
 std::string UniversalMobilizer<T>::velocity_suffix(
-  int velocity_index_in_mobilizer) const {
+    int velocity_index_in_mobilizer) const {
   switch (velocity_index_in_mobilizer) {
     case 0:
       return "wx";
     case 1:
       return "wy";
   }
-  throw std::runtime_error(
-    "UniversalMobilizer has only 2 velocities.");
+  throw std::runtime_error("UniversalMobilizer has only 2 velocities.");
 }
 
 template <typename T>
@@ -49,7 +60,7 @@ Vector2<T> UniversalMobilizer<T>::get_angles(
 }
 
 template <typename T>
-const UniversalMobilizer<T>& UniversalMobilizer<T>::set_angles(
+const UniversalMobilizer<T>& UniversalMobilizer<T>::SetAngles(
     systems::Context<T>* context, const Vector2<T>& angles) const {
   auto q = this->GetMutablePositions(context);
   DRAKE_ASSERT(q.size() == kNq);
@@ -66,30 +77,12 @@ Vector2<T> UniversalMobilizer<T>::get_angular_rates(
 }
 
 template <typename T>
-const UniversalMobilizer<T>& UniversalMobilizer<T>::set_angular_rates(
+const UniversalMobilizer<T>& UniversalMobilizer<T>::SetAngularRates(
     systems::Context<T>* context, const Vector2<T>& angles_dot) const {
   auto v = this->GetMutableVelocities(context);
   DRAKE_ASSERT(v.size() == kNv);
   v = angles_dot;
   return *this;
-}
-
-template <typename T>
-math::RigidTransform<T> UniversalMobilizer<T>::CalcAcrossMobilizerTransform(
-    const systems::Context<T>& context) const {
-  const auto& q = this->get_positions(context);
-  DRAKE_ASSERT(q.size() == kNq);
-  const T s1 = sin(q[0]);
-  const T c1 = cos(q[0]);
-  const T s2 = sin(q[1]);
-  const T c2 = cos(q[1]);
-  Matrix3<T> R_FM_matrix;
-  R_FM_matrix << c2,     0.0, s2,
-                 s1*s2,  c1,  -s1*c2,
-                 -c1*s2, s1,  c1*c2;
-  const math::RotationMatrix<T> R_FM = math::RotationMatrix<T>(R_FM_matrix);
-  const math::RigidTransform<T> X_FM(R_FM);
-  return X_FM;
 }
 
 template <typename T>
@@ -109,9 +102,17 @@ Eigen::Matrix<T, 3, 2> UniversalMobilizer<T>::CalcHwMatrix(
     // Since only the second column of Hw evolves with time, we only return that
     // column as a vector. The vector is the time derivative of My_F.
     const Vector2<T>& v = this->get_velocities(context);
-    *Hw_dot =  Vector3<T>(0, -s * v[0], c * v[0]);
+    *Hw_dot = Vector3<T>(0, -s * v[0], c * v[0]);
   }
   return H;
+}
+
+template <typename T>
+math::RigidTransform<T> UniversalMobilizer<T>::CalcAcrossMobilizerTransform(
+    const systems::Context<T>& context) const {
+  const auto& q = this->get_positions(context);
+  DRAKE_ASSERT(q.size() == kNq);
+  return calc_X_FM(q.data());
 }
 
 template <typename T>
@@ -119,8 +120,7 @@ SpatialVelocity<T> UniversalMobilizer<T>::CalcAcrossMobilizerSpatialVelocity(
     const systems::Context<T>& context,
     const Eigen::Ref<const VectorX<T>>& v) const {
   DRAKE_ASSERT(v.size() == kNv);
-  const Eigen::Matrix<T, 3, 2> Hw = this->CalcHwMatrix(context);
-  return SpatialVelocity<T>(Hw * v, Vector3<T>::Zero());
+  return calc_V_FM(context, v.data());
 }
 
 template <typename T>
@@ -190,8 +190,9 @@ UniversalMobilizer<T>::TemplatedDoCloneToScalar(
       tree_clone.get_variant(this->inboard_frame());
   const Frame<ToScalar>& outboard_frame_clone =
       tree_clone.get_variant(this->outboard_frame());
-  return std::make_unique<UniversalMobilizer<ToScalar>>(inboard_frame_clone,
-                                                        outboard_frame_clone);
+  return std::make_unique<UniversalMobilizer<ToScalar>>(
+      tree_clone.get_mobod(this->mobod().index()), inboard_frame_clone,
+      outboard_frame_clone);
 }
 
 template <typename T>
@@ -218,4 +219,4 @@ UniversalMobilizer<T>::DoCloneToScalar(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::UniversalMobilizer)
+    class ::drake::multibody::internal::UniversalMobilizer);

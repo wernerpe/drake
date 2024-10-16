@@ -27,6 +27,31 @@ enum class CommonSolverOption {
    * console.
    */
   kPrintToConsole,
+  /** Some of our solver interfaces support writing a standalone (e.g. it does
+   * not depend on Drake) minimal reproduction of the problem to a file. This is
+   * especially useful for sending bug reports upstream to the developers of the
+   * solver. To enable this, use e.g.
+   * SolverOptions::SetOption(kStandaloneReproductionFileName,
+   * "reproduction.txt"). To disable, use
+   * SolverOptions::SetOption(kStandaloneReproductionFileName, ""), where the
+   * empty string "" indicates that no file should be written.
+   */
+  kStandaloneReproductionFileName,
+  /** Many solvers are multi-threaded. The user can request the maximum number
+   * of threads used by the solver with this `int` option. When not set, the
+   * value defaults to Parallelism.Max().num_threads(), which can be controlled
+   * via the \ref drake::Parallelism "DRAKE_NUM_THREADS" environment variable.
+   *
+   * @pre The number of threads must be greater than 0.
+   * @note Setting this value higher than the actual hardware concurrency may
+   * result in a degraded performance. It is recommended to set this value lower
+   * than or equal to Parallelism.Max().num_threads().
+   * @note A solver may choose to use fewer threads than the value specified.
+   * @note This options does NOT disable multi-threading in BLAS/LAPACK which is
+   * used by many solvers under the hood. Therefore, some internal operations of
+   * the solvers may still be multi-core.
+   */
+  kMaxThreads,
 };
 
 std::ostream& operator<<(std::ostream& os,

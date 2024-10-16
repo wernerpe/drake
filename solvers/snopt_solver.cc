@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -40,7 +41,7 @@ namespace {
 // See also http://fortranwiki.org/fortran/show/newunit.
 class FortranUnitFactory {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(FortranUnitFactory)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(FortranUnitFactory);
 
   static FortranUnitFactory& singleton() {
     static drake::never_destroyed<FortranUnitFactory> result;
@@ -226,7 +227,7 @@ namespace {
 // are disabled." Therefore, we use the integer user data (`int iu[]`) instead.
 class SnoptUserFunInfo {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(SnoptUserFunInfo)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(SnoptUserFunInfo);
 
   // Pointers to the parameters ('prog' and 'nonlinear_cost_gradient_indices')
   // are retained internally, so the supplied objects must have lifetimes longer
@@ -321,7 +322,7 @@ class SnoptUserFunInfo {
 // Storage that we pass in and out of SNOPT APIs.
 class WorkspaceStorage {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(WorkspaceStorage)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(WorkspaceStorage);
 
   explicit WorkspaceStorage(const SnoptUserFunInfo* user_info)
       : user_info_(user_info) {
@@ -1360,6 +1361,7 @@ void SolveWithGivenOptions(
   }
   // Actual solve.
   const char problem_name[] = "drake_problem";
+  auto snopt_start = std::chrono::high_resolution_clock::now();
   // clang-format off
   Snopt::snkera(Cold, problem_name, nF, nx, objective_constant, ObjRow,
                 snopt_userfun,
@@ -1378,6 +1380,8 @@ void SolveWithGivenOptions(
                 storage.iw(), storage.leniw(),
                 storage.rw(), storage.lenrw());
   // clang-format on
+  auto snopt_end = std::chrono::high_resolution_clock::now();
+  const std::chrono::duration<double> duration = snopt_end - snopt_start;
   if (user_info.userfun_error_message().has_value()) {
     throw std::runtime_error(*user_info.userfun_error_message());
   }
@@ -1388,6 +1392,7 @@ void SolveWithGivenOptions(
     x_val(member.first) *= member.second;
   }
   solver_details.info = snopt_status;
+  solver_details.solve_time = duration.count();
 
   SetMathematicalProgramResult(
       prog, snopt_status, x_val, bb_con_dual_variable_indices,
@@ -1424,6 +1429,8 @@ void SnoptSolver::DoSolve(const MathematicalProgram& prog,
     int_options[kTimingLevel] = 0;
   }
 
+  // SNOPT does not support setting the number of threads so we ignore
+  // the kMaxNumThreads option.
   SolveWithGivenOptions(prog, initial_guess, merged_options.GetOptionsStr(id()),
                         int_options, merged_options.GetOptionsDouble(id()),
                         merged_options.get_print_file_name(), result);

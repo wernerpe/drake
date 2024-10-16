@@ -23,6 +23,7 @@ namespace internal {
 // for a particular joint object.
 template <typename T>
 class JointImplementationBuilder;
+class MobilizerTester;
 }  // namespace internal
 
 /// A %Joint models the kinematical relationship which characterizes the
@@ -76,7 +77,7 @@ class JointImplementationBuilder;
 template <typename T>
 class Joint : public MultibodyElement<T> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(Joint)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(Joint);
 
   /// Creates a joint between two Frame objects which imposes a given kinematic
   /// relation between frame F attached on the parent body P and frame M
@@ -173,33 +174,37 @@ class Joint : public MultibodyElement<T> {
               pos_upper_limits, vel_lower_limits, vel_upper_limits,
               acc_lower_limits, acc_upper_limits) {}
 
-  virtual ~Joint() {}
+  virtual ~Joint();
 
   /// Returns this element's unique index.
   JointIndex index() const { return this->template index_impl<JointIndex>(); }
+
+  /// Returns this element's unique ordinal. The joint's ordinal is a unique
+  /// index into contiguous containers that have an entry for each Joint, such
+  /// as the vector valued reaction forces (see
+  /// MultibodyPlant::get_reaction_forces_output_port()). The ordinal value will
+  /// be updated (if needed) when joints are removed from the parent plant so
+  /// that the set of ordinal values is a bijection with [0, num_joints()).
+  /// Ordinals are assigned in the order that joints are added to the plant,
+  /// thus a set of joints sorted by ordinal has the same ordering as if it were
+  /// sorted by JointIndex. If joints have been removed from the plant, do *not*
+  /// use index() to access contiguous containers with entries per Joint.
+  int ordinal() const { return this->ordinal_impl(); }
 
   /// Returns the name of this joint.
   const std::string& name() const { return name_; }
 
   /// Returns a const reference to the parent body P.
-  const RigidBody<T>& parent_body() const {
-    return frame_on_parent_.body();
-  }
+  const RigidBody<T>& parent_body() const { return frame_on_parent_.body(); }
 
   /// Returns a const reference to the child body B.
-  const RigidBody<T>& child_body() const {
-    return frame_on_child_.body();
-  }
+  const RigidBody<T>& child_body() const { return frame_on_child_.body(); }
 
   /// Returns a const reference to the frame F attached on the parent body P.
-  const Frame<T>& frame_on_parent() const {
-    return frame_on_parent_;
-  }
+  const Frame<T>& frame_on_parent() const { return frame_on_parent_; }
 
   /// Returns a const reference to the frame M attached on the child body B.
-  const Frame<T>& frame_on_child() const {
-    return frame_on_child_;
-  }
+  const Frame<T>& frame_on_child() const { return frame_on_child_; }
 
   /// Returns a string identifying the type of `this` joint, such as "revolute"
   /// or "prismatic".
@@ -208,9 +213,7 @@ class Joint : public MultibodyElement<T> {
   /// Returns the index to the first generalized velocity for this joint
   /// within the vector v of generalized velocities for the full multibody
   /// system.
-  int velocity_start() const {
-    return do_get_velocity_start();
-  }
+  int velocity_start() const { return do_get_velocity_start(); }
 
   /// Returns the number of generalized velocities describing this joint.
   int num_velocities() const {
@@ -221,9 +224,7 @@ class Joint : public MultibodyElement<T> {
   /// Returns the index to the first generalized position for this joint
   /// within the vector q of generalized positions for the full multibody
   /// system.
-  int position_start() const {
-    return do_get_position_start();
-  }
+  int position_start() const { return do_get_position_start(); }
 
   /// Returns the number of generalized positions describing this joint.
   int num_positions() const {
@@ -309,11 +310,8 @@ class Joint : public MultibodyElement<T> {
   ///   `forces` is `nullptr` or if `forces` doest not have the right sizes to
   ///   accommodate a set of forces for the model to which this joint belongs.
   // NVI to DoAddInOneForce().
-  void AddInOneForce(
-      const systems::Context<T>& context,
-      int joint_dof,
-      const T& joint_tau,
-      MultibodyForces<T>* forces) const {
+  void AddInOneForce(const systems::Context<T>& context, int joint_dof,
+                     const T& joint_tau, MultibodyForces<T>* forces) const {
     DRAKE_DEMAND(forces != nullptr);
     DRAKE_DEMAND(0 <= joint_dof && joint_dof < num_velocities());
     DRAKE_DEMAND(forces->CheckHasRightSizeForModel(this->get_parent_tree()));
@@ -331,8 +329,8 @@ class Joint : public MultibodyElement<T> {
   ///   not have the right sizes to accommodate a set of forces for the model
   ///   to which this joint belongs.
   // NVI to DoAddInOneForce().
-  void AddInDamping(
-      const systems::Context<T>& context, MultibodyForces<T>* forces) const {
+  void AddInDamping(const systems::Context<T>& context,
+                    MultibodyForces<T>* forces) const {
     DRAKE_DEMAND(forces != nullptr);
     DRAKE_DEMAND(forces->CheckHasRightSizeForModel(this->get_parent_tree()));
     DoAddInDamping(context, forces);
@@ -523,9 +521,6 @@ class Joint : public MultibodyElement<T> {
   /// N⋅m⋅s. Refer to each joint's documentation for further details.
   const VectorX<double>& default_damping_vector() const { return damping_; }
 
-  DRAKE_DEPRECATED("2024-06-01", "Use default_damping_vector() instead.")
-  const VectorX<double>& damping_vector() const { return damping_; }
-
   /// Returns the Context dependent damping coefficients stored as parameters in
   /// `context`. Refer to default_damping_vector() for details.
   /// @param[in] context The context storing the state and parameters for the
@@ -580,7 +575,8 @@ class Joint : public MultibodyElement<T> {
 
     std::unique_ptr<typename Joint<ToScalar>::JointImplementation>
         implementation_clone =
-        this->get_implementation().template CloneToScalar<ToScalar>(tree_clone);
+            this->get_implementation().template CloneToScalar<ToScalar>(
+                tree_clone);
     joint_clone->OwnImplementation(std::move(implementation_clone));
 
     return joint_clone;
@@ -624,9 +620,7 @@ class Joint : public MultibodyElement<T> {
     }
 
     /// Returns `true` if the implementation of this Joint uses a Mobilizer.
-    bool has_mobilizer() const {
-      return mobilizer != nullptr;
-    }
+    bool has_mobilizer() const { return mobilizer != nullptr; }
 
     // Hide the following section from Doxygen.
 #ifndef DRAKE_DOXYGEN_CXX
@@ -757,11 +751,9 @@ class Joint : public MultibodyElement<T> {
   /// This method is only called by the public NVI AddInOneForce() and therefore
   /// input arguments were checked to be valid.
   /// @see The public NVI AddInOneForce() for details.
-  virtual void DoAddInOneForce(
-      const systems::Context<T>& context,
-      int joint_dof,
-      const T& joint_tau,
-      MultibodyForces<T>* forces) const = 0;
+  virtual void DoAddInOneForce(const systems::Context<T>& context,
+                               int joint_dof, const T& joint_tau,
+                               MultibodyForces<T>* forces) const = 0;
 
   /// Adds into MultibodyForces the forces due to damping within `this` joint.
   /// How forces are added to a MultibodyTree model depends on the underlying
@@ -769,8 +761,8 @@ class Joint : public MultibodyElement<T> {
   /// constraint) and therefore specific %Joint subclasses must provide a
   /// definition for this method.
   /// The default implementation is a no-op for joints with no damping.
-  virtual void DoAddInDamping(
-      const systems::Context<T>&, MultibodyForces<T>*) const {}
+  virtual void DoAddInDamping(const systems::Context<T>&,
+                              MultibodyForces<T>*) const {}
 
   // Implements MultibodyElement::DoSetTopology(). Joints have no topology
   // though we could require them to have one in the future.
@@ -793,7 +785,8 @@ class Joint : public MultibodyElement<T> {
   /// This method must be implemented by derived classes in order to provide
   /// JointImplementationBuilder a BluePrint of their internal implementation
   /// JointImplementation.
-  virtual std::unique_ptr<BluePrint> MakeImplementationBlueprint() const = 0;
+  virtual std::unique_ptr<BluePrint> MakeImplementationBlueprint(
+      const internal::SpanningForest::Mobod& mobod) const = 0;
 
   /// Returns a const reference to the internal implementation of `this` joint.
   /// @warning The MultibodyTree model must have already been finalized, or
@@ -808,6 +801,18 @@ class Joint : public MultibodyElement<T> {
   /// Returns whether `this` joint owns a particular implementation.
   /// If the MultibodyTree has been finalized, this will return true.
   bool has_implementation() const { return implementation_ != nullptr; }
+
+ protected:
+  /// Utility for concrete joint implementations to use to select the
+  /// inboard/outboard frames for a tree in the spanning forest, given
+  /// whether they should be reversed from the parent/child frames that are
+  /// members of this Joint object.
+  std::pair<const Frame<T>*, const Frame<T>*> tree_frames(
+      bool use_reversed_mobilizer) const {
+    return use_reversed_mobilizer
+               ? std::make_pair(&frame_on_child(), &frame_on_parent())
+               : std::make_pair(&frame_on_parent(), &frame_on_child());
+  }
 
  private:
   // Make all other Joint<U> objects a friend of Joint<T> so they can make

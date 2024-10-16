@@ -412,9 +412,17 @@ std::string MaybeWriteCsdpParams(const SolverOptions& options) {
   if (options.get_print_to_console()) {
     all_csdp_params += "printlevel=1\n";
   }
+  // CSDP does not support setting the number of threads so we ignore
+  // the kMaxNumThreads option.
 
-  // TODO(jwnimmer-tri) We could pass through the other named options here,
-  // if we wanted to.
+  // Add the specific options next (so they trump the common options).
+  for (const auto& [key, value] : options.GetOptionsInt(CsdpSolver::id())) {
+    all_csdp_params += fmt::format("{}={}\n", key, value);
+  }
+  for (const auto& [key, value] : options.GetOptionsDouble(CsdpSolver::id())) {
+    all_csdp_params += fmt::format("{}={}\n", key, value);
+  }
+  // TODO(jwnimmer-tri) Throw an error if there were any string options set.
 
   if (all_csdp_params.empty()) {
     // No need to write a temporary file.

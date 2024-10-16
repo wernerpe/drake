@@ -13,6 +13,12 @@ std::ostream& operator<<(std::ostream& os,
     case CommonSolverOption::kPrintToConsole:
       os << "kPrintToConsole";
       return os;
+    case CommonSolverOption::kStandaloneReproductionFileName:
+      os << "kStandaloneReproductionFileName";
+      return os;
+    case CommonSolverOption::kMaxThreads:
+      os << "kMaxThreads";
+      return os;
     default:
       DRAKE_UNREACHABLE();
   }

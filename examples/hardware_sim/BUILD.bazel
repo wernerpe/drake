@@ -20,6 +20,7 @@ filegroup(
         "//examples/pendulum:models",
         "@drake_models//:iiwa_description",
         "@drake_models//:manipulation_station",
+        "@drake_models//:veggies",
         "@drake_models//:wsg_50_description",
     ],
     visibility = ["//:__pkg__"],
@@ -29,19 +30,19 @@ drake_cc_library(
     name = "scenario",
     srcs = ["scenario.cc"],
     hdrs = ["scenario.h"],
-    interface_deps = [
+    deps = [
         "//common:name_value",
         "//lcm:drake_lcm_params",
         "//manipulation/kuka_iiwa:iiwa_driver",
         "//manipulation/schunk_wsg:schunk_wsg_driver",
         "//manipulation/util:zero_force_driver",
-        "//multibody/plant:multibody_plant_config",
         "//multibody/parsing:model_directives",
+        "//multibody/plant:multibody_plant_config",
         "//systems/analysis:simulator_config",
         "//systems/sensors:camera_config",
         "//visualization:visualization_config",
     ],
-    deps = [
+    implementation_deps = [
         "//common/yaml",
     ],
 )

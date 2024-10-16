@@ -1,12 +1,15 @@
 #include "drake/solvers/clarabel_solver.h"
 
+#include <fstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <Clarabel>
 #include <Eigen/Eigen>
+#include <fmt/ranges.h>
 
+#include "drake/common/fmt_eigen.h"
 #include "drake/common/name_value.h"
 #include "drake/common/ssize.h"
 #include "drake/common/text_logging.h"
@@ -157,6 +160,9 @@ class SettingsConverter {
     settings_.verbose = solver_options.get_print_to_console();
     // TODO(jwnimmer-tri) Handle get_print_file_name().
 
+    // Clarabel does not support setting the number of threads so we ignore
+    // the kMaxNumThreads option.
+
     // Copy the Clarabel-specific `solver_options` to pending maps.
     pending_options_double_ =
         solver_options.GetOptionsDouble(ClarabelSolver::id());
@@ -208,11 +214,6 @@ class SettingsConverter {
       DRAKE_THROW_UNLESS(option_value >= 0);
     }
     this->SetFromIntMap(x.name(), x.value());
-  }
-  void Visit(const NameValue<clarabel::ClarabelDirectSolveMethods>& x) {
-    DRAKE_THROW_UNLESS(x.name() == std::string{"direct_solve_method"});
-    // TODO(jwnimmer-tri) Add support for this option.
-    // For now it is unsupported and will throw (as an unknown name, below).
   }
 
  private:
@@ -286,6 +287,111 @@ void SetBoundingBoxDualSolution(
     }
     result->set_dual_solution(prog.bounding_box_constraints()[i], bbcon_dual);
   }
+}
+
+void WriteClarabelReproduction(
+    std::string filename, const Eigen::SparseMatrix<double>& P,
+    const Eigen::Map<Eigen::VectorXd>& q_vec,
+    const Eigen::SparseMatrix<double>& A,
+    const Eigen::Map<Eigen::VectorXd>& b_vec,
+    const std::vector<clarabel::SupportedConeT<double>>& cones) {
+  std::ofstream out_file(filename);
+  if (!out_file.is_open()) {
+    log()->error(
+        "Failed to open kStandaloneReproductionFileName {} for writing; no "
+        "reproduction will be generated.");
+    return;
+  }
+
+  auto write_csc = [&](const Eigen::SparseMatrix<double>& mat,
+                       const std::string& name) {
+    if (mat.nonZeros() == 0) {
+      out_file << fmt::format("{} = sparse.csc_matrix(({}, {}))", name,
+                              P.rows(), P.cols())
+               << std::endl;
+      return;
+    }
+    std::vector<double> data;
+    std::vector<int> rows;
+    std::vector<int> cols;
+    data.reserve(mat.nonZeros());
+    rows.reserve(mat.nonZeros());
+    cols.reserve(mat.nonZeros());
+    for (int k = 0; k < mat.outerSize(); ++k) {
+      for (Eigen::SparseMatrix<double>::InnerIterator it(mat, k); it; ++it) {
+        data.push_back(it.value());
+        rows.push_back(it.row());
+        cols.push_back(it.col());
+      }
+    }
+    out_file << fmt::format(R"""(
+data = [{}]
+rows = [{}]
+cols = [{}]
+{} = sparse.csc_matrix((data, (rows, cols)))
+)""",
+                            fmt::join(data, ", "), fmt::join(rows, ", "),
+                            fmt::join(cols, ", "), name);
+  };
+
+  out_file << fmt::format(
+      R"""(
+import clarabel
+import numpy as np
+from scipy import sparse
+
+q = [{}]
+b = [{}]
+)""",
+      fmt::join(q_vec.data(), q_vec.data() + q_vec.size(), ", "),
+      fmt::join(b_vec.data(), b_vec.data() + b_vec.size(), ", "));
+  write_csc(P, "P");
+  write_csc(A, "A");
+  out_file << "cones = [" << std::endl;
+
+  for (const clarabel::SupportedConeT<double>& cone : cones) {
+    switch (cone.tag) {
+      case clarabel::SupportedConeT<double>::Tag::ZeroConeT:
+        out_file << "  clarabel.ZeroConeT(" << cone.nvars() << "),"
+                 << std::endl;
+        break;
+      case clarabel::SupportedConeT<double>::Tag::NonnegativeConeT:
+        out_file << "  clarabel.NonnegativeConeT(" << cone.nvars() << "),"
+                 << std::endl;
+        break;
+      case clarabel::SupportedConeT<double>::Tag::SecondOrderConeT:
+        out_file << "  clarabel.SecondOrderConeT(" << cone.nvars() << "),"
+                 << std::endl;
+        break;
+      case clarabel::SupportedConeT<double>::Tag::PSDTriangleConeT:
+        {
+          const clarabel::PSDTriangleConeT<double>* psd_cone =
+              static_cast<const clarabel::PSDTriangleConeT<double>*>(&cone);
+          out_file << "  clarabel.PSDTriangleConeT(" << psd_cone->dimension()
+                  << ")," << std::endl;
+        }
+        break;
+      case clarabel::SupportedConeT<double>::Tag::ExponentialConeT:
+        out_file << "  clarabel.ExponentialConeT()," << std::endl;
+        break;
+      default:
+        log()->error(
+            "WriteClarabelReproduction: Found unsupported cone type; "
+            "reproduction will likely be invalid.");
+    }
+  }
+
+  // TODO(russt): write solver options.
+  out_file << R"""(]
+
+settings = clarabel.DefaultSettings()
+solver = clarabel.DefaultSolver(P, q, A, b, cones, settings)
+solver.solve()
+)""";
+
+  log()->info("Clarabel reproduction successfully written to {}.", filename);
+
+  out_file.close();
 }
 
 }  // namespace
@@ -385,8 +491,10 @@ void ClarabelSolver::DoSolve(const MathematicalProgram& prog,
   internal::ParseLinearEqualityConstraints(
       prog, &A_triplets, &b, &A_row_count, &linear_eq_y_start_indices,
       &num_linear_equality_constraints_rows);
-  cones.push_back(
-      clarabel::ZeroConeT<double>(num_linear_equality_constraints_rows));
+  if (num_linear_equality_constraints_rows > 0) {
+    cones.push_back(
+        clarabel::ZeroConeT<double>(num_linear_equality_constraints_rows));
+  }
 
   // Parse bounding box constraints.
   // bbcon_dual_indices[i][j][0] (resp. bbcon_dual_indices[i][j][1]) is the dual
@@ -409,8 +517,10 @@ void ClarabelSolver::DoSolve(const MathematicalProgram& prog,
   internal::ParseLinearConstraints(prog, &A_triplets, &b, &A_row_count,
                                    &linear_constraint_dual_indices,
                                    &num_linear_constraint_rows);
-  cones.push_back(
-      clarabel::NonnegativeConeT<double>(num_linear_constraint_rows));
+  if (num_linear_constraint_rows > 0) {
+    cones.push_back(
+        clarabel::NonnegativeConeT<double>(num_linear_constraint_rows));
+  }
 
   // Parse Lorentz cone and rotated Lorentz cone constraint
   std::vector<int> second_order_cone_length;
@@ -450,6 +560,11 @@ void ClarabelSolver::DoSolve(const MathematicalProgram& prog,
   const SettingsConverter settings_converter(merged_options);
   clarabel::DefaultSettings<double> settings = settings_converter.settings();
 
+  std::string repro_file_name =
+      merged_options.get_standalone_reproduction_file_name();
+  if (!repro_file_name.empty()) {
+    WriteClarabelReproduction(repro_file_name, P, q_vec, A, b_vec, cones);
+  }
   clarabel::DefaultSolver<double> solver(P, q_vec, A, b_vec, cones, settings);
 
   solver.solve();

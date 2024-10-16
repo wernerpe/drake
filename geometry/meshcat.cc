@@ -20,6 +20,7 @@
 #include <App.h>
 #include <common_robotics_utilities/base64_helpers.hpp>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <msgpack.hpp>
 
 #include "drake/common/drake_export.h"
@@ -35,6 +36,7 @@
 #include "drake/geometry/meshcat_recording_internal.h"
 #include "drake/geometry/meshcat_types_internal.h"
 #include "drake/geometry/proximity/polygon_to_triangle_mesh.h"
+#include "drake/systems/analysis/realtime_rate_calculator.h"
 
 #ifdef BOOST_VERSION
 #error Drake should be using the non-boost flavor of msgpack.
@@ -120,7 +122,7 @@ class SceneTreeElement {
     /* If the message refers to http assets (e.g., image files), then this list
     is responsible for keeping alive a non-zero reference count for those
     file(s) in our in-memory storage. */
-    std::vector<std::shared_ptr<const FileStorage::Handle>> assets;
+    std::vector<std::shared_ptr<const MemoryFile>> assets;
   };
 
   // Provide direct access to all member fields except the list of children.
@@ -318,7 +320,7 @@ class MeshcatShapeReifier : public ShapeReifier {
   // to ImplementGeometry() should always be passed as this type.
   struct Output {
     internal::LumpedObjectData& lumped;
-    std::vector<std::shared_ptr<const FileStorage::Handle>>& assets;
+    std::vector<std::shared_ptr<const MemoryFile>>& assets;
   };
 
   using ShapeReifier::ImplementGeometry;
@@ -351,6 +353,7 @@ class MeshcatShapeReifier : public ShapeReifier {
     // TODO(russt): Make this mtllib parsing more robust (right now commented
     // mtllib lines will match, too, etc).
     size_t mtllib_pos;
+    bool use_meshfile_geometry = false;
     if (format == "obj" &&
         (mtllib_pos = mesh_data.find("mtllib ")) != std::string::npos) {
       mtllib_pos += 7;  // Advance to after the actual "mtllib " string.
@@ -423,6 +426,14 @@ class MeshcatShapeReifier : public ShapeReifier {
             "Meshcat: Failed to load texture. {} references {}, but Meshcat "
             "could not open filename \"{}\"",
             filename, mtllib, (basedir / mtllib).string());
+
+        // If we can't load the mtl file, we'll just send the obj file as if it
+        // did not specify the mtl. MuJoCo often ships obj files that reference
+        // missing mtl files (see #20444).
+        use_meshfile_geometry = true;
+        // Move the data back.
+        format = std::move(meshfile_object.format);
+        mesh_data = std::move(meshfile_object.data);
       }
     } else if (format == "gltf") {
       output.assets =
@@ -437,7 +448,10 @@ class MeshcatShapeReifier : public ShapeReifier {
       // mesh file *geometry* instead of mesh file *object*. This will most
       // typically be a Collada .dae file, an .stl, or simply an .obj that
       // doesn't reference an .mtl.
+      use_meshfile_geometry = true;
+    }
 
+    if (use_meshfile_geometry) {
       // TODO(SeanCurtis-TRI): This doesn't work for STL even though meshcat
       // supports STL. Meshcat treats STL differently from obj or dae.
       // https://github.com/meshcat-dev/meshcat/blob/4b4f8ffbaa5f609352ea6227bd5ae8207b579c70/src/index.js#L130-L146.
@@ -685,7 +699,8 @@ class Meshcat::Impl {
   explicit Impl(const MeshcatParams& params)
       : prefix_("/drake"),
         main_thread_id_(std::this_thread::get_id()),
-        params_(params) {
+        params_(params),
+        rate_calculator_(params_.realtime_rate_period) {
     DRAKE_THROW_UNLESS(!params.port.has_value() || *params.port == 0 ||
                        *params.port >= 1024);
     if (!drake::internal::IsNetworkingAllowed("meshcat")) {
@@ -782,6 +797,33 @@ class Meshcat::Impl {
   int port() const {
     DRAKE_DEMAND(IsThread(main_thread_id_));
     return port_;
+  }
+
+  // This function is public via the PIMPL.
+  void SetSimulationTime(double sim_time) {
+    DRAKE_DEMAND(IsThread(main_thread_id_));
+    sim_time_ = sim_time;
+    const auto report = rate_calculator_.UpdateAndRecalculate(sim_time);
+    if (report.initialized) {
+      // We won't broadcast it, but we do return to the initialized state.
+      realtime_rate_ = 0.0;
+      return;
+    }
+    // This last invocation may have spanned zero or more report periods;
+    // dispatch one realtime rate message for each period.
+    for (int i = 0; i < report.period_count; ++i) {
+      // Note: report.rate may be infinity. The javascript chart will draw a
+      // saturated column for that rate value (which will eventually be pushed
+      // off the screen) -- but the record of the (smallest, largest) values in
+      // the chart will persist in showing infinity, even when the column is no
+      // longer visible.
+      SetRealtimeRate(report.rate);
+    }
+  }
+
+  double GetSimulationTime() const {
+    DRAKE_DEMAND(IsThread(main_thread_id_));
+    return sim_time_;
   }
 
   // This function is public via the PIMPL.
@@ -883,7 +925,7 @@ class Meshcat::Impl {
     // (which could be from the cloud to a local browser) more than necessary.
 
     MeshcatShapeReifier reifier(&uuid_generator_, &file_storage_, rgba);
-    std::vector<std::shared_ptr<const FileStorage::Handle>> assets;
+    std::vector<std::shared_ptr<const MemoryFile>> assets;
     MeshcatShapeReifier::Output reifier_output{.lumped = data.object,
                                                .assets = assets};
     shape.Reify(&reifier, &reifier_output);
@@ -1249,8 +1291,8 @@ class Meshcat::Impl {
           "Cannot open '{}' when attempting to set property '{}' on '{}'",
           file_path.string(), property, path));
     }
-    std::shared_ptr<const FileStorage::Handle> asset =
-        file_storage_.Insert(std::move(*content), file_path.string());
+    std::shared_ptr<const MemoryFile> asset = file_storage_.Insert(
+        std::move(*content), file_path.string());
 
     internal::SetPropertyData<std::string> data;
     data.path = FullPath(path);
@@ -1707,17 +1749,17 @@ class Meshcat::Impl {
     // Insert a JavaScript URL hook that knows how to serve the CAS database.
     // (See FileStorage and GetCasUrl for details about CAS.)
     std::string javascript("casAssets = {};\n");
-    std::vector<std::shared_ptr<const FileStorage::Handle>> assets =
+    std::vector<std::shared_ptr<const MemoryFile>> assets =
         file_storage_.DumpEverything();
     for (const auto& asset : assets) {
-      javascript += fmt::format("// {}\n", asset->filename_hint);
+      javascript += fmt::format("// {}\n", asset->filename_hint());
       javascript += fmt::format(
           "casAssets[\"{}\"] = "
           "\"data:application/octet-binary;base64,{}\";\n",
           FileStorage::GetCasUrl(*asset),
           common_robotics_utilities::base64_helpers::Encode(
-              std::vector<uint8_t>(asset->content.begin(),
-                                   asset->content.end())));
+              std::vector<uint8_t>(asset->contents().begin(),
+                                   asset->contents().end())));
     }
     javascript += R"""(
         MeshCat.THREE.DefaultLoadingManager.setURLModifier(url => {
@@ -1873,6 +1915,11 @@ class Meshcat::Impl {
         static_assert(kMaxFaultNumber == 3);
     }
     DRAKE_UNREACHABLE();
+  }
+
+  void InjectMockTimer(std::unique_ptr<Timer> timer) {
+    DRAKE_DEMAND(IsThread(main_thread_id_));
+    rate_calculator_.InjectMockTimer(std::move(timer));
   }
 
  private:
@@ -2094,8 +2141,7 @@ class Meshcat::Impl {
         response->end("");
         return;
       }
-      std::shared_ptr<const FileStorage::Handle> handle =
-          file_storage_.Find(*key);
+      std::shared_ptr<const MemoryFile> handle = file_storage_.Find(*key);
       if (handle == nullptr) {
         drake::log()->warn(
             "Meshcat: Unknown CAS key {} (there are {} assets in the cache)",
@@ -2105,11 +2151,11 @@ class Meshcat::Impl {
         response->end("");
         return;
       }
-      response->writeHeader("Meshcat-Cas-Filename", handle->filename_hint);
+      response->writeHeader("Meshcat-Cas-Filename", handle->filename_hint());
       // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control#immutable
       response->writeHeader("Cache-Control",
                             "public, max-age=604800, immutable");
-      response->end(handle->content);
+      response->end(handle->contents());
       return;
     }
     // Handle static (i.e., compiled-in) files.
@@ -2281,6 +2327,8 @@ class Meshcat::Impl {
   const MeshcatParams params_;
   int port_{};
   internal::UuidGenerator uuid_generator_{};
+  double sim_time_{};
+  systems::internal::RealtimeRateCalculator rate_calculator_;
   double realtime_rate_{0.0};
   bool is_orthographic_{false};
 
@@ -2568,6 +2616,14 @@ void Meshcat::Delete(std::string_view path) {
   impl().Delete(path);
 }
 
+void Meshcat::SetSimulationTime(double sim_time) {
+  impl().SetSimulationTime(sim_time);
+}
+
+double Meshcat::GetSimulationTime() const {
+  return impl().GetSimulationTime();
+}
+
 void Meshcat::SetRealtimeRate(double rate) {
   impl().SetRealtimeRate(rate);
 }
@@ -2737,6 +2793,10 @@ void Meshcat::InjectWebsocketMessage(std::string_view message) {
 
 void Meshcat::InjectWebsocketThreadFault(int fault_number) {
   impl().InjectWebsocketThreadFault(fault_number);
+}
+
+void Meshcat::InjectMockTimer(std::unique_ptr<Timer> timer) {
+  impl().InjectMockTimer(std::move(timer));
 }
 
 }  // namespace geometry

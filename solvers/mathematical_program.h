@@ -197,6 +197,13 @@ class MathematicalProgram {
    */
   [[nodiscard]] std::string to_string() const;
 
+  /**
+   * Returns whether it is safe to solve this mathematical program concurrently.
+   * A mathematical program is safe to solve concurrently if all of its cost,
+   * constraints, and visualization callbacks are marked as thread safe.
+   */
+  bool IsThreadSafe() const;
+
   /** Returns a string representation of this program in LaTeX.
    *
    * This can be particularly useful e.g. in a Jupyter (python) notebook:
@@ -1178,6 +1185,18 @@ class MathematicalProgram {
     return AddL2NormCost(A, b, ConcatenateVariableRefList(vars));
   }
 
+  /**
+   * Adds an L2 norm cost |Ax+b|₂ from a symbolic expression which can be
+   * decomposed into sqrt((Ax+b)'(Ax+b)). See
+   * symbolic::DecomposeL2NormExpression for details on the tolerance
+   * parameters.
+   * @throws std::exception if @p e cannot be decomposed into an L2 norm.
+   * @pydrake_mkdoc_identifier{expression}
+   */
+  Binding<L2NormCost> AddL2NormCost(const symbolic::Expression& e,
+                                    double psd_tol = 1e-8,
+                                    double coefficient_tol = 1e-8);
+
   // TODO(hongkai.dai) Decide whether to deprecate this.
   /**
    * Adds an L2 norm cost min |Ax+b|₂ as a linear cost min s
@@ -2073,6 +2092,27 @@ class MathematicalProgram {
    */
   Binding<LorentzConeConstraint> AddConstraint(
       const Binding<LorentzConeConstraint>& binding);
+
+  /**
+   * Adds a Lorentz cone constraint of the form Ax+b >= |Cx+d|₂ from a symbolic
+   * formula with one side which can be decomposed into sqrt((Cx+d)'(Cx+d)).
+   *
+   * @param eval_type The evaluation type when evaluating the lorentz cone
+   * constraint in generic optimization. Refer to
+   * LorentzConeConstraint::EvalType for more details.
+   *
+   * See symbolic::DecomposeL2NormExpression for details on the tolerance
+   * parameters, @p psd_tol and @p coefficient_tol. Consider using the overload
+   * which takes a vector of expressions to avoid the numerical decomposition.
+   *
+   * @throws std::exception if @p f cannot be decomposed into a Lorentz cone.
+   * @pydrake_mkdoc_identifier{formula}
+   */
+  Binding<LorentzConeConstraint> AddLorentzConeConstraint(
+      const symbolic::Formula& f,
+      LorentzConeConstraint::EvalType eval_type =
+          LorentzConeConstraint::EvalType::kConvexSmooth, double psd_tol = 1e-8,
+                                    double coefficient_tol = 1e-8);
 
   /**
    * Adds Lorentz cone constraint referencing potentially a subset of the

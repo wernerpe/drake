@@ -22,9 +22,9 @@ class VPolytope;
 By convention, we treat a zero-dimensional HPolyhedron as nonempty.
 
 @ingroup geometry_optimization */
-class HPolyhedron final : public ConvexSet, private ShapeReifier {
+class HPolyhedron final : public ConvexSet {
  public:
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(HPolyhedron)
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(HPolyhedron);
 
   /** Constructs a default (zero-dimensional, nonempty) polyhedron. */
   HPolyhedron();
@@ -267,16 +267,32 @@ class HPolyhedron final : public ConvexSet, private ShapeReifier {
   point. The distribution of samples will converge to the true uniform
   distribution at a geometric rate in the total number of hit-and-run steps
   which is `mixing_steps` * the number of times this function is called.
+  If a `subspace` is provided, the random samples are constrained to lie in the
+  affine subspace through `previous_sample`, spanned by the columns of
+  `subspace`. To obtain uniform samples, subspace should have orthonormal,
+  columns. This enables drawing uniform samples from an HPolyhedron which is not
+  full-dimensional -- one can pass the basis of the affine hull of the
+  HPolyhedron, which can be computed with the AffineSubspace class. `tol` is a
+  numerical tolerance for checking if any halfspaces in the given HPolyhedron
+  are implied by the `subspace` definition (and therefore can be ignored by the
+  hit-and-run sampler).
+  @pre subspace.rows() == ambient_dimension().
   @throws std::exception if previous_sample is not in the set. */
   Eigen::VectorXd UniformSample(
       RandomGenerator* generator,
       const Eigen::Ref<const Eigen::VectorXd>& previous_sample,
-      int mixing_steps = 10) const;
+      int mixing_steps = 10,
+      const std::optional<Eigen::Ref<const Eigen::MatrixXd>>& subspace =
+          std::nullopt,
+      double tol = 1e-8) const;
 
   /** Variant of UniformSample that uses the ChebyshevCenter() as the
   previous_sample as a feasible point to start the Markov chain sampling. */
-  Eigen::VectorXd UniformSample(RandomGenerator* generator,
-                                int mixing_steps = 10) const;
+  Eigen::VectorXd UniformSample(
+      RandomGenerator* generator, int mixing_steps = 10,
+      const std::optional<Eigen::Ref<const Eigen::MatrixXd>>& subspace =
+          std::nullopt,
+      double tol = 1e-8) const;
 
   /** Constructs a polyhedron as an axis-aligned box from the lower and upper
   corners. */
@@ -358,13 +374,6 @@ class HPolyhedron final : public ConvexSet, private ShapeReifier {
   // using the AH polytope representation to project it to 3D."
   std::pair<std::unique_ptr<Shape>, math::RigidTransformd> DoToShapeWithPose()
       const final;
-
-  // Implement support shapes for the ShapeReifier interface.
-  using ShapeReifier::ImplementGeometry;
-  void ImplementGeometry(const Box& box, void* data) final;
-  void ImplementGeometry(const HalfSpace&, void* data) final;
-  // TODO(russt): Support ImplementGeometry(const Convex& convex, ...);
-  // it is already supported by VPolytope.
 
   void CheckInvariants() const;
 

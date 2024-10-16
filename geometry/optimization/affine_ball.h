@@ -31,7 +31,7 @@ the zero-dimensional case.
 @ingroup geometry_optimization */
 class AffineBall final : public ConvexSet {
  public:
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(AffineBall)
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(AffineBall);
 
   /** Constructs a default (zero-dimensional, nonempty) set. */
   AffineBall();
@@ -162,6 +162,9 @@ class AffineBall final : public ConvexSet {
 
   std::pair<std::unique_ptr<Shape>, math::RigidTransformd> DoToShapeWithPose()
       const final;
+
+  std::unique_ptr<ConvexSet> DoAffineHullShortcut(
+      std::optional<double> tol) const final;
 
   void CheckInvariants() const;
 

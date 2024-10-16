@@ -67,6 +67,8 @@ drake_cc_library(
         "composite_trajectory.h",
     ],
     deps = [
+        ":path_parameterized_trajectory",
+        ":piecewise_polynomial",
         ":piecewise_trajectory",
     ],
 )
@@ -117,6 +119,7 @@ drake_cc_library(
         "exponential_plus_piecewise_polynomial.h",
         "piecewise_polynomial.h",
     ],
+    compile_once_per_scalar = True,
     deps = [
         ":piecewise_trajectory",
         "//common:default_scalars",

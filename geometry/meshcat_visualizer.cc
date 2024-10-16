@@ -145,11 +145,7 @@ systems::EventStatus MeshcatVisualizer<T>::UpdateMeshcat(
       SetAlphas(/* initializing = */ false);
     }
   }
-  std::optional<double> rate = realtime_rate_calculator_.UpdateAndRecalculate(
-      ExtractDoubleOrThrow(context.get_time()));
-  if (rate) {
-    meshcat_->SetRealtimeRate(rate.value());
-  }
+  meshcat_->SetSimulationTime(ExtractDoubleOrThrow(context.get_time()));
 
   return systems::EventStatus::Succeeded();
 }
@@ -318,4 +314,4 @@ MeshcatVisualizer<T>::DoGetGraphvizFragment(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_NONSYMBOLIC_SCALARS(
-    class ::drake::geometry::MeshcatVisualizer)
+    class ::drake::geometry::MeshcatVisualizer);
