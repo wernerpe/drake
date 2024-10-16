@@ -15,25 +15,13 @@
 #include "drake/multibody/parsing/parser.h"
 #include "drake/planning/iris/hpolyhedron_point_sampler.h"
 #include "drake/planning/iris/iris_from_clique_cover_options.h"
+#include "drake/planning/iris/test/clique_cover_test_utils.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/systems/framework/diagram_builder.h"
 namespace drake {
 namespace planning {
 namespace iris {
-
-// Draw a two dimensional polytope in meshcat.
-void Draw2dVPolytope(const geometry::optimization::VPolytope& polytope,
-                     const std::string& meshcat_name,
-                     const Eigen::Ref<const Eigen::Vector3d>& color,
-                     std::shared_ptr<geometry::Meshcat> meshcat);
-// Draws two dimensinoal points to meshcat as spheres.
-void Draw2dPointsToMeshcat(const Eigen::Ref<const Eigen::Matrix2Xd>& points,
-                           std::shared_ptr<geometry::Meshcat> meshcat,
-                           std::string meshcat_name = "points_",
-                           double sphere_size = 0.1,
-                           geometry::Rgba rgba = geometry::Rgba(0.1, 0.1, 0.1,
-                                                                1.0));
 
 const char boxes_in_corners[] = R"""(
 <robot name="boxes">
@@ -182,8 +170,8 @@ class BoxInCornerTestFixture : public ::testing::Test {
           geometry::optimization::VPolytope(
               manual_decomposition.at(i).MakeHPolyhedron())
               .GetMinimalRepresentation();
-      Draw2dVPolytope(vregion, fmt::format("manual_decomposition_{}", i), color,
-                      meshcat);
+      internal::Draw2dVPolytope(
+          vregion, fmt::format("manual_decomposition_{}", i), color, meshcat);
     }
   }
 

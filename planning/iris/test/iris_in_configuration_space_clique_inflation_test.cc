@@ -6,6 +6,7 @@
 #include "drake/common/test_utilities/maybe_pause_for_user.h"
 #include "drake/geometry/optimization/iris.h"
 #include "drake/planning/iris/test/box_in_corner_test_fixture.h"
+#include "drake/planning/iris/test/clique_cover_test_utils.h"
 
 namespace drake {
 namespace planning {
@@ -15,42 +16,6 @@ using common::MaybePauseForUser;
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::VPolytope;
 
-/**
- * Sample num_samples_in_test//2 points in region1 and num_samples_in_test//2 in
- * region2 and count the number in both regions. Returns true if number in both
- * regions / num_samples is more than threshold.
- * @param region1
- * @param region2
- * @param num_samples_in_test
- * @param threshold
- * @return
- */
-bool RegionsAreApproximatelyTheSame(const HPolyhedron& region1,
-                                    const HPolyhedron& region2,
-                                    int num_samples_in_test, double threshold,
-                                    RandomGenerator* generator,
-                                    int mixing_steps = 20) {
-  DRAKE_THROW_UNLESS(region1.ambient_dimension() ==
-                     region2.ambient_dimension());
-  int num_samples = num_samples_in_test / 2;
-  Eigen::VectorXd last_point = region1.ChebyshevCenter();
-  int num_in_both = 0;
-  for (int i = 0; i < num_samples_in_test / 2; i++) {
-    last_point = region1.UniformSample(generator, last_point, mixing_steps);
-    if (region2.PointInSet(last_point)) {
-      ++num_in_both;
-    }
-  }
-  last_point = region2.ChebyshevCenter();
-  for (int i = num_samples_in_test / 2; i < num_samples_in_test; i++) {
-    last_point = region2.UniformSample(generator, last_point, mixing_steps);
-    if (region1.PointInSet(last_point)) {
-      ++num_in_both;
-    }
-  }
-  return num_in_both / static_cast<double>(num_samples) > threshold;
-}
-
 TEST_F(BoxInCornerTestFixture, IrisInConfigurationSpaceCliqueInflationTest) {
   Eigen::MatrixXd points{2, 4};
   double x = 1;
@@ -59,14 +24,14 @@ TEST_F(BoxInCornerTestFixture, IrisInConfigurationSpaceCliqueInflationTest) {
   points << x,  x, -x, -x,
             y, -y,  y, -y;
   // clang-format on
-  Draw2dPointsToMeshcat(points, meshcat, "region_1_points_");
+  internal::Draw2dPointsToMeshcat(points, meshcat, "region_1_points_");
   IrisInConfigurationSpaceCliqueInflation set_builder{
       *checker, options.iris_options, 1e-6};
 
   HPolyhedron region0 = set_builder.BuildRegion(points);
-  Draw2dVPolytope(VPolytope(region0).GetMinimalRepresentation(), "region0",
-                  Eigen::Vector3d{0, 1, 0}, meshcat);
-  EXPECT_TRUE(RegionsAreApproximatelyTheSame(
+  internal::Draw2dVPolytope(VPolytope(region0).GetMinimalRepresentation(),
+                            "region0", Eigen::Vector3d{0, 1, 0}, meshcat);
+  EXPECT_TRUE(internal::RegionsAreApproximatelyTheSame(
       region0, manual_decomposition[5].MakeHPolyhedron(), 100, 0.9,
       &generator));
 
@@ -74,11 +39,11 @@ TEST_F(BoxInCornerTestFixture, IrisInConfigurationSpaceCliqueInflationTest) {
   points << y, -y,  y, -y,
             x,  x, -x, -x;
   // clang-format on
-  Draw2dPointsToMeshcat(points, meshcat, "region_2_points_");
+  internal::Draw2dPointsToMeshcat(points, meshcat, "region_2_points_");
   HPolyhedron region1 = set_builder.BuildRegion(points);
-  Draw2dVPolytope(VPolytope(region1).GetMinimalRepresentation(), "region1",
-                  Eigen::Vector3d{0, 1, 0}, meshcat);
-  EXPECT_TRUE(RegionsAreApproximatelyTheSame(
+  internal::Draw2dVPolytope(VPolytope(region1).GetMinimalRepresentation(),
+                            "region1", Eigen::Vector3d{0, 1, 0}, meshcat);
+  EXPECT_TRUE(internal::RegionsAreApproximatelyTheSame(
       region1, manual_decomposition[4].MakeHPolyhedron(), 100, 0.9,
       &generator));
 

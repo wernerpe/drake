@@ -15,6 +15,7 @@
 #include "drake/planning/iris/hpolyhedron_point_sampler.h"
 #include "drake/planning/iris/iris_from_clique_cover_v2.h"
 #include "drake/planning/iris/test/box_in_corner_test_fixture.h"
+#include "drake/planning/iris/test/clique_cover_test_utils.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/solvers/gurobi_solver.h"
@@ -60,8 +61,9 @@ TEST_F(BoxInCornerTestFixture,
     }
     color.normalize();
     VPolytope vregion = VPolytope(sets.at(i)).GetMinimalRepresentation();
-    Draw2dVPolytope(vregion, fmt::format("iris_from_clique_cover_greedy{}", i),
-                    color, meshcat);
+    internal::Draw2dVPolytope(vregion,
+                              fmt::format("iris_from_clique_cover_greedy{}", i),
+                              color, meshcat);
   }
 
   // Now check the coverage by drawing points from the manual decomposition and
