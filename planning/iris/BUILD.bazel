@@ -14,6 +14,7 @@ drake_cc_package_library(
     visibility = ["//visibility:public"],
     deps = [
         ":adjacency_matrix_builder_base",
+        ":barycentric_vpolytope_sampler",
         ":fast_clique_inflation",
         ":fast_clique_inflation_builder",
         ":hpolyhedron_point_sampler",
@@ -139,6 +140,19 @@ drake_cc_library(
     deps = [
         ":point_sampler_base",
         "//geometry/optimization:convex_set",
+    ],
+)
+
+drake_cc_library(
+    name = "barycentric_vpolytope_sampler",
+    srcs = ["barycentric_vpolytope_sampler.cc"],
+    hdrs = ["barycentric_vpolytope_sampler.h"],
+    deps = [
+        ":point_sampler_base",
+        "//geometry/optimization:convex_set",
+    ],
+    implementation_deps = [
+        "@common_robotics_utilities",
     ],
 )
 
@@ -315,6 +329,7 @@ drake_cc_library(
     srcs = ["test/box_in_corner_test_fixture.cc"],
     hdrs = ["test/box_in_corner_test_fixture.h"],
     deps = [
+        ":clique_cover_test_utils",
         ":hpolyhedron_point_sampler",
         ":iris_from_clique_cover_options",
         "//geometry/optimization:convex_set",
@@ -330,9 +345,11 @@ drake_cc_library(
 drake_cc_library(
     name = "clique_cover_test_utils",
     testonly = 1,
+    srcs = ["test/clique_cover_test_utils.cc"],
     hdrs = ["test/clique_cover_test_utils.h"],
     deps = [
         "//common:random",
+        "//geometry:meshcat",
         "//geometry/optimization:convex_set",
     ],
 )
@@ -357,6 +374,7 @@ drake_cc_googletest(
         "snopt",
     ],
     deps = [
+        ":barycentric_vpolytope_sampler",
         ":box_in_corner_test_fixture",
         ":hpolyhedron_point_sampler",
         ":iris_from_clique_cover_template",
@@ -394,6 +412,17 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "barycentric_vpolytope_sampler_test",
+    deps = [
+        ":barycentric_vpolytope_sampler",
+        ":clique_cover_test_utils",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:maybe_pause_for_user",
+        "//geometry/test_utilities:meshcat_environment",
+    ],
+)
+
+drake_cc_googletest(
     name = "iris_np_from_clique_builder_test",
     deps = [
         ":box_in_corner_test_fixture",
@@ -403,6 +432,7 @@ drake_cc_googletest(
         "//common/test_utilities:maybe_pause_for_user",
     ],
 )
+
 
 drake_cc_googletest(
     name = "iris_zo_from_clique_builder_test",
