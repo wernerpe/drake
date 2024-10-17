@@ -17,6 +17,8 @@ namespace iris {
  * If sampling_always_returns_vertices is true and the requested number of
  * points is larger than the number of vertices, the first |vertices| samples
  * will be the vertices of the domain.
+ *
+ * // TODO(Alexandre.Amice) allow for weights on the vertices.
  */
 class BarycentricVPolytopeSampler final : public PointSamplerBase {
  public:
