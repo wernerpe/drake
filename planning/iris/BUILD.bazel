@@ -433,7 +433,6 @@ drake_cc_googletest(
     ],
 )
 
-
 drake_cc_googletest(
     name = "iris_zo_from_clique_builder_test",
     deps = [
