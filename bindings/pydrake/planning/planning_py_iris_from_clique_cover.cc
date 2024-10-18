@@ -6,6 +6,7 @@
 #include "drake/planning/iris/adjacency_matrix_builder_base.h"
 #include "drake/planning/iris/fast_clique_inflation.h"
 #include "drake/planning/iris/fast_clique_inflation_builder.h"
+#include "drake/planning/iris/barycentric_vpolytope_sampler.h"
 #include "drake/planning/iris/hpolyhedron_point_sampler.h"
 #include "drake/planning/iris/iris_from_clique_cover.h"
 #include "drake/planning/iris/iris_from_clique_cover_options.h"
@@ -144,6 +145,27 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
               cls_doc.last_point.doc);
     }
     {
+      const auto& cls_doc = doc.BarycentricVPolytopeSampler;
+      py::class_<BarycentricVPolytopeSampler, PointSamplerBase>(
+          m, "BarycentricVPolytopeSampler")
+          .def(py::init<const geometry::optimization::VPolytope&, bool>(),
+              py::arg("domain"),
+              py::arg("sampling_always_returns_vertices") = false,
+              cls_doc.ctor.doc)
+          .def("domain", &BarycentricVPolytopeSampler::domain,
+              cls_doc.domain.doc)
+          .def("set_domain", &BarycentricVPolytopeSampler::set_domain,
+              py::arg("domain"), cls_doc.set_domain.doc)
+          .def("sampling_always_returns_vertices",
+              &BarycentricVPolytopeSampler::sampling_always_returns_vertices,
+              cls_doc.sampling_always_returns_vertices.doc)
+          .def("set_sampling_always_returns_vertices",
+              &BarycentricVPolytopeSampler::
+                  set_sampling_always_returns_vertices,
+              py::arg("sampling_always_returns_vertices"),
+              cls_doc.set_sampling_always_returns_vertices.doc);
+    }
+    {
       // Trampoline class for RegionFromCliqueBase
       class PyRegionFromCliqueBase : public RegionFromCliqueBase {
        public:
@@ -160,7 +182,7 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
           .def("BuildRegion", &RegionFromCliqueBase::BuildRegion,
               py::arg("clique_points"), cls_doc.BuildRegion.doc);
     }
-    {
+   {
       const auto& cls_doc = doc.IrisNpFromCliqueBuilder;
       py::class_<IrisNpFromCliqueBuilder, RegionFromCliqueBase>(
           m, "IrisNpFromCliqueBuilder")

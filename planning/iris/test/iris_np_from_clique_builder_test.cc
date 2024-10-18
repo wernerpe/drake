@@ -24,13 +24,13 @@ TEST_F(BoxInCornerTestFixture, IrisNpFromCliqueBuilderTest) {
   points << x,  x, -x, -x,
             y, -y,  y, -y;
   // clang-format on
-  Draw2dPointsToMeshcat(points, meshcat, "region_1_points_");
+  internal::Draw2dPointsToMeshcat(points, meshcat, "region_1_points_");
   IrisNpFromCliqueBuilder set_builder{
       *checker, iris_from_clique_cover_options.iris_options, 1e-6};
 
   HPolyhedron region0 = set_builder.BuildRegion(points);
-  Draw2dVPolytope(VPolytope(region0).GetMinimalRepresentation(), "region0",
-                  Eigen::Vector3d{0, 1, 0}, meshcat);
+  internal::Draw2dVPolytope(VPolytope(region0).GetMinimalRepresentation(),
+                            "region0", Eigen::Vector3d{0, 1, 0}, meshcat);
   EXPECT_TRUE(internal::RegionsAreApproximatelyTheSame(
       region0, manual_decomposition[5].MakeHPolyhedron(), 100, 0.9,
       &generator));
@@ -39,10 +39,10 @@ TEST_F(BoxInCornerTestFixture, IrisNpFromCliqueBuilderTest) {
   points << y, -y,  y, -y,
             x,  x, -x, -x;
   // clang-format on
-  Draw2dPointsToMeshcat(points, meshcat, "region_2_points_");
+  internal::Draw2dPointsToMeshcat(points, meshcat, "region_2_points_");
   HPolyhedron region1 = set_builder.BuildRegion(points);
-  Draw2dVPolytope(VPolytope(region1).GetMinimalRepresentation(), "region1",
-                  Eigen::Vector3d{0, 1, 0}, meshcat);
+  internal::Draw2dVPolytope(VPolytope(region1).GetMinimalRepresentation(),
+                            "region1", Eigen::Vector3d{0, 1, 0}, meshcat);
   EXPECT_TRUE(internal::RegionsAreApproximatelyTheSame(
       region1, manual_decomposition[4].MakeHPolyhedron(), 100, 0.9,
       &generator));
