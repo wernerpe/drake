@@ -15,14 +15,16 @@ drake_cc_package_library(
     deps = [
         ":adjacency_matrix_builder_base",
         ":fast_clique_inflation",
+        ":fast_clique_inflation_builder",
         ":hpolyhedron_point_sampler",
         ":iris_from_clique_cover",
         ":iris_from_clique_cover_options",
         ":iris_from_clique_cover_template",
         ":iris_from_clique_cover_template_internal",
         ":iris_from_clique_cover_v2",
-        ":iris_in_configuration_space_clique_inflation",
+        ":iris_np_from_clique_builder",
         ":iris_zo",
+        ":iris_zo_from_clique_builder",
         ":point_sampler_base",
         ":region_from_clique_base",
     ],
@@ -80,6 +82,16 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "iris_zo_from_clique_builder",
+    srcs = ["iris_zo_from_clique_builder.cc"],
+    hdrs = ["iris_zo_from_clique_builder.h"],
+    deps = [
+        ":iris_zo",
+        ":region_from_clique_base",
+    ],
+)
+
+drake_cc_library(
     name = "fast_clique_inflation",
     srcs = ["fast_clique_inflation.cc"],
     hdrs = ["fast_clique_inflation.h"],
@@ -96,6 +108,16 @@ drake_cc_library(
     ],
     implementation_deps = [
         "@common_robotics_utilities",
+    ],
+)
+
+drake_cc_library(
+    name = "fast_clique_inflation_builder",
+    srcs = ["fast_clique_inflation_builder.cc"],
+    hdrs = ["fast_clique_inflation_builder.h"],
+    deps = [
+        ":fast_clique_inflation",
+        ":region_from_clique_base",
     ],
 )
 
@@ -139,9 +161,9 @@ drake_cc_library(
 )
 
 drake_cc_library(
-    name = "iris_in_configuration_space_clique_inflation",
-    srcs = ["iris_in_configuration_space_clique_inflation.cc"],
-    hdrs = ["iris_in_configuration_space_clique_inflation.h"],
+    name = "iris_np_from_clique_builder",
+    srcs = ["iris_np_from_clique_builder.cc"],
+    hdrs = ["iris_np_from_clique_builder.h"],
     deps = [
         ":region_from_clique_base",
         "//geometry/optimization:convex_set",
@@ -190,7 +212,7 @@ drake_cc_library(
         "//geometry/optimization:iris",
         "//planning/graph_algorithms:min_clique_cover_solver_via_greedy",
         "//planning/iris:hpolyhedron_point_sampler",
-        "//planning/iris:iris_in_configuration_space_clique_inflation",
+        "//planning/iris:iris_np_from_clique_builder",
     ],
 )
 
@@ -305,6 +327,16 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "clique_cover_test_utils",
+    testonly = 1,
+    hdrs = ["test/clique_cover_test_utils.h"],
+    deps = [
+        "//common:random",
+        "//geometry/optimization:convex_set",
+    ],
+)
+
 drake_cc_googletest(
     name = "iris_from_clique_cover_template_test",
     timeout = "moderate",
@@ -362,10 +394,33 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
-    name = "iris_in_configuration_space_clique_inflation_test",
+    name = "iris_np_from_clique_builder_test",
     deps = [
         ":box_in_corner_test_fixture",
-        ":iris_in_configuration_space_clique_inflation",
+        ":clique_cover_test_utils",
+        ":iris_np_from_clique_builder",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:maybe_pause_for_user",
+    ],
+)
+
+drake_cc_googletest(
+    name = "iris_zo_from_clique_builder_test",
+    deps = [
+        ":box_in_corner_test_fixture",
+        ":clique_cover_test_utils",
+        ":iris_zo_from_clique_builder",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:maybe_pause_for_user",
+    ],
+)
+
+drake_cc_googletest(
+    name = "fast_clique_inflation_builder_test",
+    deps = [
+        ":box_in_corner_test_fixture",
+        ":clique_cover_test_utils",
+        ":fast_clique_inflation_builder",
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:maybe_pause_for_user",
     ],
