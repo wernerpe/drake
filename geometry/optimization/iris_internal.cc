@@ -1,5 +1,6 @@
 #include "drake/geometry/optimization/iris_internal.h"
 
+#include <iostream>
 #include <limits>
 
 namespace drake {
