@@ -1,7 +1,5 @@
 #include "drake/planning/iris/iris_np2.h"
 
-#include <iostream>
-
 #include <algorithm>
 #include <limits>
 #include <optional>
@@ -318,12 +316,10 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
   VectorXd closest(nq);
   RandomGenerator generator(options.random_seed);
 
-  const solvers::SolverInterface* solver =
-      options.solver
-          ? options.solver
-          : solvers::MakeFirstAvailableSolver(
-                {solvers::SnoptSolver::id(), solvers::IpoptSolver::id()})
-                .get();
+  const auto default_solver_unique_ptr = solvers::MakeFirstAvailableSolver(
+      {solvers::SnoptSolver::id(), solvers::IpoptSolver::id()});
+  auto solver =
+      options.solver ? options.solver : default_solver_unique_ptr.get();
 
   const std::string seed_point_error_msg =
       "IRIS-NP2: require_sample_point_is_contained is true but "
@@ -458,7 +454,7 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
           break;
         }
         if (!P_candidate.PointInSet(particle)) {
-          log()->info("Not in the polytope!");
+          // log()->info("Not in the polytope!");
           continue;
         }
 
@@ -480,7 +476,7 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
               *sets.at(collision_pair.geomB), E, A.topRows(num_constraints),
               b.head(num_constraints));
           prog.UpdatePolytope(A.topRows(num_constraints),
-                                               b.head(num_constraints));
+                              b.head(num_constraints));
           if (prog.Solve(*solver, closest_collision_info.first,
                          options.solver_options, &closest)) {
             ++num_hyperplanes_added;
@@ -500,7 +496,7 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
               }
             }
           } else {
-            log()->info("Solve failed!");
+            // log()->info("Solve failed!");
           }
         }
       }
