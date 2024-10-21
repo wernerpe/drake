@@ -10,18 +10,11 @@
 
 #include "drake/common/parallelism.h"
 #include "drake/geometry/meshcat.h"
-// #include "drake/geometry/optimization/convex_set.h"
-#include "drake/geometry/optimization/affine_ball.h"
-#include "drake/geometry/optimization/affine_subspace.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
-#include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/planning/collision_checker.h"
 
 namespace drake {
 namespace planning {
-
-using geometry::optimization::HPolyhedron;
-using geometry::optimization::Hyperellipsoid;
 
 struct FastCliqueInflationOptions {
   /** Passes this object to an Archive.
@@ -98,9 +91,10 @@ struct FastCliqueInflationOptions {
 /** Given a set of points that form a clique on a visibility graph, use sampling
 based optimization to find a collision free polytope in cspace.*/
 
-HPolyhedron FastCliqueInflation(
-    const CollisionChecker& checker, const Eigen::MatrixXd& clique,
-    const HPolyhedron& domain,
+geometry::optimization::HPolyhedron FastCliqueInflation(
+    const CollisionChecker& checker,
+    const Eigen::Ref<const Eigen::MatrixXd>& clique,
+    const geometry::optimization::HPolyhedron& domain,
     const FastCliqueInflationOptions& options = FastCliqueInflationOptions());
 
 }  // namespace planning

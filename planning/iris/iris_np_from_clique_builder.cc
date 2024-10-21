@@ -1,4 +1,4 @@
-#include "drake/planning/iris/iris_in_configuration_space_clique_inflation.h"
+#include "drake/planning/iris/iris_np_from_clique_builder.h"
 
 #include "drake/geometry/optimization/hpolyhedron.h"
 
@@ -8,32 +8,19 @@ namespace iris {
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 
-IrisInConfigurationSpaceCliqueInflation::
-    IrisInConfigurationSpaceCliqueInflation(
-        const CollisionChecker& checker,
-        const geometry::optimization::IrisOptions& iris_options,
-        std::optional<double>
-            rank_tol_for_minimum_volume_circumscribed_ellipsoid)
+IrisNpFromCliqueBuilder::IrisNpFromCliqueBuilder(
+    const CollisionChecker& checker,
+    const geometry::optimization::IrisOptions& options,
+    std::optional<double> rank_tol_for_minimum_volume_circumscribed_ellipsoid)
     : RegionFromCliqueBase(),
-      iris_options_(iris_options),
+      iris_options_(options),
       rank_tol_for_minimum_volume_circumscribed_ellipsoid_(
           rank_tol_for_minimum_volume_circumscribed_ellipsoid),
       checker_(checker.Clone()) {}
 
-HPolyhedron IrisInConfigurationSpaceCliqueInflation::DoBuildRegion(
+HPolyhedron IrisNpFromCliqueBuilder::DoBuildRegion(
     const Eigen::Ref<const Eigen::MatrixXd>& clique_points) {
-  //    Hyperellipsoid clique_ellipse;
-  //    try {
-  //      clique_ellipse =
-  //      Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(
-  //          clique_points,
-  //          rank_tol_for_minimum_volume_circumscribed_ellipsoid_);
-  //    } catch (const std::runtime_error& e) {
-  //      log()->info("Iris failed to compute an ellipse for a clique.",
-  //      e.what()); current_clique = computed_cliques->pop(); continue;
-  //    }
-
-  // Temporarily allow throws
+  // This may throw if the clique is degenerate.
   Hyperellipsoid clique_ellipse;
   if (rank_tol_for_minimum_volume_circumscribed_ellipsoid_.has_value()) {
     clique_ellipse = Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(
@@ -43,6 +30,7 @@ HPolyhedron IrisInConfigurationSpaceCliqueInflation::DoBuildRegion(
     clique_ellipse =
         Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(clique_points);
   }
+
   if (checker_->CheckConfigCollisionFree(clique_ellipse.center())) {
     iris_options_.starting_ellipse = clique_ellipse;
   } else {

@@ -311,7 +311,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
             region_expected.b()
         )
 
-    def test_iris_in_configuration_space_clique_inflation(self):
+    def test_iris_np_from_clique_builder(self):
         urdf = cross_cspace_urdf()
         params = dict(edge_step_size=0.125)
         builder = RobotDiagramBuilder()
@@ -323,9 +323,9 @@ class TestIrisFromCliqueCover(unittest.TestCase):
 
         iris_options = IrisOptions()
 
-        set_builder = mut.IrisInConfigurationSpaceCliqueInflation(
+        set_builder = mut.IrisNpFromCliqueBuilder(
             checker=checker,
-            iris_options=iris_options,
+            options=iris_options,
             rank_tol_for_minimum_volume_circumscribed_ellipsoid=None,
         )
 
@@ -343,8 +343,8 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         )
 
         iris_options.iteration_limit = 1
-        set_builder.set_iris_options(iris_options)
-        self.assertEqual(set_builder.iris_options().iteration_limit, 1)
+        set_builder.set_options(iris_options)
+        self.assertEqual(set_builder.options().iteration_limit, 1)
 
         points = np.array([
             [0,  0.25, 0],
@@ -354,6 +354,88 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         region = set_builder.BuildRegion(clique_points=points)
         self.assertGreaterEqual(region.A().shape[0], 3)
         self.assertEqual(region.A().shape[1], 2)
+
+    def test_iris_zo_from_clique_builder(self):
+        urdf = cross_cspace_urdf()
+        params = dict(edge_step_size=0.125)
+        builder = RobotDiagramBuilder()
+        params["robot_model_instances"] = builder.parser().AddModelsFromString(
+            urdf, "urdf"
+        )
+        params["model"] = builder.Build()
+        checker = SceneGraphCollisionChecker(**params)
+
+        iris_options = mut.IrisZoOptions()
+
+        set_builder = mut.IrisZoFromCliqueBuilder(
+            checker=checker,
+            domain=None,
+            options=iris_options,
+            rank_tol_for_minimum_volume_circumscribed_ellipsoid=None,
+        )
+
+        self.assertTrue(
+             set_builder.rank_tol_for_minimum_volume_circumscribed_ellipsoid()
+             is None)
+
+        set_builder.set_rank_tol_for_minimum_volume_circumscribed_ellipsoid(
+            rank_tol_for_minimum_volume_circumscribed_ellipsoid=1e-6
+        )
+
+        self.assertEqual(
+            set_builder.rank_tol_for_minimum_volume_circumscribed_ellipsoid(),
+            1e-6
+        )
+
+        iris_options.max_iterations = 1
+        set_builder.set_options(iris_options)
+        self.assertEqual(set_builder.options().max_iterations, 1)
+
+        points = np.array([
+            [0,  0.25, 0],
+            [0, -0.25, 0.25]
+            ]
+        )
+        region = set_builder.BuildRegion(clique_points=points)
+        self.assertGreaterEqual(region.A().shape[0], 3)
+        self.assertEqual(region.A().shape[1], 2)
+
+        set_builder.set_domain(region)
+        numpy_compare.assert_equal(set_builder.domain().A(), region.A())
+
+    def test_fast_clique_inflation_builder(self):
+        urdf = cross_cspace_urdf()
+        params = dict(edge_step_size=0.125)
+        builder = RobotDiagramBuilder()
+        params["robot_model_instances"] = builder.parser().AddModelsFromString(
+            urdf, "urdf"
+        )
+        params["model"] = builder.Build()
+        checker = SceneGraphCollisionChecker(**params)
+
+        options = mut.FastCliqueInflationOptions()
+
+        set_builder = mut.FastCliqueInflationBuilder(
+            checker=checker,
+            domain=None,
+            options=options,
+        )
+
+        points = np.array([
+            [0, 0.25, 0],
+            [0, -0.25, 0.25]
+        ]
+        )
+        region = set_builder.BuildRegion(clique_points=points)
+        self.assertGreaterEqual(region.A().shape[0], 3)
+        self.assertEqual(region.A().shape[1], 2)
+
+        options.num_particles = 1
+        set_builder.set_options(options)
+        self.assertEqual(set_builder.options().num_particles, 1)
+
+        set_builder.set_domain(region)
+        numpy_compare.assert_equal(set_builder.domain().A(), region.A())
 
     def test_iris_in_configuration_space_from_clique_cover_template(self):
         # This test reimplements IrisFromCliqueCoverInConfigurationSpace using

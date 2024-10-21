@@ -42,13 +42,14 @@ using geometry::optimization::VPolytope;
 // which calls the latter.
 TEST_F(BoxInCornerTestFixture,
        IrisInConfigurationSpaceCliqueInflationTestCenterRegion) {
-  options.num_points_per_visibility_round = 250;
-  // TODO(Alexandre.Amice) use a different set of options.
-  options.partition = true;
-  options.sample_outside_of_sets = true;
+  iris_from_clique_cover_options.num_points_per_visibility_round = 250;
+  // TODO(Alexandre.Amice) use a different set of
+  // iris_from_clique_cover_options.
+  iris_from_clique_cover_options.partition = true;
+  iris_from_clique_cover_options.sample_outside_of_sets = true;
   std::vector<geometry::optimization::HPolyhedron> sets;
-  IrisInConfigurationSpaceFromCliqueCoverV2(*checker, options, &generator,
-                                            &sets, nullptr);
+  IrisInConfigurationSpaceFromCliqueCoverV2(
+      *checker, iris_from_clique_cover_options, &generator, &sets, nullptr);
 
   EXPECT_EQ(ssize(sets), 6);
 

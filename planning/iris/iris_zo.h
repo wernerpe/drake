@@ -17,9 +17,6 @@
 namespace drake {
 namespace planning {
 
-using geometry::optimization::HPolyhedron;
-using geometry::optimization::Hyperellipsoid;
-
 struct IrisZoOptions {
   /** Passes this object to an Archive.
   Refer to @ref yaml_serialization "YAML Serialization" for background.
@@ -165,9 +162,10 @@ configuration space.
 @ingroup robot_planning
 */
 
-HPolyhedron IrisZO(const CollisionChecker& checker,
-                   const Hyperellipsoid& starting_ellipsoid,
-                   const HPolyhedron& domain,
-                   const IrisZoOptions& options = IrisZoOptions());
+geometry::optimization::HPolyhedron IrisZO(
+    const CollisionChecker& checker,
+    const geometry::optimization::Hyperellipsoid& starting_ellipsoid,
+    const geometry::optimization::HPolyhedron& domain,
+    const IrisZoOptions& options = IrisZoOptions());
 }  // namespace planning
 }  // namespace drake
