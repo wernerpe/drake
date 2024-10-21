@@ -36,12 +36,14 @@
 namespace drake {
 namespace planning {
 
+using Eigen::Vector3d;
 using Eigen::VectorXd;
 using geometry::Role;
 using geometry::SceneGraphInspector;
 using geometry::optimization::ConvexSet;
 using geometry::optimization::internal::ClosestCollisionProgram;
 using geometry::optimization::internal::SamePointConstraint;
+using math::RigidTransform;
 using multibody::MultibodyPlant;
 using systems::Context;
 
@@ -235,8 +237,11 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
   plant.SetPositions(&plant_context, seed);
 
   const int nq = plant.num_positions();
-  // const geometry::SceneGraph<double>& scene_graph =
-  // checker.model().scene_graph();
+
+  // For debugging visualization.
+  Vector3d point_to_draw = Vector3d::Zero();
+  int num_points_drawn = 0;
+  bool do_debugging_visualization = options.meshcat && nq <= 3;
 
   // Make the polytope and ellipsoid.
   HPolyhedron P_initial = HPolyhedron::MakeBox(plant.GetPositionLowerLimits(),
@@ -475,10 +480,30 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
               *frames.at(collision_pair.geomB), *sets.at(collision_pair.geomA),
               *sets.at(collision_pair.geomB), E, A.topRows(num_constraints),
               b.head(num_constraints));
-          prog.UpdatePolytope(A.topRows(num_constraints),
-                              b.head(num_constraints));
+
+          if (do_debugging_visualization) {
+            ++num_points_drawn;
+            point_to_draw.head(nq) = particle;
+            std::string path = fmt::format("iteration{:02}/{:03}/guess",
+                                           iteration, num_points_drawn);
+            options.meshcat->SetObject(path, Sphere(0.01),
+                                       geometry::Rgba(0.1, 0.1, 0.1, 1.0));
+            options.meshcat->SetTransform(
+                path, RigidTransform<double>(point_to_draw));
+          }
+
           if (prog.Solve(*solver, closest_collision_info.first,
                          options.solver_options, &closest)) {
+            if (do_debugging_visualization) {
+              point_to_draw.head(nq) = closest;
+              std::string path = fmt::format("iteration{:02}/{:03}/found",
+                                             iteration, num_points_drawn);
+              options.meshcat->SetObject(path, Sphere(0.01),
+                                         geometry::Rgba(0.8, 0.1, 0.8, 1.0));
+              options.meshcat->SetTransform(
+                  path, RigidTransform<double>(point_to_draw));
+            }
+
             ++num_hyperplanes_added;
             AddTangentToPolytope(E, closest, options.configuration_space_margin,
                                  &A, &b, &num_constraints);
@@ -497,6 +522,15 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
             }
           } else {
             // log()->info("Solve failed!");
+            if (do_debugging_visualization) {
+              point_to_draw.head(nq) = closest;
+              std::string path = fmt::format("iteration{:02}/{:03}/closest",
+                                             iteration, num_points_drawn);
+              options.meshcat->SetObject(path, Sphere(0.01),
+                                         geometry::Rgba(0.1, 0.8, 0.8, 1.0));
+              options.meshcat->SetTransform(
+                  path, RigidTransform<double>(point_to_draw));
+            }
           }
         }
       }

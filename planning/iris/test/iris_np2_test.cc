@@ -137,7 +137,7 @@ GTEST_TEST(IrisNP2Test, DoublePendulum) {
 
   const Vector2d sample = Vector2d::Zero();
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
+  meshcat->Delete();
   IrisNP2Options options;
   options.verbose = true;
   options.meshcat = meshcat;
@@ -231,7 +231,7 @@ const char block_urdf[] = R"(
 GTEST_TEST(IrisNP2Test, BlockOnGround) {
   const Vector2d sample{1.0, 0.0};
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
+  meshcat->Delete();
   IrisNP2Options options;
   options.verbose = true;
   options.meshcat = meshcat;
@@ -290,7 +290,7 @@ GTEST_TEST(IrisNP2Test, ConvexConfigurationSpace) {
   const double r = 0.1;
 
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
-  meshcat->Delete("face_pt");
+  meshcat->Delete();
   meshcat->Set2dRenderMode(math::RigidTransformd(Eigen::Vector3d{0, 0, 1}),
                            -3.25, 3.25, -3.25, 3.25);
   meshcat->SetProperty("/Grid", "visible", true);
@@ -343,6 +343,7 @@ GTEST_TEST(IrisNP2Test, ConvexConfigurationSpace) {
 
   const Vector2d sample{-0.5, 0.0};
   IrisNP2Options options;
+  options.admissible_proportion_in_collision = 1e-3;
 
   auto solver = solvers::IpoptSolver();
   options.solver = &solver;
