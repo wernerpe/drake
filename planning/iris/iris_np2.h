@@ -23,8 +23,6 @@ using geometry::optimization::Hyperellipsoid;
 // TODO(cohnt): Implement archive serialization.
 // TODO(cohnt): Implement additional constraints.
 // TODO(cohnt): Support a termination function.
-// TODO(cohnt): Support automatically handling the convexity radius.
-// TODO(cohnt): Support max hyperplanes per inner iteration.
 // TODO(cohnt): Support specifying a sampler object that enables different
 // sampling strategies.
 // TODO(cohnt): Implement sampler object for greedy sampler.
@@ -125,6 +123,17 @@ struct IrisNP2Options {
   currently and when the
   configuration space is <= 3 dimensional.*/
   std::shared_ptr<geometry::Meshcat> meshcat{};
+
+  /** Artificial joint limits are added to continuous revolute joints and planar
+  joints with an unbounded revolute degree-of-freedom on a per-region basis. If
+  the seed point value for that joint is θ, then the limits are
+  θ - π/2 + convexity_radius_stepback and θ + π/2 - convexity_radius_stepback.
+  Setting this to a negative number allows growing larger regions, but those
+  regions must then be partitioned to be used with GcsTrajectoryOptimization.
+  See @ref geometry_optimization_geodesic_convexity for more details.
+  IrisInConfigurationSpace throws if this value is not smaller
+  than π/2. */
+  double convexity_radius_stepback{1e-3};
 };
 
 HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,

@@ -36,6 +36,7 @@
 namespace drake {
 namespace planning {
 
+using Eigen::MatrixXd;
 using Eigen::Vector3d;
 using Eigen::VectorXd;
 using geometry::Role;
@@ -45,6 +46,7 @@ using geometry::optimization::internal::ClosestCollisionProgram;
 using geometry::optimization::internal::SamePointConstraint;
 using math::RigidTransform;
 using multibody::MultibodyPlant;
+using multibody::QuaternionFloatingJoint;
 using systems::Context;
 
 namespace {
@@ -219,6 +221,52 @@ void AddTangentToPolytope(
   }
   *num_constraints += 1;
 }
+
+/* Given a joint, check if it is encompassed by the continuous revolute
+framework. If so, return a vector of indices i that represent an angle-valued
+coordinate in configuration space, and should be automatically bounded. If the
+joint is not encompassed by the continuous revolute framework, return an empty
+vector. */
+std::vector<int> revolute_joint_indices(const multibody::Joint<double>& joint) {
+  if (joint.type_name() == multibody::RevoluteJoint<double>::kTypeName) {
+    DRAKE_ASSERT(joint.num_positions() == 1);
+    // RevoluteJoints store their configuration as (θ)
+    if (joint.position_lower_limits()[0] ==
+            -std::numeric_limits<float>::infinity() &&
+        joint.position_upper_limits()[0] ==
+            std::numeric_limits<float>::infinity()) {
+      return std::vector<int>{joint.position_start() + 0};
+    }
+  }
+  if (joint.type_name() == multibody::PlanarJoint<double>::kTypeName) {
+    DRAKE_ASSERT(joint.num_positions() == 3);
+    // PlanarJoints store their configuration as (x, y, θ)
+    if (joint.position_lower_limits()[2] ==
+            -std::numeric_limits<float>::infinity() &&
+        joint.position_upper_limits()[2] ==
+            std::numeric_limits<float>::infinity()) {
+      return std::vector<int>{joint.position_start() + 2};
+    }
+  }
+  if (joint.type_name() == multibody::RpyFloatingJoint<double>::kTypeName) {
+    DRAKE_ASSERT(joint.num_positions() == 6);
+    // RpyFloatingJoints store their configuration as (qx, qy, qz, x, y, z),
+    // i.e., the first three positions are the revolute components.
+    std::vector<int> continuous_revolute_indices;
+    for (int i = 0; i < 3; ++i) {
+      if (joint.position_lower_limits()[i] ==
+              -std::numeric_limits<float>::infinity() &&
+          joint.position_upper_limits()[i] ==
+              std::numeric_limits<float>::infinity()) {
+        continuous_revolute_indices.push_back(joint.position_start() + i);
+      }
+    }
+    return continuous_revolute_indices;
+  }
+  // TODO(cohnt): Add support for other joint types that may be compatible with
+  // the continuous revolute framework.
+  return std::vector<int>{};
+}
 }  // namespace
 
 HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
@@ -244,13 +292,77 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
   bool do_debugging_visualization = options.meshcat && nq <= 3;
 
   // Make the polytope and ellipsoid.
-  HPolyhedron P_initial = HPolyhedron::MakeBox(plant.GetPositionLowerLimits(),
-                                               plant.GetPositionUpperLimits());
-  DRAKE_DEMAND(P_initial.A().rows() == 2 * nq);
+
+  // Note: We require finite joint limits to define the bounding box for the
+  // IRIS algorithm. The exception is revolute joints -- continuous revolute
+  // joints will have their lower boundary set to seed - π/2 +
+  // options.convexity_radius_stepback and their upper boundary set to seed
+  // + π/2 - options.convexity_radius_stepback.
+
+  Eigen::VectorXd lower_limits = plant.GetPositionLowerLimits();
+  Eigen::VectorXd upper_limits = plant.GetPositionUpperLimits();
+
+  DRAKE_THROW_UNLESS(options.convexity_radius_stepback < M_PI_2);
+  for (multibody::JointIndex index : plant.GetJointIndices()) {
+    const multibody::Joint<double>& joint = plant.get_joint(index);
+    if (joint.type_name() == QuaternionFloatingJoint<double>::kTypeName) {
+      throw std::runtime_error(
+          "IrisInConfigurationSpace does not support QuaternionFloatingJoint. "
+          "Consider using RpyFloatingJoint instead.");
+    }
+    const std::vector<int> continuous_revolute_indices =
+        revolute_joint_indices(joint);
+    for (const int i : continuous_revolute_indices) {
+      lower_limits[i] = seed[i] - M_PI_2 + options.convexity_radius_stepback;
+      upper_limits[i] = seed[i] + M_PI_2 - options.convexity_radius_stepback;
+    }
+  }
+
+  // Make the polytope and ellipsoid.
+  MatrixXd A_init = MatrixXd::Zero(2 * ssize(lower_limits), nq);
+  VectorXd b_init = VectorXd::Zero(2 * ssize(lower_limits));
+  int row_count = 0;
+  for (int i = 0; i < ssize(upper_limits); ++i) {
+    if (std::isfinite(upper_limits[i])) {
+      A_init(row_count, i) = 1;
+      b_init(row_count) = upper_limits[i];
+      ++row_count;
+    }
+    if (std::isfinite(lower_limits[i])) {
+      A_init(row_count, i) = -1;
+      b_init(row_count) = -lower_limits[i];
+      ++row_count;
+    }
+  }
+  A_init.conservativeResize(row_count, nq);
+  b_init.conservativeResize(row_count);
+  HPolyhedron P(A_init, b_init);
+
+  bool boundedness_error = false;
   if (options.bounding_region) {
     DRAKE_DEMAND(options.bounding_region->ambient_dimension() == nq);
-    P_initial = P_initial.Intersection(*options.bounding_region);
+    P = P.Intersection(*options.bounding_region);
+    if (options.verify_domain_boundedness) {
+      if (!P.IsBounded()) {
+        boundedness_error = true;
+      }
+    }
+  } else {
+    if (lower_limits.array().isInf().any() ||
+        upper_limits.array().isInf().any()) {
+      boundedness_error = true;
+    }
   }
+
+  if (boundedness_error) {
+    throw std::runtime_error(
+        "IrisInConfigurationSpace requires that the initial domain be bounded. "
+        "Make sure all joints have position limits (unless that joint is a "
+        "RevoluteJoint or the revolute component of a PlanarJoint or "
+        "RpyFloatingJoint), or ensure that the intersection of the joint "
+        "limits and options.bounding_region is bounded.");
+  }
+
   const double kEpsilonEllipsoid = 1e-2;
   Hyperellipsoid E = options.starting_ellipse.value_or(
       Hyperellipsoid::MakeHypersphere(kEpsilonEllipsoid, seed));
@@ -308,14 +420,14 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
   // {x | A * x <= b}.  Here we pre-allocate matrices with a generous maximum
   // size.
   Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> A(
-      P_initial.A().rows() + 2 * n, nq);
-  VectorXd b(P_initial.A().rows() + 2 * n);
-  A.topRows(P_initial.A().rows()) = P_initial.A();
-  b.head(P_initial.A().rows()) = P_initial.b();
+      P.A().rows() + 2 * n, nq);
+  VectorXd b(P.A().rows() + 2 * n);
+  A.topRows(P.A().rows()) = P.A();
+  b.head(P.A().rows()) = P.b();
 
-  int num_initial_constraints = P_initial.A().rows();
+  int num_initial_constraints = P.A().rows();
 
-  DRAKE_THROW_UNLESS(P_initial.PointInSet(seed, 1e-12));
+  DRAKE_THROW_UNLESS(P.PointInSet(seed, 1e-12));
   double best_volume = E.Volume();
   int iteration = 0;
   VectorXd closest(nq);
@@ -340,8 +452,6 @@ HPolyhedron IrisNP2(VectorXd seed, const CollisionChecker& checker,
   const std::string termination_msg =
       "IRIS-NP2: terminating iterations because "
       "options.termination_func returned false.";
-
-  HPolyhedron P;
 
   // Set up constants for statistical tests.
   double outer_delta_min =
