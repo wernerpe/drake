@@ -12,6 +12,7 @@
 #include "drake/multibody/inverse_kinematics/inverse_kinematics.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/scene_graph_collision_checker.h"
+#include "drake/solvers/ipopt_solver.h"
 
 namespace drake {
 namespace planning {
@@ -342,6 +343,9 @@ GTEST_TEST(IrisNP2Test, ConvexConfigurationSpace) {
 
   const Vector2d sample{-0.5, 0.0};
   IrisNP2Options options;
+
+  auto solver = solvers::IpoptSolver();
+  options.solver = &solver;
 
   // This point should be outside of the configuration space (in collision).
   // The particular value was found by visual inspection using meshcat.
