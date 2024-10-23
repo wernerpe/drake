@@ -7,8 +7,14 @@ from pydrake.planning import (
     SceneGraphCollisionChecker,
     CollisionCheckerParams,
 )
+from sympy.stats.sampling.sample_numpy import numpy
+
 from pydrake.solvers import MosekSolver, GurobiSolver, SnoptSolver
-from pydrake.geometry.optimization import HPolyhedron, Hyperellipsoid
+from pydrake.geometry.optimization import (
+    HPolyhedron,
+    Hyperellipsoid,
+    VPolytope,
+)
 from pydrake.geometry.optimization import IrisInConfigurationSpace
 from pydrake.geometry.optimization import IrisOptions
 from pydrake.common.test_utilities import numpy_compare
@@ -278,6 +284,27 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         generator = RandomGenerator(0)
         points = point_sampler.SamplePoints(6, generator)
         self.assertEqual(points.shape, (3, 6))
+
+    def test_barycentric_vpolytope_sampler(self):
+        domain = VPolytope(np.array([[1, 0, 0, 0],
+                                     [0, 1, 0, 0],
+                                     [0, 0, 1, 0]]))
+        point_sampler = mut.BarycentricVPolytopeSampler(
+            domain=domain, sampling_always_returns_vertices=True)
+        points = point_sampler.SamplePoints(num_points=6,
+                                            generator=RandomGenerator(0))
+        self.assertEqual(points.shape, (3, 6))
+
+        domain2 = VPolytope(np.array([[2, 0, 0, 0]]))
+        point_sampler.set_domain(domain=domain2)
+        numpy_compare.assert_equal(domain2.vertices(),
+                                   point_sampler.domain().vertices())
+
+        self.assertTrue(point_sampler.sampling_always_returns_vertices())
+
+        point_sampler.set_sampling_always_returns_vertices(
+            sampling_always_returns_vertices=False)
+        self.assertFalse(point_sampler.sampling_always_returns_vertices())
 
     def test_region_from_clique_base_subclassable(self):
         class DummyRegionBuilder(mut.RegionFromCliqueBase):
