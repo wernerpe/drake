@@ -4,9 +4,9 @@
 #include "drake/planning/collision_checker.h"
 #include "drake/planning/graph_algorithms/max_clique_solver_base.h"
 #include "drake/planning/iris/adjacency_matrix_builder_base.h"
+#include "drake/planning/iris/barycentric_vpolytope_sampler.h"
 #include "drake/planning/iris/fast_clique_inflation.h"
 #include "drake/planning/iris/fast_clique_inflation_builder.h"
-#include "drake/planning/iris/barycentric_vpolytope_sampler.h"
 #include "drake/planning/iris/hpolyhedron_point_sampler.h"
 #include "drake/planning/iris/iris_from_clique_cover.h"
 #include "drake/planning/iris/iris_from_clique_cover_options.h"
@@ -182,7 +182,7 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
           .def("BuildRegion", &RegionFromCliqueBase::BuildRegion,
               py::arg("clique_points"), cls_doc.BuildRegion.doc);
     }
-   {
+    {
       const auto& cls_doc = doc.IrisNpFromCliqueBuilder;
       py::class_<IrisNpFromCliqueBuilder, RegionFromCliqueBase>(
           m, "IrisNpFromCliqueBuilder")
