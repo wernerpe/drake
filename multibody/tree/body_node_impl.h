@@ -13,13 +13,16 @@ namespace drake {
 namespace multibody {
 namespace internal {
 
-// For internal use only of the MultibodyTree implementation.
-// While all code that is common to any node _could_ be placed in the BodyNode
-// class, BodyNodeImpl is templatized on the concrete Mobilizer type so
-// implementations here can use fixed-size objects and mobilizer-specific
-// inline implementations for maximum speed. For a more detailed discussion of
-// the role of a BodyNode in a MultibodyTree refer to the class documentation
-// for BodyNode.
+// For internal use only of the MultibodyTree implementation. While all code
+// that is common to any node _could_ be placed in the BodyNode class,
+// BodyNodeImpl is templatized on the concrete Mobilizer type so implementations
+// here can use fixed-size objects and mobilizer-specific inline implementations
+// for maximum speed. For a more detailed discussion of the role of a BodyNode
+// in a MultibodyTree refer to the class documentation for BodyNode. Note:
+// because there are many instantiations of these templatized functions,
+// (especially for the O(n²) mass matrix algorithm) the definitions are split
+// into two files to keep compilation times balanced: body_node_impl.cc and
+// body_node_impl_mass_matrix.cc.
 template <typename T, template <typename> class ConcreteMobilizer>
 class BodyNodeImpl final : public BodyNode<T> {
  public:
@@ -31,15 +34,19 @@ class BodyNodeImpl final : public BodyNode<T> {
     kNv = ConcreteMobilizer<T>::kNv,
     kNx = ConcreteMobilizer<T>::kNx
   };
-  using QVector = typename ConcreteMobilizer<T>::QVector;
-  using VVector = typename ConcreteMobilizer<T>::VVector;
-  using HMatrix = typename ConcreteMobilizer<T>::HMatrix;
+  template <typename U>
+  using QVector = typename ConcreteMobilizer<T>::template QVector<U>;
+  template <typename U>
+  using VVector = typename ConcreteMobilizer<T>::template VVector<U>;
+  template <typename U>
+  using HMatrix = typename ConcreteMobilizer<T>::template HMatrix<U>;
 
-  using BodyNode<T>::mobod_index;
-  using BodyNode<T>::inboard_mobod_index;
-  using BodyNode<T>::inboard_frame;
-  using BodyNode<T>::outboard_frame;
   using BodyNode<T>::body;
+  using BodyNode<T>::child_nodes;
+  using BodyNode<T>::inboard_frame;
+  using BodyNode<T>::inboard_mobod_index;
+  using BodyNode<T>::mobod_index;
+  using BodyNode<T>::outboard_frame;
   using BodyNode<T>::parent_body;
 
   // Given a body and its inboard mobilizer in a MultibodyTree this constructor
@@ -60,41 +67,58 @@ class BodyNodeImpl final : public BodyNode<T> {
 
   ~BodyNodeImpl() final;
 
-  // TODO(sherm1) Just a warm up -- move the rest of the kernel computations
-  //  here also.
-
   void CalcPositionKinematicsCache_BaseToTip(
       const FrameBodyPoseCache<T>& frame_body_pose_cache, const T* positions,
       PositionKinematicsCache<T>* pc) const final;
 
   void CalcAcrossNodeJacobianWrtVExpressedInWorld(
-      const systems::Context<T>& context,
-      const FrameBodyPoseCache<T>& frame_body_pose_cache,
+      const FrameBodyPoseCache<T>& frame_body_pose_cache, const T* positions,
       const PositionKinematicsCache<T>& pc,
       std::vector<Vector6<T>>* H_PB_W_cache) const final;
 
   void CalcVelocityKinematicsCache_BaseToTip(
-      const systems::Context<T>& context, const PositionKinematicsCache<T>& pc,
+      const T* positions, const PositionKinematicsCache<T>& pc,
       const std::vector<Vector6<T>>& H_PB_W_cache, const T* velocities,
       VelocityKinematicsCache<T>* vc) const final;
 
-  void CalcSpatialAcceleration_BaseToTip(
-      const systems::Context<T>& context,
-      const FrameBodyPoseCache<T>& frame_body_poses_cache,
+  void CalcMassMatrixContribution_TipToBase(
       const PositionKinematicsCache<T>& pc,
-      const VelocityKinematicsCache<T>* vc, const VectorX<T>& mbt_vdot,
-      std::vector<SpatialAcceleration<T>>* A_WB_array_ptr) const final;
+      const std::vector<SpatialInertia<T>>& Mc_B_W_cache,
+      const std::vector<Vector6<T>>& H_PB_W_cache,
+      EigenPtr<MatrixX<T>> M) const final;
+
+  // Declare functions for the six sizes of mass matrix off-diagonal
+  // blocks.
+#define DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK(Rnv)                     \
+  void CalcMassMatrixOffDiagonalBlock##Rnv(                             \
+      int R_start_in_v, const std::vector<Vector6<T>>& H_PB_W_cache,    \
+      const Eigen::Matrix<T, 6, Rnv>& Fm_CCo_W, EigenPtr<MatrixX<T>> M) \
+      const final
+
+  DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK(1);
+  DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK(2);
+  DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK(3);
+  DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK(4);
+  DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK(5);
+  DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK(6);
+
+#undef DECLARE_MASS_MATRIX_OFF_DIAGONAL_BLOCK
+
+  void CalcSpatialAcceleration_BaseToTip(
+      const FrameBodyPoseCache<T>& frame_body_pose_cache, const T* positions,
+      const PositionKinematicsCache<T>& pc, const T* velocities,
+      const VelocityKinematicsCache<T>* vc, const T* accelerations,
+      std::vector<SpatialAcceleration<T>>* A_WB_array) const final;
 
   void CalcInverseDynamics_TipToBase(
-      const systems::Context<T>& context,
-      const FrameBodyPoseCache<T>& frame_body_pose_cache,
+      const FrameBodyPoseCache<T>& frame_body_pose_cache, const T* positions,
       const PositionKinematicsCache<T>& pc,
       const std::vector<SpatialInertia<T>>& M_B_W_cache,
       const std::vector<SpatialForce<T>>* Fb_Bo_W_cache,
       const std::vector<SpatialAcceleration<T>>& A_WB_array,
-      const SpatialForce<T>& Fapplied_Bo_W,
+      const std::vector<SpatialForce<T>>& Fapplied_Bo_W,
       const Eigen::Ref<const VectorX<T>>& tau_applied,
-      std::vector<SpatialForce<T>>* F_BMo_W_array_ptr,
+      std::vector<SpatialForce<T>>* F_BMo_W_array,
       EigenPtr<VectorX<T>> tau_array) const final;
 
   void CalcArticulatedBodyInertiaCache_TipToBase(
@@ -120,17 +144,11 @@ class BodyNodeImpl final : public BodyNode<T> {
       const SpatialAcceleration<T>& Ab_WB,
       AccelerationKinematicsCache<T>* ac) const final;
 
-  void CalcCompositeBodyInertia_TipToBase(
-      const SpatialInertia<T>& M_B_W, const PositionKinematicsCache<T>& pc,
-      const std::vector<SpatialInertia<T>>& Mc_B_W_all,
-      SpatialInertia<T>* Mc_B_W) const final;
-
   void CalcSpatialAccelerationBias(
-      const systems::Context<T>& context,
-      const FrameBodyPoseCache<T>& frame_body_pose_cache,
-      const PositionKinematicsCache<T>& pc,
+      const FrameBodyPoseCache<T>& frame_body_pose_cache, const T* positions,
+      const PositionKinematicsCache<T>& pc, const T* velocities,
       const VelocityKinematicsCache<T>& vc,
-      SpatialAcceleration<T>* Ab_WB) const final;
+      std::vector<SpatialAcceleration<T>>* Ab_WB_array) const final;
 
  private:
   // Given a pointer to the contiguous array of all q's in this system, returns
@@ -141,8 +159,8 @@ class BodyNodeImpl final : public BodyNode<T> {
   }
 
   // Returns this mobilizer's qs as a fixed-size QVector.
-  Eigen::Map<const QVector> get_qvector(const T* positions) const {
-    return Eigen::Map<const QVector>(get_q(positions));
+  Eigen::Map<const QVector<T>> get_qvector(const T* positions) const {
+    return Eigen::Map<const QVector<T>>(get_q(positions));
   }
 
   // Given a pointer to the contiguous array of all v's in this system, returns
@@ -152,18 +170,22 @@ class BodyNodeImpl final : public BodyNode<T> {
     return &velocities[mobilizer().velocity_start_in_v()];
   }
 
+  T* get_mutable_v(T* velocities) const {
+    return &velocities[mobilizer().velocity_start_in_v()];
+  }
+
   // Returns this mobilizer's vs as a fixed-size VVector.
-  Eigen::Map<const VVector> get_vvector(const T* velocities) const {
-    return Eigen::Map<const VVector>(get_v(velocities));
+  Eigen::Map<const VVector<T>> get_vvector(const T* velocities) const {
+    return Eigen::Map<const VVector<T>>(get_v(velocities));
   }
 
   // Given a complete array of hinge matrices H stored by contiguous columns,
   // returns a const reference to H for this mobilizer, as a 6xnv fixed-size
   // matrix. This matrix is 16-byte aligned because it is composed of
   // columns of Eigen::Vector6 objects which Eigen aligns.
-  Eigen::Map<const HMatrix, Eigen::Aligned16> get_H(
+  Eigen::Map<const HMatrix<T>, Eigen::Aligned16> get_H(
       const std::vector<Vector6<T>>& H_cache) const {
-    return Eigen::Map<const HMatrix, Eigen::Aligned16>(
+    return Eigen::Map<const HMatrix<T>, Eigen::Aligned16>(
         H_cache[mobilizer().velocity_start_in_v()].data());
   }
 
@@ -171,10 +193,10 @@ class BodyNodeImpl final : public BodyNode<T> {
   // contiguous columns, returns a mutable reference to H for this mobilizer,
   // as a 6xnv fixed-size matrix. This matrix is 16-byte aligned because it is
   // composed of columns of Eigen::Vector6 objects which Eigen aligns.
-  Eigen::Map<HMatrix, Eigen::Aligned16> get_mutable_H(
+  Eigen::Map<HMatrix<T>, Eigen::Aligned16> get_mutable_H(
       std::vector<Vector6<T>>* H_cache) const {
     DRAKE_ASSERT(H_cache != nullptr);
-    return Eigen::Map<HMatrix, Eigen::Aligned16>(
+    return Eigen::Map<HMatrix<T>, Eigen::Aligned16>(
         (*H_cache)[mobilizer().velocity_start_in_v()].data());
   }
 
@@ -412,14 +434,6 @@ class BodyNodeImpl final : public BodyNode<T> {
       ArticulatedBodyForceCache<T>* aba_force_cache) const {
     return aba_force_cache->get_mutable_e_B(mobod_index());
   }
-
-  // Computes the total force Ftot_BBo on body B that must be applied for it to
-  // incur in a spatial acceleration A_WB.
-  void CalcBodySpatialForceGivenItsSpatialAcceleration(
-      const std::vector<SpatialInertia<T>>& M_B_W_cache,
-      const std::vector<SpatialForce<T>>* Fb_Bo_W_cache,
-      const SpatialAcceleration<T>& A_WB,
-      SpatialForce<T>* Ftot_BBo_W_ptr) const;
 
   const ConcreteMobilizer<T>* const mobilizer_;
 };

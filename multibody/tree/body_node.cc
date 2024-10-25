@@ -60,6 +60,33 @@ void BodyNode<T>::CalcAcrossMobilizerBodyPoses_BaseToTip(
 }
 
 template <typename T>
+void BodyNode<T>::CalcCompositeBodyInertia_TipToBase(
+    const PositionKinematicsCache<T>& pc,
+    const std::vector<SpatialInertia<T>>& M_B_W_all,
+    std::vector<SpatialInertia<T>>* Mc_B_W_all) const {
+  DRAKE_ASSERT(mobod_index() != world_mobod_index());
+  DRAKE_ASSERT(Mc_B_W_all != nullptr);
+
+  // This mobod's spatial inertia (given).
+  const SpatialInertia<T>& M_B_W = M_B_W_all[mobod_index()];
+  // This mobod's composite body inertia (to be calculated).
+  SpatialInertia<T>& Mc_BBo_W = (*Mc_B_W_all)[mobod_index()];
+
+  // Composite body inertia for this node B, about its frame's origin Bo, and
+  // expressed in the world frame W. Add composite body inertia contributions
+  // from all children (already calculated).
+  Mc_BBo_W = M_B_W;
+  for (const BodyNode<T>* child : child_nodes()) {
+    const MobodIndex child_node_index = child->mobod_index();
+    // Composite body inertia for child body C, about Co, expressed in W.
+    const SpatialInertia<T>& Mc_CCo_W = (*Mc_B_W_all)[child_node_index];
+    // Shift to Bo and add it to the composite body inertia of B.
+    const Vector3<T>& p_BoCo_W = pc.get_p_PoBo_W(child_node_index);
+    Mc_BBo_W += Mc_CCo_W.Shift(-p_BoCo_W);  // i.e., by p_CoBo
+  }
+}
+
+template <typename T>
 void BodyNode<T>::CalcArticulatedBodyHingeInertiaMatrixFactorization(
     const MatrixUpTo6<T>& D_B,
     math::LinearSolver<Eigen::LLT, MatrixUpTo6<T>>* llt_D_B) const {
