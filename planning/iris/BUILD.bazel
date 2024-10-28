@@ -23,8 +23,8 @@ drake_cc_package_library(
         ":iris_from_clique_cover_template",
         ":iris_from_clique_cover_template_internal",
         ":iris_from_clique_cover_v2",
-        ":iris_np_from_clique_builder",
         ":iris_np2",
+        ":iris_np_from_clique_builder",
         ":iris_zo",
         ":iris_zo_from_clique_builder",
         ":point_sampler_base",
@@ -114,6 +114,8 @@ drake_cc_library(
         "//solvers:mosek_solver",
         "//solvers:snopt_solver",
         "//solvers:solve",
+    ],
+    implementation_deps = [
         "@common_robotics_utilities",
     ],
 )

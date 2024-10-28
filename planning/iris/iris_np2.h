@@ -4,8 +4,7 @@
 #include <memory>
 #include <optional>
 
-#include <common_robotics_utilities/parallelism.hpp>
-
+#include "drake/common/parallelism.h"
 #include "drake/geometry/meshcat.h"
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
