@@ -36,7 +36,7 @@ void DefinePlanningTrajectoryOptimization(py::module m);
 void DefinePlanningVisibilityGraph(py::module m);
 
 /* Defines bindings per planning_py_iris_zo.cc. */
-void DefinePlanningIrisZO(py::module m);
+void DefinePlanningIrisZo(py::module m);
 
 /* Defines bindings per planning_py_fast_clique_inflation.cc. */
 void DefinePlanningFastCliqueInflation(py::module m);

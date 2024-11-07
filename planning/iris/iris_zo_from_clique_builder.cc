@@ -49,7 +49,7 @@ HPolyhedron IrisZoFromCliqueBuilder::DoBuildRegion(
     Eigen::VectorXd center = clique_points.col(nearest_point_col);
     clique_ellipse = Hyperellipsoid(center, clique_ellipse.A());
   }
-  return IrisZO(*checker_, clique_ellipse, domain_, options_);
+  return IrisZo(*checker_, clique_ellipse, domain_, options_);
 }
 
 void IrisZoFromCliqueBuilder::set_domain(

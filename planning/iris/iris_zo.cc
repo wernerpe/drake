@@ -79,7 +79,7 @@ int unadaptive_test_samples(double p, double delta, double tau) {
 
 }  // namespace
 
-HPolyhedron IrisZO(const planning::CollisionChecker& checker,
+HPolyhedron IrisZo(const planning::CollisionChecker& checker,
                    const Hyperellipsoid& starting_ellipsoid,
                    const HPolyhedron& domain, const IrisZoOptions& options) {
   auto start = std::chrono::high_resolution_clock::now();
@@ -155,10 +155,10 @@ HPolyhedron IrisZO(const planning::CollisionChecker& checker,
 
   if (options.verbose) {
     log()->info(
-        "FastIris finding region that is {} collision free with {} certainty "
+        "IrisZo finding region that is {} collision free with {} certainty "
         "using {} particles.",
         options.epsilon, 1 - options.delta, options.num_particles);
-    log()->info("FastIris worst case test requires {} samples.", N_max);
+    log()->info("IrisZo worst case test requires {} samples.", N_max);
   }
 
   particles.reserve(N_max);
@@ -177,12 +177,12 @@ HPolyhedron IrisZO(const planning::CollisionChecker& checker,
   Eigen::VectorXd b(P.A().rows() + 300);
 
   //   if (options.verbose) {
-  //     log()->info("FastIris requires {}/{} particles to be collision free ",
+  //     log()->info("IrisZo requires {}/{} particles to be collision free ",
   //                 bernoulli_threshold, options.num_particles);
   //   }
 
   while (true) {
-    log()->info("FastIris iteration {}", iteration);
+    log()->info("IrisZo iteration {}", iteration);
 
     Eigen::MatrixXd ATA = current_ellipsoid_A.transpose() * current_ellipsoid_A;
     // rescaling makes max step computations more stable
@@ -247,7 +247,7 @@ HPolyhedron IrisZO(const planning::CollisionChecker& checker,
         }
       }
       if (options.verbose) {
-        log()->info("FastIris N_k {}, N_col {}, thresh {}", N_k,
+        log()->info("IrisZo N_k {}, N_col {}, thresh {}", N_k,
                     number_particles_in_collision_unadaptive_test,
                     (1 - options.tau) * options.epsilon * N_k);
       }
@@ -262,7 +262,7 @@ HPolyhedron IrisZO(const planning::CollisionChecker& checker,
       if (num_iterations_separating_planes ==
           options.max_iterations_separating_planes - 1) {
         log()->warn(
-            "FastIris WARNING, separating planes hit max iterations without "
+            "IrisZo WARNING, separating planes hit max iterations without "
             "passing the bernoulli test, this voids the probabilistic "
             "guarantees!");
       }
@@ -433,7 +433,7 @@ HPolyhedron IrisZO(const planning::CollisionChecker& checker,
       P = HPolyhedron(A.topRows(current_num_faces), b.head(current_num_faces));
       if (max_relaxation > 0) {
         log()->info(
-            fmt::format("FastIris Warning relaxing cspace margin by {:03} to "
+            fmt::format("IrisZo Warning relaxing cspace margin by {:03} to "
                         "ensure point containment",
                         max_relaxation));
       }
@@ -461,28 +461,27 @@ HPolyhedron IrisZO(const planning::CollisionChecker& checker,
     const double volume = current_ellipsoid.Volume();
     const double delta_volume = volume - previous_volume;
     if (delta_volume <= options.termination_threshold) {
-      log()->info("FastIris delta vol {}, threshold {}", delta_volume,
+      log()->info("IrisZo delta vol {}, threshold {}", delta_volume,
                   options.termination_threshold);
       break;
     }
     if (delta_volume / (previous_volume + 1e-6) <=
         options.relative_termination_threshold) {
-      log()->info("FastIris reldelta vol {}, threshold {}",
+      log()->info("IrisZo reldelta vol {}, threshold {}",
                   delta_volume / previous_volume,
                   options.relative_termination_threshold);
       break;
     }
     ++iteration;
     if (!(iteration < options.max_iterations)) {
-      log()->info("FastIris iter {}, iter limit {}", iteration,
+      log()->info("IrisZo iter {}, iter limit {}", iteration,
                   options.max_iterations);
       break;
     }
 
     if (options.require_sample_point_is_contained) {
       if (!(P.PointInSet(starting_ellipsoid_center))) {
-        log()->info(
-            "FastIris ERROR initial seed point not contained in region.");
+        log()->info("IrisZo ERROR initial seed point not contained in region.");
         return P_prev;
       }
     }
@@ -495,7 +494,7 @@ HPolyhedron IrisZO(const planning::CollisionChecker& checker,
   auto stop = std::chrono::high_resolution_clock::now();
   if (options.verbose) {
     log()->info(
-        "Fast Iris execution time : {} ms",
+        "IrisZO execution time : {} ms",
         std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
             .count());
   }
