@@ -7,7 +7,7 @@ namespace drake {
 namespace pydrake {
 namespace internal {
 
-void DefinePlanningIrisZO(py::module m) {
+void DefinePlanningIrisZo(py::module m) {
   // NOLINTNEXTLINE(build/namespaces): Emulate placement in namespace.
   using namespace drake::planning;
   constexpr auto& doc = pydrake_doc.drake.planning;
@@ -88,8 +88,8 @@ void DefinePlanningIrisZO(py::module m) {
                 self.mixing_steps);
       });
 
-  m.def("IrisZO", &IrisZO, py::arg("checker"), py::arg("starting_ellipsoid"),
-      py::arg("domain"), py::arg("options") = IrisZoOptions(), doc.IrisZO.doc);
+  m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),
+      py::arg("doma din"), py::arg("options") = IrisZoOptions(), doc.IrisZo.doc);
 }
 
 }  // namespace internal

@@ -33,7 +33,7 @@ using symbolic::Variable;
 const double kInf = std::numeric_limits<double>::infinity();
 
 // Helper method for testing FastIris from a urdf string.
-HPolyhedron IrisZOFromUrdf(const std::string urdf,
+HPolyhedron IrisZoFromUrdf(const std::string urdf,
                            const Hyperellipsoid& starting_ellipsoid,
                            const IrisZoOptions& options) {
   CollisionCheckerParams params;
@@ -56,11 +56,11 @@ HPolyhedron IrisZOFromUrdf(const std::string urdf,
   planning::SceneGraphCollisionChecker checker(std::move(params));
   // plant.SetPositions(&plant.GetMyMutableContextFromRoot(context.get()),
   // sample);
-  return IrisZO(checker, starting_ellipsoid, domain, options);
+  return IrisZo(checker, starting_ellipsoid, domain, options);
 }
 
 // One prismatic link with joint limits.  Iris should return the joint limits.
-GTEST_TEST(IrisZOTest, JointLimits) {
+GTEST_TEST(IrisZoTest, JointLimits) {
   const std::string limits_urdf = R"(
 <robot name="limits">
   <link name="movable">
@@ -82,7 +82,7 @@ GTEST_TEST(IrisZOTest, JointLimits) {
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
   IrisZoOptions options;
   options.verbose = true;
-  HPolyhedron region = IrisZOFromUrdf(limits_urdf, starting_ellipsoid, options);
+  HPolyhedron region = IrisZoFromUrdf(limits_urdf, starting_ellipsoid, options);
 
   EXPECT_EQ(region.ambient_dimension(), 1);
 
@@ -98,7 +98,7 @@ GTEST_TEST(IrisZOTest, JointLimits) {
 // tip of radius `r` between two (fixed) walls at `w` from the origin.  The
 // true configuration space is - w + r ≤ l₁s₁ + l₂s₁₊₂ ≤ w - r.  These regions
 // are visualized at https://www.desmos.com/calculator/ff0hbnkqhm.
-GTEST_TEST(IrisZOTest, DoublePendulum) {
+GTEST_TEST(IrisZoTest, DoublePendulum) {
   const double l1 = 2.0;
   const double l2 = 1.0;
   const double r = .5;
@@ -154,7 +154,7 @@ GTEST_TEST(IrisZOTest, DoublePendulum) {
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
   HPolyhedron region =
-      IrisZOFromUrdf(double_pendulum_urdf, starting_ellipsoid, options);
+      IrisZoFromUrdf(double_pendulum_urdf, starting_ellipsoid, options);
 
   EXPECT_EQ(region.ambient_dimension(), 2);
   // Confirm that we've found a substantial region.
@@ -241,7 +241,7 @@ const char block_urdf[] = R"(
 // space is min(q₀ ± .5w sin(q₁) ± .5h cos(q₁)) ≥ 0, where the min is over the
 // ±. This region is also visualized at
 // https://www.desmos.com/calculator/ok5ckpa1kp.
-GTEST_TEST(IrisZOTest, BlockOnGround) {
+GTEST_TEST(IrisZoTest, BlockOnGround) {
   const Vector2d sample{1.0, 0.0};
   std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
@@ -250,7 +250,7 @@ GTEST_TEST(IrisZOTest, BlockOnGround) {
   options.meshcat = meshcat;
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
-  HPolyhedron region = IrisZOFromUrdf(block_urdf, starting_ellipsoid, options);
+  HPolyhedron region = IrisZoFromUrdf(block_urdf, starting_ellipsoid, options);
 
   EXPECT_EQ(region.ambient_dimension(), 2);
   // Confirm that we've found a substantial region.
@@ -300,7 +300,7 @@ GTEST_TEST(IrisZOTest, BlockOnGround) {
 // convex space, this was originally a test for which Ibex found
 // counter-examples that Snopt missed; now Snopt succeeds due to having
 // options.num_collision_infeasible_samples > 1.
-GTEST_TEST(IrisZOTest, ConvexConfigurationSpace) {
+GTEST_TEST(IrisZoTest, ConvexConfigurationSpace) {
   const double l = 1.5;
   const double r = 0.1;
 
@@ -378,7 +378,7 @@ GTEST_TEST(IrisZOTest, ConvexConfigurationSpace) {
   Hyperellipsoid starting_ellipsoid =
       Hyperellipsoid::MakeHypersphere(1e-2, sample);
   // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  HPolyhedron region = IrisZOFromUrdf(convex_urdf, starting_ellipsoid, options);
+  HPolyhedron region = IrisZoFromUrdf(convex_urdf, starting_ellipsoid, options);
   // TODO(russt): Expecting the test point to be outside the verified region is
   // too strong of a requirement right now. If we can improve the algorithm then
   // we should make this EXPECT_FALSE.
@@ -459,7 +459,7 @@ const char boxes_in_corners_urdf[] = R"(
   </joint>
 </robot>
 )";
-GTEST_TEST(IrisZOTest, ForceContainmentPointsTest) {
+GTEST_TEST(IrisZoTest, ForceContainmentPointsTest) {
   std::shared_ptr<Meshcat> meshcat;
   meshcat = geometry::GetTestEnvironmentMeshcat();
   meshcat->Delete("face_pt");
@@ -518,7 +518,7 @@ GTEST_TEST(IrisZOTest, ForceContainmentPointsTest) {
   options.containment_points = cont_points.topRows(2);
   options.force_containment_points = true;
   HPolyhedron region =
-      IrisZOFromUrdf(boxes_in_corners_urdf, starting_ellipsoid, options);
+      IrisZoFromUrdf(boxes_in_corners_urdf, starting_ellipsoid, options);
   EXPECT_EQ(region.ambient_dimension(), 2);
   {
     for (int pt_to_draw = 0; pt_to_draw < cont_points.cols(); ++pt_to_draw) {

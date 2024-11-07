@@ -162,7 +162,7 @@ configuration space.
 @ingroup robot_planning
 */
 
-geometry::optimization::HPolyhedron IrisZO(
+geometry::optimization::HPolyhedron IrisZo(
     const CollisionChecker& checker,
     const geometry::optimization::Hyperellipsoid& starting_ellipsoid,
     const geometry::optimization::HPolyhedron& domain,
