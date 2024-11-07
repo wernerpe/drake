@@ -8,10 +8,14 @@ namespace pydrake {
 namespace internal {
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 void DefinePlanningIrisZo(py::module m) {
 =======
 void DefinePlanningIrisZO(py::module m) {
 >>>>>>> bda2091044 (Updates name of iris zo (#10))
+=======
+void DefinePlanningIrisZo(py::module m) {
+>>>>>>> c0467c3c0b (naming update (#19))
   // NOLINTNEXTLINE(build/namespaces): Emulate placement in namespace.
   using namespace drake::planning;
   constexpr auto& doc = pydrake_doc.drake.planning;
@@ -113,6 +117,7 @@ void DefinePlanningIrisZO(py::module m) {
       });
 
 <<<<<<< HEAD
+<<<<<<< HEAD
   // The `options` contains a `Parallelism`; we must release the GIL.
   m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),
       py::arg("domain"), py::arg("options") = IrisZoOptions(),
@@ -121,6 +126,10 @@ void DefinePlanningIrisZO(py::module m) {
   m.def("IrisZO", &IrisZO, py::arg("checker"), py::arg("starting_ellipsoid"),
       py::arg("domain"), py::arg("options") = IrisZoOptions(), doc.IrisZO.doc);
 >>>>>>> bda2091044 (Updates name of iris zo (#10))
+=======
+  m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),
+      py::arg("doma din"), py::arg("options") = IrisZoOptions(), doc.IrisZo.doc);
+>>>>>>> c0467c3c0b (naming update (#19))
 }
 
 }  // namespace internal
