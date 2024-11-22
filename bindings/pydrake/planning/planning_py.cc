@@ -28,7 +28,6 @@ and/or trajectories of dynamical systems.
   internal::DefinePlanningTrajectoryOptimization(m);
   internal::DefinePlanningVisibilityGraph(m);
   internal::DefinePlanningFastCliqueInflation(m);
-  internal::DefinePlanningIrisZo(m);
   internal::DefinePlanningIrisFromCliqueCover(m);
   internal::DefinePlanningIrisZo(m);
   internal::DefinePlanningZmpPlanner(m);

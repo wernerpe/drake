@@ -7,15 +7,7 @@ namespace drake {
 namespace pydrake {
 namespace internal {
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 void DefinePlanningIrisZo(py::module m) {
-=======
-void DefinePlanningIrisZO(py::module m) {
->>>>>>> bda2091044 (Updates name of iris zo (#10))
-=======
-void DefinePlanningIrisZo(py::module m) {
->>>>>>> c0467c3c0b (naming update (#19))
   // NOLINTNEXTLINE(build/namespaces): Emulate placement in namespace.
   using namespace drake::planning;
   constexpr auto& doc = pydrake_doc.drake.planning;
@@ -31,12 +23,6 @@ void DefinePlanningIrisZo(py::module m) {
       .def_readwrite("epsilon", &IrisZoOptions::epsilon, cls_doc.epsilon.doc)
       .def_readwrite("containment_points", &IrisZoOptions::containment_points,
           cls_doc.containment_points.doc)
-<<<<<<< HEAD
-=======
-      .def_readwrite("force_containment_points",
-          &IrisZoOptions::force_containment_points,
-          cls_doc.force_containment_points.doc)
->>>>>>> bda2091044 (Updates name of iris zo (#10))
       .def_readwrite("max_iterations", &IrisZoOptions::max_iterations,
           cls_doc.max_iterations.doc)
       .def_readwrite("max_iterations_separating_planes",
@@ -48,11 +34,7 @@ void DefinePlanningIrisZo(py::module m) {
       .def_readwrite("bisection_steps", &IrisZoOptions::bisection_steps,
           cls_doc.bisection_steps.doc)
       .def_readwrite(
-<<<<<<< HEAD
           "parallelism", &IrisZoOptions::parallelism, cls_doc.parallelism.doc)
-=======
-          "parallelize", &IrisZoOptions::parallelize, cls_doc.parallelize.doc)
->>>>>>> bda2091044 (Updates name of iris zo (#10))
       .def_readwrite("verbose", &IrisZoOptions::verbose, cls_doc.verbose.doc)
       .def_readwrite("require_sample_point_is_contained",
           &IrisZoOptions::require_sample_point_is_contained,
@@ -77,20 +59,11 @@ void DefinePlanningIrisZo(py::module m) {
             "tau={}, "
             "delta={}, "
             "epsilon={}, "
-<<<<<<< HEAD
-=======
-            "force_containment_points={}, "
-            "num_consecutive_failures={}, "
->>>>>>> bda2091044 (Updates name of iris zo (#10))
             "max_iterations={}, "
             "max_iterations_separating_planes={}, "
             "max_separating_planes_per_iteration={}, "
             "bisection_steps={}, "
-<<<<<<< HEAD
             "parallelism={}, "
-=======
-            "parallelize={}, "
->>>>>>> bda2091044 (Updates name of iris zo (#10))
             "verbose={}, "
             "require_sample_point_is_contained={}, "
             "configuration_space_margin={}, "
@@ -100,36 +73,19 @@ void DefinePlanningIrisZo(py::module m) {
             "mixing_steps={}, "
             ")")
             .format(self.num_particles, self.tau, self.delta, self.epsilon,
-<<<<<<< HEAD
                 self.max_iterations, self.max_iterations_separating_planes,
                 self.max_separating_planes_per_iteration, self.bisection_steps,
                 self.parallelism, self.verbose,
-=======
-                self.containment_points, self.force_containment_points,
-                self.max_iterations, self.max_iterations_separating_planes,
-                self.max_separating_planes_per_iteration, self.bisection_steps,
-                self.parallelize, self.verbose,
->>>>>>> bda2091044 (Updates name of iris zo (#10))
                 self.require_sample_point_is_contained,
                 self.configuration_space_margin, self.termination_threshold,
                 self.relative_termination_threshold, self.random_seed,
                 self.mixing_steps);
       });
 
-<<<<<<< HEAD
-<<<<<<< HEAD
   // The `options` contains a `Parallelism`; we must release the GIL.
   m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),
       py::arg("domain"), py::arg("options") = IrisZoOptions(),
       py::call_guard<py::gil_scoped_release>(), doc.IrisZo.doc);
-=======
-  m.def("IrisZO", &IrisZO, py::arg("checker"), py::arg("starting_ellipsoid"),
-      py::arg("domain"), py::arg("options") = IrisZoOptions(), doc.IrisZO.doc);
->>>>>>> bda2091044 (Updates name of iris zo (#10))
-=======
-  m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),
-      py::arg("doma din"), py::arg("options") = IrisZoOptions(), doc.IrisZo.doc);
->>>>>>> c0467c3c0b (naming update (#19))
 }
 
 }  // namespace internal
