@@ -58,6 +58,22 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "iris_test_fixtures",
+    testonly = True,
+    hdrs = ["test/iris_test_fixtures.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//common/test_utilities:expect_throws_message",
+        "//common/test_utilities:maybe_pause_for_user",
+        "//geometry:meshcat",
+        "//geometry/test_utilities:meshcat_environment",
+        "//multibody/inverse_kinematics",
+        "//planning:robot_diagram_builder",
+        "//planning:scene_graph_collision_checker",
+    ],
+)
+
 drake_cc_googletest(
     name = "iris_from_clique_cover_test",
     timeout = "moderate",
@@ -101,6 +117,7 @@ drake_cc_googletest(
         "no_lsan",
     ],
     deps = [
+        ":iris_test_fixtures",
         ":iris_zo",
         "//common/test_utilities:expect_throws_message",
         "//common/test_utilities:maybe_pause_for_user",

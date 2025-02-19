@@ -3,6 +3,7 @@
 #include <chrono>
 #include <thread>
 
+#include "iris_test_fixtures.h"
 #include <gtest/gtest.h>
 
 #include "drake/common/find_resource.h"
@@ -56,6 +57,28 @@ HPolyhedron IrisZoFromUrdf(const std::string urdf,
                                           plant_ptr->GetPositionUpperLimits());
   planning::SceneGraphCollisionChecker checker(std::move(params));
   return IrisZo(checker, starting_ellipsoid, domain, options);
+}
+
+TEST_F(JointLimits, IrisZoJointLimits) {
+  IrisZoOptions options;
+  options.verbose = true;
+  options.set_parameterization(
+      [](const VectorXd& q) -> VectorXd {
+        return q;
+      },
+      /* parameterization_is_threadsafe */ false,
+      /* parameterization_dimension */ 1);
+
+  // Check that the parameterization was set correctly. (Note the non-default
+  // value for parameterization_is_threadsafe.)
+  EXPECT_EQ(options.get_parameterization_is_threadsafe(), false);
+  ASSERT_TRUE(options.get_parameterization_dimension().has_value());
+  EXPECT_EQ(options.get_parameterization_dimension().value(), 1);
+  const Vector1d output = options.get_parameterization()(Vector1d(3.0));
+  EXPECT_NEAR(output[0], 3.0, 1e-15);
+
+  HPolyhedron region = IrisZoFromUrdf(urdf, starting_ellipsoid, options);
+  run_checks_on_region(region);
 }
 
 // Reproduced from the IrisInConfigurationSpace unit tests.
